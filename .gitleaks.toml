@@ -1,0 +1,9 @@
+title = "Basecamp gitleaks"
+
+[extend]
+useDefault = true
+
+# Le placeholder de dev du client Stripe n'est pas un secret.
+[allowlist]
+description = "Placeholders de developpement"
+regexes = ['''sk_test_placeholder''', '''re_placeholder''']

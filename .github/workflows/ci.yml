@@ -1,0 +1,111 @@
+name: CI
+
+# Une matrice par service backend (un projet uv chacun) + le front, en parallele.
+# Chaque job appelle les taches poe/npm du service : jamais d'outil en direct.
+# Ajouter un service = ajouter son nom dans la matrice `service`.
+# `ci-ok` est le seul check a rendre obligatoire dans la protection de branche.
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  backend:
+    name: backend-${{ matrix.service }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [shop, auth, payment]
+    defaults:
+      run:
+        working-directory: apps/backend/${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/backend/${{ matrix.service }}/uv.lock
+      - run: uv sync --frozen
+      - name: Qualite (lint, format, types)
+        run: uv run poe quality
+      - name: Tests + couverture (seuil 80 %)
+        run: uv run poe test
+      - name: Securite (CVE des dependances)
+        run: uv run poe security
+      - name: Build de l'image
+        run: docker build -t basecamp-${{ matrix.service }}:ci .
+
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: apps/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/frontend/package-lock.json
+      - run: npm ci
+      - name: Qualite (lint, format, types)
+        run: npm run quality
+      - name: Tests + couverture (seuil 80 %)
+        run: npm run test:coverage
+      - name: Securite des dependances
+        # Non bloquant tant que Next.js 14 n'est pas monte de version (CVE connues).
+        continue-on-error: true
+        run: npm run security
+      - name: Build
+        run: npm run build
+        env:
+          SKIP_ENV_VALIDATION: "1"
+
+  secrets-scan:
+    name: secrets-scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks (historique complet)
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz | tar -xz gitleaks
+          ./gitleaks git --redact -v .
+
+  tools:
+    name: outils-racine
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --frozen
+      - run: uv run poe tools-test
+
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [backend, frontend, secrets-scan, tools]
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Tous les jobs bloquants sont verts
+        run: |
+          echo '${{ toJSON(needs) }}' | grep -q '"result": "\(failure\|cancelled\)"' && exit 1 || exit 0

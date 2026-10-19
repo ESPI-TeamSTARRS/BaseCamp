@@ -1,59 +1,64 @@
-# Claude Code Guidelines & Skills Reference — E-Commerce Template & New Niche
+# CLAUDE.md — Basecamp
 
-Ce projet utilise une stack **Next.js 14 (App Router) + TypeScript + Tailwind CSS 3.4 + Framer Motion + Stripe + Resend + Zod**.
-Des **skills spécialisés** sont installés dans le dossier `.claude/skills/` pour guider chaque aspect du développement.
+Règles pour les sessions Claude Code sur ce dépôt. La documentation de référence est dans [docs/](docs/README.md) : en cas de divergence, les docs font foi. Réponses, interface et commentaires de communication en **français**.
 
----
+## Le projet
 
-## 1. Skills Spécialisés Disponibles (`.claude/skills/`)
+Boutique de matériel outdoor (bivouac, grande randonnée) avec un service de paiement interne, sans donnée bancaire réelle. Monorepo :
 
-Avant d'écrire ou modifier du code, consulte systématiquement les instructions des skills correspondants :
+- `apps/frontend` : Next.js 14, TypeScript, Tailwind, Framer Motion (le front d'origine, rethémé Basecamp Outdoor).
+- `apps/backend/{shop,auth,payment}` : services FastAPI (Python 3.13, `uv`), chacun un projet autonome avec son `pyproject.toml`, son `uv.lock` et son `Dockerfile`.
+- `docs/` : documentation applicative. `.claude/skills/` : skills de l'équipe.
 
-### 🛡️ Sécurité, Pentest Défensif & Conformité
-- [`.claude/skills/sec-code-owasp/SKILL.md`](file:///.claude/skills/sec-code-owasp/SKILL.md) : Validation stricte des schémas d'entrée Zod (`.strict()`), vérification cryptographique obligatoire des signatures de webhooks Stripe, assainissement des messages d'erreur.
-- [`.claude/skills/sec-web-audit/SKILL.md`](file:///.claude/skills/sec-web-audit/SKILL.md) : En-têtes HTTP de sécurité (CSP, HSTS, X-Content-Type-Options, Referrer-Policy), gestion stricte des cookies de session (`SameSite=Strict`, `HttpOnly`, `Secure`).
-- [`.claude/skills/owasp-web-security-auditor/SKILL.md`](file:///.claude/skills/owasp-web-security-auditor/SKILL.md) : Audit OWASP Top 10 web et API, détection et remédiation des injections, XSS, bris d'authentification et failles SSRF.
-- [`.claude/skills/sec-infra-hardening/SKILL.md`](file:///.claude/skills/sec-infra-hardening/SKILL.md) : Durcissement des conteneurs Docker (non-root, filesystem en lecture seule quand applicable, drop capabilities).
+Identité visuelle : vert forêt `#1E3A2F`, orange bivouac `#E05638`, neutres pierre et sable `#F5F2EB`; badges techniques sur les produits (poids, imperméabilité, température de confort, matériau). Mobile first.
 
-### 💳 Paiement & Tunnel d'Achat
-- [`.claude/skills/stripe-checkout-billing/SKILL.md`](file:///.claude/skills/stripe-checkout-billing/SKILL.md) : Configuration des Sessions Stripe Checkout, gestion idempotente des événements webhooks (`checkout.session.completed`), politique de gestion des échecs de paiement et redirection `/success`.
+## Périmètre
 
-### 📈 Marketing, SEO & Conversion (CRO)
-- [`.claude/skills/seo-technical-geo/SKILL.md`](file:///.claude/skills/seo-technical-geo/SKILL.md) : Balisage sémantique Schema.org (`Product`, `Offer`, `BreadcrumbList`), OpenGraph, balises meta canoniques, sitemap dynamique et optimisation pour les moteurs IA (GEO/AEO).
-- [`.claude/skills/technical-seo-auditor/SKILL.md`](file:///.claude/skills/technical-seo-auditor/SKILL.md) : Audit technique SEO complet, Core Web Vitals (LCP, INP, CLS), hiérarchie Hn stricte, balisage robot et maillage interne.
-- [`.claude/skills/cro-friction-audit/SKILL.md`](file:///.claude/skills/cro-friction-audit/SKILL.md) : Élimination des points de friction dans le tunnel d'achat, optimisation de la page produit (au-dessus de la ligne de flottaison), panier latéral sticky, réassurance et call-to-action percutants.
+Applicatif seulement : front, `shop`, `auth`, `payment`, puis remédiation. **ML et RAG sont hors périmètre** (équipe IA). Postgres, passerelle et observabilité relèvent de l'infra. Ne pas élargir le périmètre sans demander.
 
-### 🎨 UX, Design & Accessibilité
-- [`.claude/skills/ux-heuristics-evaluator/SKILL.md`](file:///.claude/skills/ux-heuristics-evaluator/SKILL.md) : Respect des 10 principes de Nielsen Norman, lois de Fitts et Hick pour la hiérarchie visuelle et la navigation.
-- [`.claude/skills/design-system-tokens/SKILL.md`](file:///.claude/skills/design-system-tokens/SKILL.md) : Système modulaire de tokens Tailwind (espacements 4px/8px, palette accessible, typographie fluide).
-- [`.claude/skills/micro-interactions-motion/SKILL.md`](file:///.claude/skills/micro-interactions-motion/SKILL.md) : Micro-animations Framer Motion discrètes (hover, ouverture du panier, loaders réactifs).
+## Architecture (règles non négociables)
 
----
+1. **Microservices** : un conteneur et une base par service. Passerelle Traefik seul point publié ([services-and-gateway.md](docs/architecture/services-and-gateway.md)).
+2. **Fonctionnalité ou service** : par défaut une tranche dans un service existant; nouveau service seulement si au moins 2 critères sur 4 (données propres, cycle de vie indépendant, charge ou sécurité différente, propriétaire distinct).
+3. **Un projet `uv` par service**, aucun import entre services, **aucune bibliothèque partagée** (duplication acceptée). Le `pyproject.toml` racine délègue uniquement.
+4. **Clean Architecture en tranches verticales** : `domain / application / infrastructure / presentation`, un fichier = une classe, règle de dépendance vérifiée par `app/__tests__/unit/test_architecture.unit.py`.
+5. **Paiement derrière l'interface `PaymentProvider`**; idempotence en base; montants recalculés côté serveur; webhooks signés.
+6. Aucun état en mémoire dans un service; entrées validées (`extra="forbid"`); erreurs assainies.
 
-## 2. Niche & Direction Artistique (DA) : Basecamp Outdoor
+Pour toute question d'architecture, utiliser le skill `architecte` avant de décider.
 
-Le template d'origine (`caniventure`) doit être intégralement rethémé vers une boutique de **matériel outdoor, bivouac et grande randonnée**.
+## Qualité
 
-### 🌲 Identité & Ambiance Visuelle
-- **Inspirations de marque :** Basecamp, Patagonia, Arc'teryx, Snow Peak, Fjällräven.
-- **Palette de couleurs :**
-  - Primaire : Vert forêt / Pin profond (`#1E3A2F` ou `#132E22`)
-  - Accent / CTA : Orange bivouac / Terracotta brûlée (`#E05638` ou `#C84B31`)
-  - Neutres : Pierre / Granit foncé (`#181D1A`, `#222925`), Sable / Écru (`#F5F2EB`, `#E8E2D5`)
-- **Typographie & Style :** Moderne, robuste, aventure (Inter / Geist Sans avec accents typographiques outdoor).
-- **Badges techniques indispensables :** Poids ultralight (ex: `850g`), imperméabilité (ex: `3 000mm Schmerber`), indice de température (ex: `-5°C confort`), matériaux durables (ex: `Nylon Ripstop 20D`).
+- **TDD strict** (Red, Green, Blue), tests colocalisés dans `__tests__/` (`.unit`, `.integ`, `.e2e`), **couverture ≥ 80 %** back et front. Skill `tdd-couverture`.
+- Avant de proposer un changement : `uv run poe quality` et `uv run poe test` (ou `uv run poe ci`). Ne jamais baisser un seuil ni exclure du code pour passer.
+- Hooks Git : `commit-msg`, `pre-commit`, `pre-push`. **Ne jamais contourner** (`--no-verify` interdit).
 
-### 🎒 Catalogue Produits Cible (Bivouac & Trek)
-1. **Tentes de bivouac & abris ultralégers** (1P/2P, autoportantes, 3 et 4 saisons).
-2. **Sacs de couchage & matelas gonflables isolants** (plume d'oie déperlante, R-value élevée).
-3. **Sacs à dos de grande randonnée** (45L à 65L avec armature ergonomique).
-4. **Matériel de camp & cuisine** (réchauds titane, popotes ultralight, filtres à eau portables).
-5. **Accessoires de sécurité & orientation** (lampes frontales rechargeables, boussoles, trousses de secours outdoor).
+## Git (trunk-based)
 
----
+`main` seule branche longue et toujours déployable; branches courtes `<type>/WORK-<n>-<slug>`; PR petites en squash; commits `<type>(<scope>): description en français (WORK-<n>)`. Détails : skill `git-trunk-based` et [git-and-hooks.md](docs/development/git-and-hooks.md).
 
-## 3. Règles Fondamentales de Développement
-1. **Validation Systématique :** Aucune route API ne doit traiter de données sans validation `zod.safeParse()`.
-2. **Secrets & Environnement :** Aucune clé privée ou token en dur dans le code. Toujours utiliser les variables d'environnement (`process.env.*`) avec validation dans un fichier de config.
-3. **Composants Réutilisables :** Suivre l'architecture Next.js App Router (`src/components/`, `src/app/`, `src/lib/`, `src/context/`).
-4. **Mobile First :** Chaque interface doit être parfaitement réactive et testée pour les écrans mobiles en priorité (bivouac = consultation sur smartphone en conditions de mobilité).
+## Interdits et garde-fous
+
+- **Ne jamais pousser, forcer un push, créer ou fusionner une PR sans accord explicite de Sam.** Travailler sur une branche, jamais sur `main`.
+- **Aucun secret dans le dépôt** : pas de `.env*`, clé, mot de passe ou jeton, ni dans le code, ni dans les docs, ni dans les messages de commit. Ne jamais afficher le contenu d'un `.env`. Un secret commité se renouvelle.
+- **Aucun suivi d'avancement dans le dépôt** (journal, statuts, notes de progression) : il vit dans Linear (équipe WORK) et dans le vault personnel de Sam.
+- Ne rien créer ni modifier dans Linear sans avoir montré le texte à Sam (skill `redaction-tickets`).
+- Pas d'action destructrice ou sortante (suppression en masse, réécriture d'historique partagé, message externe) sans demande explicite.
+
+## Skills du dépôt (`.claude/skills/`)
+
+| Skill | Quand l'utiliser |
+|---|---|
+| [architecte](.claude/skills/architecte/SKILL.md) | question d'architecture, nouveau service ou tranche, communication entre services |
+| [clean-archi-fastapi](.claude/skills/clean-archi-fastapi/SKILL.md) | placer du code dans un service, revue de couches |
+| [tdd-couverture](.claude/skills/tdd-couverture/SKILL.md) | avant toute implémentation, tests et couverture |
+| [git-trunk-based](.claude/skills/git-trunk-based/SKILL.md) | branches, commits, PR, correctifs, retours arrière |
+| [redaction-tickets](.claude/skills/redaction-tickets/SKILL.md) | rédiger ou découper un ticket Linear |
+
+Skills spécialisés complémentaires, à consulter selon le sujet : sécurité ([sec-code-owasp](.claude/skills/sec-code-owasp/SKILL.md), [sec-web-audit](.claude/skills/sec-web-audit/SKILL.md), [owasp-web-security-auditor](.claude/skills/owasp-web-security-auditor/SKILL.md), [sec-infra-hardening](.claude/skills/sec-infra-hardening/SKILL.md)), paiement ([stripe-checkout-billing](.claude/skills/stripe-checkout-billing/SKILL.md)), SEO et conversion ([seo-technical-geo](.claude/skills/seo-technical-geo/SKILL.md), [technical-seo-auditor](.claude/skills/technical-seo-auditor/SKILL.md), [cro-friction-audit](.claude/skills/cro-friction-audit/SKILL.md)), UX et design ([ux-heuristics-evaluator](.claude/skills/ux-heuristics-evaluator/SKILL.md), [design-system-tokens](.claude/skills/design-system-tokens/SKILL.md), [micro-interactions-motion](.claude/skills/micro-interactions-motion/SKILL.md)).
+
+## Documentation
+
+[Index](docs/README.md) · [Architecture](docs/architecture/README.md) · [Développement](docs/development/README.md) · [Services](docs/services/README.md) · [Règles de développement](docs/development/rules.md) · [Agile et tickets](docs/development/agile.md)
+
+Quand une API, un invariant ou une règle change, mettre à jour la page de [docs/](docs/README.md) concernée dans la même PR.

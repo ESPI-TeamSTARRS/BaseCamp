@@ -1,0 +1,53 @@
+# Orchestrateur racine : aucune logique d'outil ici, uniquement des delegations vers
+# chaque service (un projet uv par service dans apps/backend/*, npm pour apps/frontend).
+# Les hooks Git et la CI n'appellent que ces taches.
+#
+#   uv run poe quality     # lint + format + types, tous services
+#   uv run poe test        # tests + couverture > 80 %, tous services
+#   uv run poe security    # audit des dependances
+#   uv run poe ci          # tout ce que la CI execute
+[project]
+name = "basecamp"
+version = "0.1.0"
+description = "Basecamp - orchestrateur qualite racine"
+requires-python = ">=3.13"
+
+[dependency-groups]
+dev = ["poethepoet>=0.29.0", "pre-commit>=4.0.0", "pytest>=8.3.0"]
+
+[tool.uv]
+package = false
+
+[tool.poe.tasks]
+# ---- back : un projet uv par service ----
+"shop-quality"        = "uv run --directory apps/backend/shop poe quality"
+"shop-test"           = "uv run --directory apps/backend/shop poe test"
+"shop-security"       = "uv run --directory apps/backend/shop poe security"
+"shop-pre-commit"     = "uv run --directory apps/backend/shop poe pre-commit"
+"shop-pre-push"       = "uv run --directory apps/backend/shop poe pre-push"
+"auth-quality"       = "uv run --directory apps/backend/auth poe quality"
+"auth-test"          = "uv run --directory apps/backend/auth poe test"
+"auth-security"      = "uv run --directory apps/backend/auth poe security"
+"auth-pre-commit"    = "uv run --directory apps/backend/auth poe pre-commit"
+"auth-pre-push"      = "uv run --directory apps/backend/auth poe pre-push"
+"payment-quality"    = "uv run --directory apps/backend/payment poe quality"
+"payment-test"       = "uv run --directory apps/backend/payment poe test"
+"payment-security"   = "uv run --directory apps/backend/payment poe security"
+"payment-pre-commit" = "uv run --directory apps/backend/payment poe pre-commit"
+"payment-pre-push"   = "uv run --directory apps/backend/payment poe pre-push"
+
+# ---- front ----
+"web-quality"    = { shell = "npm --prefix apps/frontend run quality" }
+"web-test"       = { shell = "npm --prefix apps/frontend run test:coverage" }
+"web-security"   = { shell = "npm --prefix apps/frontend run security" }
+"web-pre-commit" = { shell = "npm --prefix apps/frontend run pre-commit" }
+"web-pre-push"   = { shell = "npm --prefix apps/frontend run pre-push" }
+
+# ---- composites ----
+quality      = ["shop-quality", "auth-quality", "payment-quality", "web-quality"]
+test         = ["shop-test", "auth-test", "payment-test", "web-test"]
+security     = ["shop-security", "auth-security", "payment-security", "web-security"]
+"pre-commit" = ["shop-pre-commit", "auth-pre-commit", "payment-pre-commit", "web-pre-commit"]
+"pre-push"   = ["shop-pre-push", "auth-pre-push", "payment-pre-push", "web-pre-push"]
+tools-test   = "pytest scripts"
+ci           = ["quality", "test", "security", "tools-test"]
