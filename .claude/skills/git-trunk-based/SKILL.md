@@ -19,18 +19,18 @@ Source de vérité : `docs/development/git-and-hooks.md` (et `docs/development/c
 
 ## Identifiant de tâche
 
-Chaque branche, commit et PR mentionne l'identifiant de la tâche Linear, noté `<TICKET>` ici (préfixe du projet à paramétrer, par exemple `XXX-123`).
+Chaque branche, commit et PR mentionne l'identifiant de la tâche Linear `WORK-<n>` (équipe WORK).
 
 | Élément | Format | Exemple |
 |---|---|---|
-| Branche | `<type>/<TICKET>-<slug-court>` | `feat/<TICKET>-remboursement-partiel` |
-| Commit / titre de PR | `<type>(<scope>): <description en français> (<TICKET>)` | `feat(payment): ajoute le remboursement partiel (<TICKET>)` |
+| Branche | `<type>/WORK-<n>-<slug-court>` | `feat/WORK-<n>-remboursement-partiel` |
+| Commit / titre de PR | `<type>(<scope>): <description en français> (WORK-<n>)` | `feat(payment): ajoute le remboursement partiel (WORK-<n>)` |
 
 Types : `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `ci`, `build`, `perf`, `style`, `revert`. Scope : le service ou la zone (`shop`, `auth`, `payment`, `frontend`, `ci`, `docs`). Le hook `commit-msg` valide le format Conventional Commit.
 
 ## Déroulé d'un changement
 
-1. `git switch main && git pull --ff-only`, puis `git switch -c <type>/<TICKET>-<slug>`.
+1. `git switch main && git pull --ff-only`, puis `git switch -c <type>/WORK-<n>-<slug>`.
 2. Travailler en TDD (skill `tdd-couverture`) : un commit par phase est autorisé en local, ils sont écrasés au squash.
 3. Avant de pousser : `uv run poe quality` et `uv run poe test` pour les services touchés. Les hooks `pre-commit` et `pre-push` doivent passer, sans jamais être contournés (`--no-verify` interdit).
 4. Se resynchroniser avec `main` si besoin (`git fetch && git rebase origin/main`), puis pousser.

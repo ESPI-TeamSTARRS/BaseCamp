@@ -12,12 +12,12 @@
 
 ## Nommage
 
-L'identifiant de tâche (`<TICKET>`, préfixe du tracker à définir) figure dans la branche, les commits et la PR.
+L'identifiant de tâche Linear (`WORK-<n>`, équipe WORK) figure dans la branche, les commits et la PR.
 
 | Élément | Format | Exemple |
 |---|---|---|
-| Branche | `<type>/<TICKET>-<slug-court>` | `feat/<TICKET>-remboursement-partiel` |
-| Commit et titre de PR | `<type>(<scope>): <description en français> (<TICKET>)` | `feat(payment): ajoute le remboursement partiel (<TICKET>)` |
+| Branche | `<type>/WORK-<n>-<slug-court>` | `feat/WORK-<n>-remboursement-partiel` |
+| Commit et titre de PR | `<type>(<scope>): <description en français> (WORK-<n>)` | `feat(payment): ajoute le remboursement partiel (WORK-<n>)` |
 
 Types : `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `ci`, `build`, `perf`, `style`, `revert`. Le scope est le service ou la zone (`shop`, `auth`, `payment`, `frontend`, `ci`, `docs`). Marque de rupture : `feat(payment)!: ...`.
 
