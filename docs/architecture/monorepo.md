@@ -4,7 +4,7 @@
 .
 ├── apps/
 │   ├── backend/
-│   │   ├── api/        projet uv autonome (pyproject.toml, uv.lock, Dockerfile)
+│   │   ├── shop/       projet uv autonome (pyproject.toml, uv.lock, Dockerfile)
 │   │   ├── auth/       idem
 │   │   └── payment/    idem
 │   └── frontend/       Next.js (package.json, Dockerfile)

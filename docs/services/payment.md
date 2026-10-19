@@ -20,7 +20,7 @@ Les routes de paiement s'ajoutent par tranche (`payment_intent`, `refund`, `ledg
 - Un webhook sortant est signé (HMAC et horodatage); un événement rejoué est ignoré à la réception.
 
 ## Intégration boutique
-Le service `api` utilise l'interface `PaymentProvider`. L'adaptateur interne est celui par défaut; un fournisseur externe reste branchable.
+Le service `shop` utilise l'interface `PaymentProvider`. L'adaptateur interne est celui par défaut; un fournisseur externe reste branchable.
 
 ## Configuration
 `APP_SERVICE_NAME`, `APP_ENVIRONMENT`. Les secrets de signature arrivent par variables d'environnement.

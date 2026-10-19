@@ -1,5 +1,5 @@
 [project]
-name = "basecamp-api"
+name = "basecamp-shop"
 version = "0.1.0"
 description = "API metier (catalogue, commandes)"
 requires-python = ">=3.13"

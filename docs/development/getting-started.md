@@ -10,7 +10,7 @@
 
 ```bash
 uv sync                                                  # outils racine (poe, pre-commit)
-uv sync --directory apps/backend/api                     # un service backend
+uv sync --directory apps/backend/shop                    # un service backend
 npm ci --prefix apps/frontend                            # front
 uv run pre-commit install --install-hooks                # hooks Git
 ```

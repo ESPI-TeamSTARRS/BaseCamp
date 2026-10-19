@@ -2,7 +2,7 @@
 
 Un document par service, avec la même trame : rôle, responsabilités, API, configuration, invariants.
 
-- [api](api.md)
+- [shop](shop.md)
 - [auth](auth.md)
 - [payment](payment.md)
 - [frontend](frontend.md)

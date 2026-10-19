@@ -20,11 +20,11 @@ package = false
 
 [tool.poe.tasks]
 # ---- back : un projet uv par service ----
-"api-quality"        = "uv run --directory apps/backend/api poe quality"
-"api-test"           = "uv run --directory apps/backend/api poe test"
-"api-security"       = "uv run --directory apps/backend/api poe security"
-"api-pre-commit"     = "uv run --directory apps/backend/api poe pre-commit"
-"api-pre-push"       = "uv run --directory apps/backend/api poe pre-push"
+"shop-quality"        = "uv run --directory apps/backend/shop poe quality"
+"shop-test"           = "uv run --directory apps/backend/shop poe test"
+"shop-security"       = "uv run --directory apps/backend/shop poe security"
+"shop-pre-commit"     = "uv run --directory apps/backend/shop poe pre-commit"
+"shop-pre-push"       = "uv run --directory apps/backend/shop poe pre-push"
 "auth-quality"       = "uv run --directory apps/backend/auth poe quality"
 "auth-test"          = "uv run --directory apps/backend/auth poe test"
 "auth-security"      = "uv run --directory apps/backend/auth poe security"
@@ -44,10 +44,10 @@ package = false
 "web-pre-push"   = { shell = "npm --prefix apps/frontend run pre-push" }
 
 # ---- composites ----
-quality      = ["api-quality", "auth-quality", "payment-quality", "web-quality"]
-test         = ["api-test", "auth-test", "payment-test", "web-test"]
-security     = ["api-security", "auth-security", "payment-security", "web-security"]
-"pre-commit" = ["api-pre-commit", "auth-pre-commit", "payment-pre-commit", "web-pre-commit"]
-"pre-push"   = ["api-pre-push", "auth-pre-push", "payment-pre-push", "web-pre-push"]
+quality      = ["shop-quality", "auth-quality", "payment-quality", "web-quality"]
+test         = ["shop-test", "auth-test", "payment-test", "web-test"]
+security     = ["shop-security", "auth-security", "payment-security", "web-security"]
+"pre-commit" = ["shop-pre-commit", "auth-pre-commit", "payment-pre-commit", "web-pre-commit"]
+"pre-push"   = ["shop-pre-push", "auth-pre-push", "payment-pre-push", "web-pre-push"]
 tools-test   = "pytest scripts"
 ci           = ["quality", "test", "security", "tools-test"]

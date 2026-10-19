@@ -25,7 +25,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [api, auth, payment]
+        service: [shop, auth, payment]
     defaults:
       run:
         working-directory: apps/backend/${{ matrix.service }}

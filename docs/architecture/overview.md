@@ -7,7 +7,7 @@ Basecamp est une boutique de matériel outdoor (tentes, couchage, sacs de grande
 | Composant | Dossier | Rôle |
 |---|---|---|
 | Front | `apps/frontend` | Vitrine Next.js : catalogue, panier, pages légales |
-| `api` | `apps/backend/api` | Catalogue, commandes, stock |
+| `shop` | `apps/backend/shop` | Catalogue, commandes, stock |
 | `auth` | `apps/backend/auth` | Comptes, jetons, rôles |
 | `payment` | `apps/backend/payment` | Intentions de paiement, remboursements, grand livre, webhooks signés |
 
@@ -15,11 +15,11 @@ Détail par service : [services/](../services/README.md).
 
 ## Flux principal d'achat
 
-1. Le front affiche le catalogue fourni par `api`.
+1. Le front affiche le catalogue fourni par `shop`.
 2. Le client s'authentifie auprès de `auth`.
-3. `api` crée une commande puis demande une intention de paiement à `payment` via l'interface `PaymentProvider`.
-4. `payment` confirme et notifie `api` par un webhook signé (HMAC et horodatage).
-5. `api` marque la commande payée. Invariant : une commande payée correspond à exactement une transaction.
+3. `shop` crée une commande puis demande une intention de paiement à `payment` via l'interface `PaymentProvider`.
+4. `payment` confirme et notifie `shop` par un webhook signé (HMAC et horodatage).
+5. `shop` marque la commande payée. Invariant : une commande payée correspond à exactement une transaction.
 
 ## Exécution
 

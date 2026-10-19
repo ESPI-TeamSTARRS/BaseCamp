@@ -6,5 +6,5 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="APP_", extra="ignore")
 
-    service_name: str = "basecamp-api"
+    service_name: str = "basecamp-shop"
     environment: str = "dev"

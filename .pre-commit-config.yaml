@@ -21,12 +21,12 @@ repos:
         entry: uv run python scripts/hooks/check_commit_msg.py
         always_run: true
 
-      - id: api-pre-commit
-        name: "api - lint + format"
+      - id: shop-pre-commit
+        name: "shop - lint + format"
         language: system
-        files: ^apps/backend/api/
+        files: ^apps/backend/shop/
         pass_filenames: false
-        entry: uv run --directory apps/backend/api poe pre-commit
+        entry: uv run --directory apps/backend/shop poe pre-commit
       - id: auth-pre-commit
         name: "auth - lint + format"
         language: system
@@ -46,13 +46,13 @@ repos:
         pass_filenames: false
         entry: npm --prefix apps/frontend run pre-commit
 
-      - id: api-pre-push
-        name: "api - types + tests unitaires"
+      - id: shop-pre-push
+        name: "shop - types + tests unitaires"
         language: system
-        files: ^apps/backend/api/
+        files: ^apps/backend/shop/
         pass_filenames: false
         stages: [pre-push]
-        entry: uv run --directory apps/backend/api poe pre-push
+        entry: uv run --directory apps/backend/shop poe pre-push
       - id: auth-pre-push
         name: "auth - types + tests unitaires"
         language: system

@@ -1,6 +1,6 @@
-# Service `api`
+# Service `shop`
 
-**Dossier** : `apps/backend/api`
+**Dossier** : `apps/backend/shop`
 
 ## Rôle
 Catalogue, commandes et stock. Demande les paiements au service [payment](payment.md) via l'interface `PaymentProvider` et authentifie les appels grâce à [auth](auth.md).
