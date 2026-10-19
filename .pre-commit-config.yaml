@@ -1,0 +1,76 @@
+# Hooks git en 3 etages. Ils VERIFIENT, ne corrigent jamais (pas de --fix).
+# Installation (une fois) : uv run pre-commit install --install-hooks
+#   commit-msg : format Conventional Commit
+#   pre-commit : secrets + lint/format du service modifie (rapide)
+#   pre-push   : types + tests unitaires du service modifie
+default_install_hook_types: [pre-commit, pre-push, commit-msg]
+default_stages: [pre-commit]
+
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  - repo: local
+    hooks:
+      - id: commit-msg-conventional
+        name: "commit-msg - Conventional Commit"
+        language: system
+        stages: [commit-msg]
+        entry: uv run python scripts/hooks/check_commit_msg.py
+        always_run: true
+
+      - id: api-pre-commit
+        name: "api - lint + format"
+        language: system
+        files: ^apps/backend/api/
+        pass_filenames: false
+        entry: uv run --directory apps/backend/api poe pre-commit
+      - id: auth-pre-commit
+        name: "auth - lint + format"
+        language: system
+        files: ^apps/backend/auth/
+        pass_filenames: false
+        entry: uv run --directory apps/backend/auth poe pre-commit
+      - id: payment-pre-commit
+        name: "payment - lint + format"
+        language: system
+        files: ^apps/backend/payment/
+        pass_filenames: false
+        entry: uv run --directory apps/backend/payment poe pre-commit
+      - id: web-pre-commit
+        name: "frontend - lint + format"
+        language: system
+        files: ^apps/frontend/
+        pass_filenames: false
+        entry: npm --prefix apps/frontend run pre-commit
+
+      - id: api-pre-push
+        name: "api - types + tests unitaires"
+        language: system
+        files: ^apps/backend/api/
+        pass_filenames: false
+        stages: [pre-push]
+        entry: uv run --directory apps/backend/api poe pre-push
+      - id: auth-pre-push
+        name: "auth - types + tests unitaires"
+        language: system
+        files: ^apps/backend/auth/
+        pass_filenames: false
+        stages: [pre-push]
+        entry: uv run --directory apps/backend/auth poe pre-push
+      - id: payment-pre-push
+        name: "payment - types + tests unitaires"
+        language: system
+        files: ^apps/backend/payment/
+        pass_filenames: false
+        stages: [pre-push]
+        entry: uv run --directory apps/backend/payment poe pre-push
+      - id: web-pre-push
+        name: "frontend - types + tests unitaires"
+        language: system
+        files: ^apps/frontend/
+        pass_filenames: false
+        stages: [pre-push]
+        entry: npm --prefix apps/frontend run pre-push
