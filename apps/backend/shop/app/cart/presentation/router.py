@@ -21,5 +21,5 @@ def quote_cart(
     try:
         quote = use_case.execute(items)
     except InvalidCartError as error:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=error.message) from None
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=error.message) from None
     return QuoteResponseMapper.to_response(quote)
