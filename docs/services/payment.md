@@ -10,8 +10,41 @@ Paiement interne, sans donnée bancaire réelle : intention de paiement, confirm
 |---|---|---|
 | GET | `/health` | liveness (200 tant que le processus répond) |
 | GET | `/health/ready` | readiness : 200 si la base répond, 503 sinon |
+| POST | `/payments/intents` | crée une intention (`requires_confirmation`) |
+| GET | `/payments/intents/{id}` | lit une intention par identifiant |
+| GET | `/payments/intents?order_reference=…` | lit l'intention d'une commande |
 
-Les routes de paiement s'ajoutent par tranche (`payment_intent`, `refund`, `ledger`, `webhook`) et se documentent ici.
+Les autres routes s'ajoutent par tranche (`refund`, `ledger`, `webhook`, confirmation, expiration) et se documentent ici.
+
+### Authentification
+Les routes `/payments/*` exigent `Authorization: Bearer <jeton de service>`. Un jeton statique par appelant est lu dans `APP_SERVICE_TOKENS` (JSON `{"shop": "…"}`, alimenté par `PAYMENT_SERVICE_TOKEN_SHOP`). La comparaison est en temps constant. Jeton absent, mal formé ou invalide : même réponse `401 {"detail": "Unauthorized"}`, sans détail. `auth` remplacera ce mécanisme plus tard.
+
+### `POST /payments/intents`
+En-têtes : `Authorization`, `Idempotency-Key` (obligatoire, 8 à 255 caractères). Corps (champs en trop refusés) :
+
+```json
+{"order_reference": "CMD-2026-0001", "amount": 4990, "currency": "EUR"}
+```
+
+- `order_reference` : 1 à 64 caractères parmi `A-Za-z0-9._-`.
+- `amount` : entier de centimes, > 0 et ≤ plafond (`APP_MAX_AMOUNT_CENTS`, 500000 soit 5 000 € par défaut). Décimal, texte ou booléen refusés.
+- `currency` : `EUR` uniquement.
+
+Réponse `201` (corps de lecture ci-dessous) avec une échéance à `APP_INTENT_TTL_MINUTES` (30 par défaut).
+
+| Cas | Statut |
+|---|---|
+| Intention créée | 201 |
+| Même clé + même corps (rejeu) | 200, même intention |
+| Même clé + corps différent | 422 |
+| Autre clé, `order_reference` déjà utilisée | 409 |
+| Corps invalide, plafond dépassé, `Idempotency-Key` absente | 422 |
+| Jeton absent ou invalide | 401 |
+
+Les clés d'idempotence sont propres à l'appelant. Les 422 de validation ne renvoient que `{"detail": "Invalid request", "errors": [{"field", "code"}]}` : jamais la valeur reçue.
+
+### Lecture
+`GET /payments/intents/{id}` et `GET /payments/intents?order_reference=…` renvoient `id`, `order_reference`, `amount`, `currency`, `status`, `refunded_amount`, `expires_at`, `created_at`. Identifiant ou référence inconnus (ou identifiant mal formé) : `404 {"detail": "Not found"}`.
 
 ## Invariants
 - Une même clé d'idempotence produit un même résultat, sans doublon.
@@ -24,13 +57,13 @@ Les routes de paiement s'ajoutent par tranche (`payment_intent`, `refund`, `ledg
 Le service `shop` utilise l'interface `PaymentProvider`. L'adaptateur interne est celui par défaut; un fournisseur externe reste branchable.
 
 ## Structure
-Tranches verticales `app/<feature>/{domain,application,infrastructure,presentation}` (aujourd'hui `health`), configuration dans `app/core`. Migrations Alembic dans `alembic/` (révision initiale vide : le schéma arrive avec les tranches métier). Règle de dépendance vérifiée par `app/__tests__/unit/test_architecture.unit.py`.
+Tranches verticales `app/<feature>/{domain,application,infrastructure,presentation}` (aujourd'hui `health` et `intent`), configuration dans `app/core`. Migrations Alembic dans `alembic/` (`0001` vide, `0002` : tables `payment_intents` et `idempotency_keys`; montants en `BIGINT` de centimes, aucune colonne flottante). Règle de dépendance vérifiée par `app/__tests__/unit/test_architecture.unit.py`.
 
 ## Isolation sur la pile
 - **Base dédiée** : conteneur `payment-db` (Postgres) avec son seul rôle applicatif, sur le réseau interne `payment-data` où seul `payment` se trouve. `shop` ne voit pas cette base et `payment` ne voit pas la base du shop.
 - **Réseau** : `payment` n'est que sur `payment-net` (partagé avec `shop`) et `payment-data`. Il n'est ni sur `app`, ni routé par Traefik, ni publié sur l'hôte : seul `shop` l'appelle (`http://payment:8000`).
 - **Migrations** : le service one-shot `payment-migrate` exécute `alembic upgrade head` avant le démarrage (idempotent).
-- **Vérification** : `sh scripts/check-payment-isolation.sh` (pile lancée) et le scénario e2e `tests/e2e/scenarios/test_payment_isolation.e2e.py`.
+- **Vérification** : `sh scripts/check-payment-isolation.sh` (pile lancée) et les scénarios e2e `tests/e2e/scenarios/` (`test_payment_isolation`, et `test_payment_intents` qui appelle l'API depuis le conteneur `shop`).
 
 ## Configuration
-`APP_SERVICE_NAME`, `APP_ENVIRONMENT`, `APP_DB_HOST`, `APP_DB_PORT`, `APP_DB_NAME`, `APP_DB_USER`, `APP_DB_PASSWORD`. Sur la pile, les valeurs viennent de `PAYMENT_DB_NAME`, `PAYMENT_DB_USER` et `PAYMENT_DB_PASSWORD` (`.env`, modèle dans `.env.example`). Les secrets de signature arrivent aussi par variables d'environnement.
+`APP_SERVICE_NAME`, `APP_ENVIRONMENT`, `APP_DB_HOST`, `APP_DB_PORT`, `APP_DB_NAME`, `APP_DB_USER`, `APP_DB_PASSWORD`, `APP_SERVICE_TOKENS`, `APP_INTENT_TTL_MINUTES`, `APP_MAX_AMOUNT_CENTS`. Sur la pile, les valeurs viennent de `PAYMENT_DB_NAME`, `PAYMENT_DB_USER` `PAYMENT_DB_PASSWORD` et `PAYMENT_SERVICE_TOKEN_SHOP` (`.env`, modèle dans `.env.example`). Les secrets de signature arrivent aussi par variables d'environnement.

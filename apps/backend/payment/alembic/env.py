@@ -2,8 +2,10 @@ from sqlalchemy import create_engine
 
 from alembic import context
 from app.core.config import Settings
+from app.intent.infrastructure.models import idempotency_key_model, payment_intent_model  # noqa: F401
+from app.intent.infrastructure.models.base import Base
 
-target_metadata = None  # les modeles SQLAlchemy s'ajouteront avec les tranches metier
+target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
