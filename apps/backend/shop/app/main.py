@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from sqlalchemy import create_engine
 
+from app.catalog.application.get_product import GetProductUseCase
 from app.catalog.application.list_products import ListProductsUseCase
 from app.catalog.infrastructure.repositories.sqlalchemy_product_repository import (
     SqlAlchemyProductRepository,
@@ -29,6 +30,7 @@ def create_app() -> FastAPI:
     application.state.list_products_use_case = ListProductsUseCase(
         SqlAlchemyProductRepository(engine)
     )
+    application.state.get_product_use_case = GetProductUseCase(SqlAlchemyProductRepository(engine))
     register_error_handlers(application)
     application.include_router(health_router)
     application.include_router(catalog_router)
