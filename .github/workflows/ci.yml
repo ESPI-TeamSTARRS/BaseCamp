@@ -66,8 +66,7 @@ jobs:
       - name: Tests + couverture (seuil 80 %)
         run: npm run test:coverage
       - name: Securite des dependances
-        # Non bloquant tant que Next.js 14 n'est pas monte de version (CVE connues).
-        continue-on-error: true
+        # Bloquant : aucune vulnerabilite critique ou elevee toleree dans les dependances de production.
         run: npm run security
       - name: Build
         run: npm run build

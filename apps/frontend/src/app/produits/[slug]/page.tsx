@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import Image from 'next/image';
@@ -11,14 +12,15 @@ import { fetchProductBySlug } from '../../../lib/shop-api';
 import { buildProductMetaDescription } from '../../../lib/seo';
 
 interface Props {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }
 
 // Le catalogue vient de l'API à chaque requête : rien n'est figé au build.
 export const dynamic = 'force-dynamic';
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const result = await fetchProductBySlug(params.slug);
+  const { slug } = await params;
+  const result = await fetchProductBySlug(slug);
   const product = result.ok ? result.product : null;
   if (!product) return {};
   const description = buildProductMetaDescription(product);
@@ -35,7 +37,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 export default async function ProductPage({ params }: Props) {
-  const result = await fetchProductBySlug(params.slug);
+  const { slug } = await params;
+  const result = await fetchProductBySlug(slug);
   if (!result.ok) {
     return (
       <section className="mx-auto max-w-6xl px-4 py-12">
@@ -118,9 +121,9 @@ export default async function ProductPage({ params }: Props) {
 
       <section className="mx-auto max-w-6xl px-4 py-8 pb-28 sm:pb-12">
         <nav aria-label="Fil d'Ariane" className="mb-4 text-sm text-granite/60">
-          <a href="/" className="hover:text-forest">
+          <Link href="/" className="hover:text-forest">
             Accueil
-          </a>{' '}
+          </Link>{' '}
           <span className="mx-1">/</span>
           <a href={`/categories/${product.category}`} className="hover:text-forest">
             {categoryLabel}
