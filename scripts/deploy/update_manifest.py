@@ -4,15 +4,17 @@
 Chaque image publiee est decrite par un petit fichier JSON (`image-<service>.json`) :
     {"service": "shop", "version": "0.1.3", "image": "ghcr.io/o/basecamp-shop@sha256:<64 hex>"}
 
-Utilisation :
-    update_manifest.py <manifeste.json> <image-*.json ...>   ecrit le manifeste a jour sur la sortie
-    standard et affiche sur la sortie d'erreur le resume des changements (une ligne par composant).
+Utilisation (aucun chemin en argument : tout arrive sur l'entree standard, un document JSON par
+ligne, d'abord le manifeste de base puis les images) :
+    jq -c . base.json image-*.json | update_manifest.py
+ecrit le manifeste a jour sur la sortie standard et affiche sur la sortie d'erreur le resume des
+changements (une ligne par composant).
 
 Seuls les composants dont l'image change sont modifies. Le resultat est valide par manifest.py
 avant d'etre rendu : un fichier d'image mal forme ne peut pas produire un manifeste invalide.
 Code de sortie 0 si au moins un composant change, 10 si rien ne change, 1 en cas d'erreur.
 
-    update_manifest.py describe <ancien.json> <nouveau.json>   resume des differences, une ligne par composant
+    jq -c . ancien.json nouveau.json | update_manifest.py describe   resume des differences
 """
 
 from __future__ import annotations
@@ -52,24 +54,30 @@ def describe(old: dict, new: dict) -> list[str]:
     ]
 
 
+def read_documents() -> list[dict]:
+    """Documents JSON de l'entree standard, un par ligne (JSON Lines)."""
+    return [json.loads(line) for line in sys.stdin.read().splitlines() if line.strip()]
+
+
 def main(argv: list[str]) -> int:
-    if len(argv) == 4 and argv[1] == "describe":
-        try:
-            old = manifest.load(Path(argv[2]).read_text(encoding="utf-8"))
-            new = manifest.load(Path(argv[3]).read_text(encoding="utf-8"))
-        except (OSError, ValueError) as exc:
-            print(f"lecture impossible : {exc}", file=sys.stderr)
-            return 1
-        print("\n".join(describe(old, new)))
-        return 0
-    if len(argv) < 3:
+    describing = len(argv) == 2 and argv[1] == "describe"
+    if len(argv) != 1 and not describing:
         print(__doc__, file=sys.stderr)
         return 1
     try:
-        current = manifest.load(Path(argv[1]).read_text(encoding="utf-8"))
-        updates = [json.loads(Path(p).read_text(encoding="utf-8")) for p in argv[2:]]
-        merged, changes = merge(current, updates)
-    except (OSError, ValueError) as exc:
+        documents = read_documents()
+        if describing:
+            if len(documents) != 2:
+                raise manifest.ManifestError("deux manifestes attendus (ancien puis nouveau)")
+            for document in documents:
+                manifest.validate(document)
+            print("\n".join(describe(documents[0], documents[1])))
+            return 0
+        if len(documents) < 2:
+            raise manifest.ManifestError("un manifeste puis au moins une image attendus")
+        manifest.validate(documents[0])
+        merged, changes = merge(documents[0], documents[1:])
+    except ValueError as exc:
         print(f"mise a jour impossible : {exc}", file=sys.stderr)
         return 1
     if not changes:

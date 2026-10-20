@@ -1,4 +1,5 @@
 import importlib.util
+import io
 import json
 from pathlib import Path
 
@@ -57,26 +58,39 @@ def test_refuse_une_image_par_tag() -> None:
         update.merge(current(), [bad])
 
 
-def test_cli_code_10_sans_changement(tmp_path: Path) -> None:
-    base = tmp_path / "m.json"
-    base.write_text(json.dumps(current()), encoding="utf-8")
-    img = tmp_path / "image-shop.json"
-    img.write_text(json.dumps({"service": "shop", **current()["services"]["shop"]}), encoding="utf-8")
-    assert update.main(["u", str(base), str(img)]) == update.NO_CHANGE
+def _stdin(monkeypatch: pytest.MonkeyPatch, *documents: dict) -> None:
+    monkeypatch.setattr("sys.stdin", io.StringIO("\n".join(json.dumps(d) for d in documents)))
 
 
-def test_cli_ecrit_le_manifeste(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    base = tmp_path / "m.json"
-    base.write_text(json.dumps(current()), encoding="utf-8")
-    img = tmp_path / "image-shop.json"
-    img.write_text(
-        json.dumps({"service": "shop", "version": "0.2.0", "image": f"ghcr.io/o/basecamp-shop@{E}"}),
-        encoding="utf-8",
-    )
-    assert update.main(["u", str(base), str(img)]) == 0
+def test_cli_code_10_sans_changement(monkeypatch: pytest.MonkeyPatch) -> None:
+    _stdin(monkeypatch, current(), {"service": "shop", **current()["services"]["shop"]})
+    assert update.main(["u"]) == update.NO_CHANGE
+
+
+def test_cli_ecrit_le_manifeste(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    image = {"service": "shop", "version": "0.2.0", "image": f"ghcr.io/o/basecamp-shop@{E}"}
+    _stdin(monkeypatch, current(), image)
+    assert update.main(["u"]) == 0
     out = capsys.readouterr()
     assert json.loads(out.out)["services"]["shop"]["version"] == "0.2.0"
     assert "shop 0.1.0 -> 0.2.0" in out.err
+
+
+def test_cli_refuse_les_arguments_de_chemin() -> None:
+    assert update.main(["u", "/etc/passwd"]) == 1
+
+
+def test_cli_describe(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    new = json.loads(json.dumps(current()))
+    new["services"]["auth"] = {"version": "0.3.0", "image": f"ghcr.io/o/basecamp-auth@{E}"}
+    _stdin(monkeypatch, current(), new)
+    assert update.main(["u", "describe"]) == 0
+    assert capsys.readouterr().out.strip() == "auth 0.1.0 -> 0.3.0"
+
+
+def test_cli_entree_invalide(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.stdin", io.StringIO("{pas du json"))
+    assert update.main(["u"]) == 1
 
 
 def test_le_manifeste_versionne_est_valide() -> None:

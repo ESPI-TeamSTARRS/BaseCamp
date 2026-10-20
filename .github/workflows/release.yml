@@ -243,14 +243,14 @@ jobs:
           fi
 
           set +e
-          python3 scripts/deploy/update_manifest.py "$RUNNER_TEMP/base.json" "$RUNNER_TEMP"/images/image-*.json > "$RUNNER_TEMP/new.json"
+          jq -c . "$RUNNER_TEMP/base.json" "$RUNNER_TEMP"/images/image-*.json | python3 scripts/deploy/update_manifest.py > "$RUNNER_TEMP/new.json"
           rc=$?
           set -e
           if [[ "$rc" == 10 ]]; then echo "Manifeste deja a jour."; exit 0; fi
           [[ "$rc" == 0 ]] || exit "$rc"
 
           # Differences par rapport a main : titre et description de la PR.
-          python3 scripts/deploy/update_manifest.py describe deploy/manifest.json "$RUNNER_TEMP/new.json" > "$RUNNER_TEMP/changes.txt"
+          jq -c . deploy/manifest.json "$RUNNER_TEMP/new.json" | python3 scripts/deploy/update_manifest.py describe > "$RUNNER_TEMP/changes.txt"
           title="chore(release): deploie $(paste -sd, "$RUNNER_TEMP/changes.txt" | sed 's/ -> /->/g; s/,/, /g')"
           {
             echo "Mise a jour du manifeste de deploiement (images par digest, tests et scan Trivy passes) :"
