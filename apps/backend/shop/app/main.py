@@ -1,6 +1,11 @@
 from fastapi import FastAPI
 from sqlalchemy import create_engine
 
+from app.cart.application.quote_cart import QuoteCartUseCase
+from app.cart.infrastructure.repositories.sqlalchemy_cart_product_reader import (
+    SqlAlchemyCartProductReader,
+)
+from app.cart.presentation.router import router as cart_router
 from app.catalog.application.get_product import GetProductUseCase
 from app.catalog.application.list_products import ListProductsUseCase
 from app.catalog.infrastructure.repositories.sqlalchemy_product_repository import (
@@ -31,9 +36,11 @@ def create_app() -> FastAPI:
         SqlAlchemyProductRepository(engine)
     )
     application.state.get_product_use_case = GetProductUseCase(SqlAlchemyProductRepository(engine))
+    application.state.quote_cart_use_case = QuoteCartUseCase(SqlAlchemyCartProductReader(engine))
     register_error_handlers(application)
     application.include_router(health_router)
     application.include_router(catalog_router)
+    application.include_router(cart_router)
     return application
 
 
