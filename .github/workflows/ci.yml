@@ -120,6 +120,14 @@ jobs:
           tags: basecamp-shop
           cache-from: type=gha,scope=shop
           cache-to: type=gha,scope=shop,mode=max
+      - name: Image payment (cache GHA)
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/backend/payment
+          load: true
+          tags: basecamp-payment
+          cache-from: type=gha,scope=payment
+          cache-to: type=gha,scope=payment,mode=max
       - name: Image front (cache GHA)
         uses: docker/build-push-action@v6
         with:
@@ -131,8 +139,8 @@ jobs:
             NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_dummy
           cache-from: type=gha,scope=front
           cache-to: type=gha,scope=front,mode=max
-      - name: Pile minimale (Traefik, front, shop, Postgres) healthy
-        run: docker compose up -d --no-build --wait traefik
+      - name: Pile minimale (Traefik, front, shop, payment et leurs bases) healthy
+        run: docker compose up -d --no-build --wait --wait-timeout 120 traefik payment
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
@@ -142,6 +150,13 @@ jobs:
       - name: Scenarios e2e contre Traefik
         run: uv run poe test:e2e
         working-directory: apps/backend/shop
+      - name: Isolation de payment (reseau, bases, migrations, readiness)
+        run: sh scripts/check-payment-isolation.sh
+      - run: uv sync --frozen
+        working-directory: apps/backend/payment
+      - name: Scenarios e2e de payment depuis l'exterieur
+        run: uv run poe test:e2e
+        working-directory: apps/backend/payment
       - name: Logs des conteneurs
         if: failure()
         run: docker compose logs --no-color > compose-logs.txt
