@@ -37,7 +37,7 @@ La configuration se lit dans les variables d'environnement préfixées `APP_` (v
 
 ## Pile complète en local (Docker Compose)
 
-Le fichier `docker-compose.yml` (racine) démarre : Traefik, le front, `shop` (avec sa migration Alembic), Postgres, SeaweedFS (stockage objet compatible S3, bucket `product-images` créé au démarrage) et Mailpit.
+Le fichier `docker-compose.yml` (racine) démarre : Traefik, le front, `shop` (avec sa migration Alembic), Postgres, `payment` (avec sa migration et son Postgres dédié, isolé : ni routé ni publié), SeaweedFS (stockage objet compatible S3, bucket `product-images` créé au démarrage) et Mailpit.
 
 ```bash
 cp .env.example .env          # valeurs factices, .env est ignoré par Git
