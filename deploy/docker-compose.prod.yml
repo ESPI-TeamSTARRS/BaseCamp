@@ -160,6 +160,7 @@ services:
       APP_DB_NAME: ${PAYMENT_DB_NAME:-payment}
       APP_DB_USER: ${PAYMENT_DB_USER:-payment}
       APP_DB_PASSWORD: ${PAYMENT_DB_PASSWORD:?voir deploy/prod.env.example}
+      APP_LOG_PSEUDONYM_KEY: ${LOG_PSEUDONYM_KEY:?voir deploy/prod.env.example}
       APP_SERVICE_TOKENS: '{"shop": "${PAYMENT_SERVICE_TOKEN_SHOP:?voir deploy/prod.env.example}"}'
     networks: [payment-data]
     depends_on:

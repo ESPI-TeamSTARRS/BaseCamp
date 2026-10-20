@@ -53,6 +53,23 @@ Les clés d'idempotence sont propres à l'appelant. Les 422 de validation ne ren
 - Le grand livre est en double écriture et cohérent avec les transactions.
 - Un webhook sortant est signé (HMAC et horodatage); un événement rejoué est ignoré à la réception.
 
+## Événements métier
+Format et règles communes : [journalisation métier](../development/logging.md). Chaque ligne JSON porte le `correlation_id` (en-tête `X-Correlation-ID` repris ou généré); l'appelant doit le transmettre (`outbound_headers()`) pour que la corrélation traverse les services. Ni jeton, ni clé d'idempotence, ni donnée de carte ne sont journalisés.
+
+| Événement | Outcome | Reason | Détails |
+|---|---|---|---|
+| `payment.service_authenticated` | success | | acteur `service` = appelant |
+| `payment.service_authenticated` | denied | `invalid_token` | `client_ip` (premier maillon valide de `X-Forwarded-For`, sinon adresse de la connexion) |
+| `payment.intent_created` | success | | ressource `payment_intent`, `amount_cents`, `currency`, acteur `service` |
+| `payment.intent_replayed` | success | | rejeu idempotent identique |
+| `payment.intent_rejected` | denied | `amount_exceeds_limit`, `idempotency_key_reused`, `duplicate_order_reference` | acteur `service` |
+| `payment.intent_read` | success | | ressource `payment_intent`, `lookup` = `id` ou `order` |
+| `payment.intent_read` | denied | `not_found` | aucune valeur demandée n'est journalisée |
+| `service.request_rejected` | denied | `invalid_request` | validation, sans la valeur reçue |
+| `service.unhandled_error` | error | `internal_error` | |
+
+Les événements des tranches à venir (confirmation, remboursement, webhook) s'ajoutent ici avec leur ticket.
+
 ## Intégration boutique
 Le service `shop` utilise l'interface `PaymentProvider`. L'adaptateur interne est celui par défaut; un fournisseur externe reste branchable.
 
@@ -66,4 +83,4 @@ Tranches verticales `app/<feature>/{domain,application,infrastructure,presentati
 - **Vérification** : `sh scripts/check-payment-isolation.sh` (pile lancée) et les scénarios e2e `tests/e2e/scenarios/` (`test_payment_isolation`, et `test_payment_intents` qui appelle l'API depuis le conteneur `shop`).
 
 ## Configuration
-`APP_SERVICE_NAME`, `APP_ENVIRONMENT`, `APP_DB_HOST`, `APP_DB_PORT`, `APP_DB_NAME`, `APP_DB_USER`, `APP_DB_PASSWORD`, `APP_SERVICE_TOKENS`, `APP_INTENT_TTL_MINUTES`, `APP_MAX_AMOUNT_CENTS`. Sur la pile, les valeurs viennent de `PAYMENT_DB_NAME`, `PAYMENT_DB_USER` `PAYMENT_DB_PASSWORD` et `PAYMENT_SERVICE_TOKEN_SHOP` (`.env`, modèle dans `.env.example`). Les secrets de signature arrivent aussi par variables d'environnement.
+`APP_SERVICE_NAME`, `APP_ENVIRONMENT`, `APP_LOG_PSEUDONYM_KEY` (clé HMAC des empreintes d'email dans les logs, obligatoire hors `dev` et `local`), `APP_DB_HOST`, `APP_DB_PORT`, `APP_DB_NAME`, `APP_DB_USER`, `APP_DB_PASSWORD`, `APP_SERVICE_TOKENS`, `APP_INTENT_TTL_MINUTES`, `APP_MAX_AMOUNT_CENTS`. Sur la pile, les valeurs viennent de `PAYMENT_DB_NAME`, `PAYMENT_DB_USER` `PAYMENT_DB_PASSWORD` et `PAYMENT_SERVICE_TOKEN_SHOP` (`.env`, modèle dans `.env.example`). Les secrets de signature arrivent aussi par variables d'environnement.
