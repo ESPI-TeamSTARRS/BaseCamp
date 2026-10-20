@@ -24,19 +24,17 @@ async def _validation_error(_: Request, error: Exception) -> JSONResponse:
         for item in validation_error.errors()
     ]
     return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        status_code=422,
         content={"detail": "Invalid request", "errors": fields},
     )
 
 
 async def _key_reused(_: Request, __: Exception) -> JSONResponse:
-    return _json(
-        status.HTTP_422_UNPROCESSABLE_ENTITY, "Idempotency key already used with another request"
-    )
+    return _json(422, "Idempotency key already used with another request")
 
 
 async def _amount_too_high(_: Request, __: Exception) -> JSONResponse:
-    return _json(status.HTTP_422_UNPROCESSABLE_ENTITY, "Amount above the allowed limit")
+    return _json(422, "Amount above the allowed limit")
 
 
 async def _duplicate_order(_: Request, __: Exception) -> JSONResponse:

@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import Engine, StaticPool, create_engine
+from sqlalchemy import Engine, StaticPool, create_engine, event
 
 from app.intent.domain.entities.idempotency_record import IdempotencyRecord
 from app.intent.domain.entities.payment_intent import PaymentIntent
@@ -23,6 +23,10 @@ NOW = datetime(2026, 10, 20, 9, 0, tzinfo=UTC)
 def engine() -> Engine:
     engine = create_engine(
         "sqlite+pysqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False}
+    )
+    # SQLite n'applique pas les clés étrangères par défaut : comme Postgres, on les impose.
+    event.listen(
+        engine, "connect", lambda connection, _: connection.execute("PRAGMA foreign_keys=ON")
     )
     Base.metadata.create_all(engine)
     return engine

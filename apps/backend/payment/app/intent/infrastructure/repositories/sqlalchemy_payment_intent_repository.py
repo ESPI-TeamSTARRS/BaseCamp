@@ -37,40 +37,48 @@ def _to_entity(model: PaymentIntentModel) -> PaymentIntent:
     )
 
 
+def _to_model(intent: PaymentIntent) -> PaymentIntentModel:
+    return PaymentIntentModel(
+        id=intent.id,
+        order_reference=intent.order_reference,
+        amount=intent.amount.cents,
+        currency=intent.currency.value,
+        status=intent.status.value,
+        refunded_amount=intent.refunded_amount,
+        expires_at=intent.expires_at,
+        created_at=intent.created_at,
+    )
+
+
+def _to_idempotency_model(record: IdempotencyRecord, created_at: datetime) -> IdempotencyKeyModel:
+    return IdempotencyKeyModel(
+        caller=record.caller,
+        key=record.key,
+        request_hash=record.request_hash,
+        intent_id=record.intent_id,
+        created_at=created_at,
+    )
+
+
 class SqlAlchemyPaymentIntentRepository(PaymentIntentRepository):
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
 
     def add(self, intent: PaymentIntent, record: IdempotencyRecord) -> None:
         with Session(self._engine) as session:
-            session.add(
-                PaymentIntentModel(
-                    id=intent.id,
-                    order_reference=intent.order_reference,
-                    amount=intent.amount.cents,
-                    currency=intent.currency.value,
-                    status=intent.status.value,
-                    refunded_amount=intent.refunded_amount,
-                    expires_at=intent.expires_at,
-                    created_at=intent.created_at,
-                )
-            )
-            session.add(
-                IdempotencyKeyModel(
-                    caller=record.caller,
-                    key=record.key,
-                    request_hash=record.request_hash,
-                    intent_id=record.intent_id,
-                    created_at=intent.created_at,
-                )
-            )
+            session.add(_to_model(intent))
             try:
+                session.flush()  # l'intention doit exister avant la clé qui la référence
+                session.add(_to_idempotency_model(record, intent.created_at))
                 session.commit()
             except IntegrityError as error:
                 session.rollback()
-                if "order_reference" in str(error.orig):
+                detail = str(error.orig)
+                if "order_reference" in detail:
                     raise DuplicateOrderReferenceError from None
-                raise IdempotencyRaceError from None
+                if "idempotency_keys" in detail:
+                    raise IdempotencyRaceError from None
+                raise
 
     def find_by_idempotency(
         self, caller: str, key: str
