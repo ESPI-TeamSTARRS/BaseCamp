@@ -33,6 +33,8 @@ const nextConfig = {
   reactStrictMode: true,
   output: 'standalone', // requis par le conteneur non-root multi-stage (voir Dockerfile)
   images: {
+    // Les visuels viennent du bucket via la passerelle (/media) : pas d'optimiseur Next (SVG, pas de domaine externe).
+    unoptimized: true,
     remotePatterns: [{ protocol: 'https', hostname: '**' }],
   },
   async headers() {

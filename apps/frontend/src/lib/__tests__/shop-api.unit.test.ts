@@ -12,7 +12,14 @@ const apiProduct = {
   description: 'Description',
   thumbnail_url: '/media/tente-a-1.svg',
   image_urls: ['/media/tente-a-1.svg', '/media/tente-a-2.svg'],
-  specs: { weight_grams: 1480, waterproofing_mm: 3000, comfort_temp_c: -5, seasons: 3, capacity_liters: null, material: 'Nylon' },
+  specs: {
+    weight_grams: 1480,
+    waterproofing_mm: 3000,
+    comfort_temp_c: -5,
+    seasons: 3,
+    capacity_liters: null,
+    material: 'Nylon',
+  },
   rating_value: 4.8,
   rating_count: 132,
   availability: 'in_stock',
@@ -33,7 +40,12 @@ describe('mapApiProduct', () => {
     expect(product.priceEur).toBe(329);
     expect(product.compareAtPriceEur).toBe(389);
     expect(product.images).toEqual(['/media/tente-a-1.svg', '/media/tente-a-2.svg']);
-    expect(product.specs).toMatchObject({ weightGrams: 1480, waterproofingMm: 3000, comfortTempC: -5, seasons: 3 });
+    expect(product.specs).toMatchObject({
+      weightGrams: 1480,
+      waterproofingMm: 3000,
+      comfortTempC: -5,
+      seasons: 3,
+    });
     expect(product.specs.capacityLiters).toBeUndefined();
     expect(product.ratingValue).toBe(4.8);
     expect(product.availability).toBe('in_stock');

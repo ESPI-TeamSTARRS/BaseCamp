@@ -1,26 +1,34 @@
 import type { MetadataRoute } from 'next';
-import { products, categoryLabels } from '../lib/products';
+import { categorySlugs } from '../lib/categories';
+import { fetchAllProducts } from '../lib/shop-api';
 
-export default function sitemap(): MetadataRoute.Sitemap {
+// Généré à la demande : le catalogue vient de l'API et n'existe pas au moment du build.
+export const dynamic = 'force-dynamic';
+
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://basecamp-outdoor.fr';
 
   const staticRoutes: MetadataRoute.Sitemap = [
     { url: siteUrl, lastModified: new Date(), changeFrequency: 'daily', priority: 1 },
   ];
 
-  const categoryRoutes: MetadataRoute.Sitemap = Object.keys(categoryLabels).map((slug) => ({
+  const categoryRoutes: MetadataRoute.Sitemap = categorySlugs.map((slug) => ({
     url: `${siteUrl}/categories/${slug}`,
     lastModified: new Date(),
     changeFrequency: 'weekly',
     priority: 0.8,
   }));
 
-  const productRoutes: MetadataRoute.Sitemap = products.map((product) => ({
-    url: `${siteUrl}/produits/${product.slug}`,
-    lastModified: new Date(),
-    changeFrequency: 'weekly',
-    priority: 0.7,
-  }));
+  // Si l'API est arrêtée, le sitemap reste valide sans les fiches produit.
+  const catalog = await fetchAllProducts();
+  const productRoutes: MetadataRoute.Sitemap = catalog.ok
+    ? catalog.products.map((product) => ({
+        url: `${siteUrl}/produits/${product.slug}`,
+        lastModified: new Date(),
+        changeFrequency: 'weekly',
+        priority: 0.7,
+      }))
+    : [];
 
   return [...staticRoutes, ...categoryRoutes, ...productRoutes];
 }

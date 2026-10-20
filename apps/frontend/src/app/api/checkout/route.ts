@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { stripe } from '../../../lib/stripe';
 import { CheckoutRequestSchema } from '../../../lib/validations';
-import { products } from '../../../lib/products';
+import { fetchAllProducts } from '../../../lib/shop-api';
 import { rateLimit, getClientIp } from '../../../lib/rate-limit';
 
 export async function POST(req: Request) {
@@ -36,23 +36,33 @@ export async function POST(req: Request) {
 
     // Chaque productId doit exister dans le catalogue serveur avant toute construction de lineItems.
     // Le message d'erreur ne doit jamais refléter l'entrée brute du client (OWASP A03: Injection).
-    const hasUnknownLine = lines.some((line) => !products.some((p) => p.id === line.productId));
+    const catalog = await fetchAllProducts();
+    if (!catalog.ok) {
+      return NextResponse.json({ error: 'Catalogue momentanément indisponible.' }, { status: 503 });
+    }
+    const productsById = new Map(catalog.products.map((p) => [p.id, p]));
+    const hasUnknownLine = lines.some((line) => !productsById.has(line.productId));
     if (hasUnknownLine) {
       return NextResponse.json(
         { error: 'Un ou plusieurs produits du panier sont introuvables.' },
         { status: 400 }
       );
     }
+    const soldOut = lines.some((line) => productsById.get(line.productId)?.availability === 'out_of_stock');
+    if (soldOut) {
+      return NextResponse.json({ error: 'Un produit du panier est en rupture de stock.' }, { status: 409 });
+    }
 
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
     // Les prix proviennent exclusivement de notre catalogue serveur (jamais du client) pour empêcher toute falsification du montant.
     const lineItems = lines.map((line) => {
-      const product = products.find((p) => p.id === line.productId)!;
+      const product = productsById.get(line.productId)!;
       return {
         price_data: {
           currency: 'eur',
           product_data: {
             name: product.name,
-            images: product.images.length ? [product.images[0]] : undefined,
+            images: product.images.length ? [`${siteUrl}${product.images[0]}`] : undefined,
           },
           unit_amount: Math.round(product.priceEur * 100),
         },
@@ -60,7 +70,6 @@ export async function POST(req: Request) {
       };
     });
 
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
       line_items: lineItems,

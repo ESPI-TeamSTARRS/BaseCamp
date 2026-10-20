@@ -1,27 +1,31 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { products } from '../lib/products';
+import {
+  addLine,
+  removeLine,
+  sanitizeStoredLines,
+  setLineQuantity,
+  toCartProduct,
+  type CartLine,
+  type CartProduct,
+} from '../lib/cart-lines';
 import type { Product } from '../types/product';
 
 export const FREE_SHIPPING_THRESHOLD_EUR = 80;
 export const STANDARD_SHIPPING_EUR = 5.9;
-
-interface CartLine {
-  productId: string;
-  quantity: number;
-}
 
 interface CartContextValue {
   lines: CartLine[];
   isOpen: boolean;
   openCart: () => void;
   closeCart: () => void;
-  addItem: (productId: string, quantity?: number) => void;
+  /** Ajoute un produit ; sans effet si le produit est en rupture de stock. */
+  addItem: (product: Product | CartProduct, quantity?: number) => void;
   removeItem: (productId: string) => void;
   setQuantity: (productId: string, quantity: number) => void;
   itemCount: number;
-  items: Array<{ product: Product; quantity: number; lineTotalEur: number }>;
+  items: Array<{ product: CartProduct; quantity: number; lineTotalEur: number }>;
   subtotalEur: number;
   shippingEur: number;
   totalEur: number;
@@ -29,7 +33,11 @@ interface CartContextValue {
 }
 
 const CartContext = createContext<CartContextValue | null>(null);
-const STORAGE_KEY = 'basecamp-outdoor-cart';
+const STORAGE_KEY = 'basecamp-outdoor-cart-v2';
+
+function isFullProduct(product: Product | CartProduct): product is Product {
+  return 'description' in product;
+}
 
 export function CartProvider({ children }: { children: ReactNode }) {
   const [lines, setLines] = useState<CartLine[]>([]);
@@ -38,9 +46,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     try {
       const stored = window.localStorage.getItem(STORAGE_KEY);
-      if (stored) setLines(JSON.parse(stored));
+      if (stored) setLines(sanitizeStoredLines(JSON.parse(stored)));
     } catch {
-      // stockage indisponible : le panier reste simplement vide pour cette session
+      // stockage indisponible ou corrompu : le panier reste simplement vide pour cette session
     }
   }, []);
 
@@ -52,40 +60,23 @@ export function CartProvider({ children }: { children: ReactNode }) {
     }
   }, [lines]);
 
-  const addItem = useCallback((productId: string, quantity = 1) => {
-    setLines((prev) => {
-      const existing = prev.find((l) => l.productId === productId);
-      if (existing) {
-        return prev.map((l) =>
-          l.productId === productId ? { ...l, quantity: Math.min(l.quantity + quantity, 10) } : l
-        );
-      }
-      return [...prev, { productId, quantity }];
-    });
+  const addItem = useCallback((product: Product | CartProduct, quantity = 1) => {
+    if (product.availability === 'out_of_stock') return;
+    const cartProduct = isFullProduct(product) ? toCartProduct(product) : product;
+    setLines((prev) => addLine(prev, cartProduct, quantity));
     setIsOpen(true);
   }, []);
 
   const removeItem = useCallback((productId: string) => {
-    setLines((prev) => prev.filter((l) => l.productId !== productId));
+    setLines((prev) => removeLine(prev, productId));
   }, []);
 
   const setQuantity = useCallback((productId: string, quantity: number) => {
-    setLines((prev) =>
-      prev
-        .map((l) => (l.productId === productId ? { ...l, quantity: Math.max(1, Math.min(quantity, 10)) } : l))
-        .filter((l) => l.quantity > 0)
-    );
+    setLines((prev) => setLineQuantity(prev, productId, quantity));
   }, []);
 
   const items = useMemo(
-    () =>
-      lines
-        .map((line) => {
-          const product = products.find((p) => p.id === line.productId);
-          if (!product) return null;
-          return { product, quantity: line.quantity, lineTotalEur: product.priceEur * line.quantity };
-        })
-        .filter((v): v is { product: Product; quantity: number; lineTotalEur: number } => v !== null),
+    () => lines.map((line) => ({ ...line, lineTotalEur: line.product.priceEur * line.quantity })),
     [lines]
   );
 

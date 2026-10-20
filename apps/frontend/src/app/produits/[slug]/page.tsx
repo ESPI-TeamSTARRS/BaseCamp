@@ -5,19 +5,21 @@ import { Star, Truck, ShieldCheck, RotateCcw } from 'lucide-react';
 import { TechBadgeList } from '../../../components/TechBadge';
 import { JsonLd } from '../../../components/JsonLd';
 import { AddToCartButton } from '../../../components/AddToCartButton';
-import { getProductBySlug, products, categoryLabels } from '../../../lib/products';
+import { CatalogUnavailable } from '../../../components/CatalogUnavailable';
+import { categoryLabels } from '../../../lib/categories';
+import { fetchProductBySlug } from '../../../lib/shop-api';
 import { buildProductMetaDescription } from '../../../lib/seo';
 
 interface Props {
   params: { slug: string };
 }
 
-export function generateStaticParams() {
-  return products.map((p) => ({ slug: p.slug }));
-}
+// Le catalogue vient de l'API à chaque requête : rien n'est figé au build.
+export const dynamic = 'force-dynamic';
 
-export function generateMetadata({ params }: Props): Metadata {
-  const product = getProductBySlug(params.slug);
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const result = await fetchProductBySlug(params.slug);
+  const product = result.ok ? result.product : null;
   if (!product) return {};
   const description = buildProductMetaDescription(product);
   return {
@@ -32,8 +34,16 @@ export function generateMetadata({ params }: Props): Metadata {
   };
 }
 
-export default function ProductPage({ params }: Props) {
-  const product = getProductBySlug(params.slug);
+export default async function ProductPage({ params }: Props) {
+  const result = await fetchProductBySlug(params.slug);
+  if (!result.ok) {
+    return (
+      <section className="mx-auto max-w-6xl px-4 py-12">
+        <CatalogUnavailable />
+      </section>
+    );
+  }
+  const product = result.product;
   if (!product) notFound();
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://basecamp-outdoor.fr';
@@ -81,7 +91,10 @@ export default function ProductPage({ params }: Props) {
             url: `${siteUrl}/produits/${product.slug}`,
             priceCurrency: 'EUR',
             price: product.priceEur.toFixed(2),
-            availability: product.stock > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+            availability:
+              product.availability !== 'out_of_stock'
+                ? 'https://schema.org/InStock'
+                : 'https://schema.org/OutOfStock',
             shippingDetails: {
               '@type': 'OfferShippingDetails',
               shippingRate: { '@type': 'MonetaryAmount', value: '0.00', currency: 'EUR' },
@@ -158,7 +171,7 @@ export default function ProductPage({ params }: Props) {
             <p className="text-granite/70">{product.shortDescription}</p>
 
             <div className="hidden sm:block">
-              <AddToCartButton productId={product.id} inStock={product.stock > 0} />
+              <AddToCartButton product={product} />
             </div>
 
             <ul className="mt-2 space-y-2 text-sm text-granite/70">
@@ -193,7 +206,7 @@ export default function ProductPage({ params }: Props) {
           <span className="block text-lg font-bold text-forest-deep">{product.priceEur.toFixed(2)} €</span>
         </div>
         <div className="flex-1">
-          <AddToCartButton productId={product.id} inStock={product.stock > 0} />
+          <AddToCartButton product={product} />
         </div>
       </div>
     </>

@@ -1,5 +1,7 @@
 export type ProductCategory = 'tentes' | 'couchage' | 'sacs-a-dos' | 'cuisine' | 'securite';
 
+export type Availability = 'in_stock' | 'low_stock' | 'out_of_stock';
+
 export interface TechSpecs {
   weightGrams?: number;
   waterproofingMm?: number;
@@ -9,6 +11,7 @@ export interface TechSpecs {
   material?: string;
 }
 
+/** Produit tel que renvoyé par l'API shop (prix converti des centimes en euros). */
 export interface Product {
   id: string;
   slug: string;
@@ -20,8 +23,7 @@ export interface Product {
   description: string;
   images: string[];
   specs: TechSpecs;
-  stock: number;
+  availability: Availability;
   ratingValue: number;
   ratingCount: number;
-  stripePriceId?: string;
 }

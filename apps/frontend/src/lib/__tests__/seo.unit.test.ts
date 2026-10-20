@@ -12,7 +12,7 @@ const baseProduct: Product = {
   description: 'Description longue',
   images: [],
   specs: { weightGrams: 850, comfortTempC: -5, waterproofingMm: 3000 },
-  stock: 5,
+  availability: 'in_stock',
   ratingValue: 4.5,
   ratingCount: 10,
 };
