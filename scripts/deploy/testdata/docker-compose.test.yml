@@ -1,0 +1,14 @@
+# Pile minimale du test de bascule (scripts/deploy/test-deploy.sh) : un seul composant `shop`,
+# dont l'image est choisie par digest comme en production.
+name: deploytest
+
+services:
+  shop:
+    image: ${SHOP_IMAGE:?reference par digest}
+    restart: "no"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 1s
+      timeout: 2s
+      retries: 5
+      start_period: 1s

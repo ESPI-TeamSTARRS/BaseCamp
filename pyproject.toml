@@ -50,4 +50,6 @@ security     = ["shop-security", "auth-security", "payment-security", "web-secur
 "pre-commit" = ["shop-pre-commit", "auth-pre-commit", "payment-pre-commit", "web-pre-commit"]
 "pre-push"   = ["shop-pre-push", "auth-pre-push", "payment-pre-push", "web-pre-push"]
 tools-test   = "pytest scripts"
+# Bascule et retour arriere reels (docker requis) : panne volontaire contre un registre local.
+deploy-test  = "bash scripts/deploy/test-deploy.sh"
 ci           = ["quality", "test", "security", "tools-test"]
