@@ -122,14 +122,8 @@ jobs:
           tags: basecamp-shop
           cache-from: type=gha,scope=shop
           cache-to: type=gha,scope=shop,mode=max
-      - name: Image auth (cache GHA)
-        uses: docker/build-push-action@v6
-        with:
-          context: apps/backend/auth
-          load: true
-          tags: basecamp-auth
-          cache-from: type=gha,scope=auth
-          cache-to: type=gha,scope=auth,mode=max
+      - name: Image auth (build compose, sans action tierce)
+        run: docker compose build auth
       - name: Image payment (cache GHA)
         uses: docker/build-push-action@v6
         with:
@@ -162,10 +156,10 @@ jobs:
       - name: Scenarios e2e contre Traefik
         run: uv run poe test:e2e
         working-directory: apps/backend/shop
-      - run: uv sync --frozen
+      - run: uv sync --frozen --no-build
         working-directory: apps/backend/auth
       - name: Scenarios e2e auth contre Traefik
-        run: uv run poe test:e2e
+        run: uv run --frozen --no-build poe test:e2e
         working-directory: apps/backend/auth
       - name: Isolation de payment (reseau, bases, migrations, readiness)
         run: sh scripts/check-payment-isolation.sh
