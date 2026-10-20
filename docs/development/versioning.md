@@ -1,6 +1,6 @@
 # Versionnement
 
-Chaque composant a sa propre version semver : `shop`, `auth`, `payment` et `frontend`. Elle est calculée automatiquement par [python-semantic-release](https://python-semantic-release.readthedocs.io) (version épinglée dans `.github/workflows/release.yml`) à partir des messages de commit de `main`.
+Chaque composant a sa propre version semver : `shop`, `auth`, `payment` et `frontend`. Elle est calculée automatiquement par [python-semantic-release](https://python-semantic-release.readthedocs.io) (version et empreintes verrouillées dans `scripts/release/requirements.txt`, généré depuis `requirements.in` avec `uv pip compile --universal --generate-hashes`) à partir des messages de commit de `main`.
 
 ## Règles
 

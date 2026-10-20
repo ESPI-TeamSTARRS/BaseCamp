@@ -16,9 +16,6 @@ concurrency:
 
 permissions: {}
 
-env:
-  PSR: python-semantic-release==10.5.3
-
 jobs:
   ci:
     name: ci
@@ -59,14 +56,19 @@ jobs:
       - name: Branche main (python-semantic-release refuse un HEAD detache)
         run: git checkout -B main "$GITHUB_SHA"
         working-directory: .
+      - name: Installer python-semantic-release (versions et empreintes verrouillees)
+        run: |
+          uv venv "$RUNNER_TEMP/psr"
+          uv pip install --python "$RUNNER_TEMP/psr" --require-hashes -r "$GITHUB_WORKSPACE/scripts/release/requirements.txt"
+          echo "$RUNNER_TEMP/psr/bin" >> "$GITHUB_PATH"
       - name: Prochaine version
         id: next
         env:
           PSR_CONFIG: ${{ matrix.config }}
         run: |
-          next="$(uvx --from "$PSR" semantic-release --config "$PSR_CONFIG" version --print || true)"
+          next="$(semantic-release --config "$PSR_CONFIG" version --print || true)"
           echo "Prochaine version : ${next:-aucune}"
-          last="$(uvx --from "$PSR" semantic-release --config "$PSR_CONFIG" version --print-last-released || true)"
+          last="$(semantic-release --config "$PSR_CONFIG" version --print-last-released || true)"
           if [ -n "$next" ] && [ "$next" != "$last" ]; then
             echo "version=$next" >> "$GITHUB_OUTPUT"
           fi
@@ -78,7 +80,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          uvx --from "$PSR" semantic-release --config "$PSR_CONFIG" \
+          semantic-release --config "$PSR_CONFIG" \
             version --no-commit --no-changelog --no-vcs-release --no-push
           # Seul le tag part : pousser la branche echouerait si main a avance entre-temps.
           git push origin "refs/tags/$TAG"
