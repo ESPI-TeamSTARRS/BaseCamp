@@ -39,6 +39,8 @@ def env(tmp_path: Path) -> dict:
         '#!/usr/bin/env bash\necho "appel:$1" > "$BASECAMP_STATE_DIR/appel.txt"\ncat "$1" >> "$BASECAMP_STATE_DIR/appel.txt"\n',
         encoding="utf-8",
     )
+    # Le bit exécutable doit aussi exister dans l'arbre de travail : `commit -a` y lirait sinon un changement de mode.
+    (origin / "scripts" / "deploy.sh").chmod(0o755)
     (origin / "deploy" / "manifest.json").write_text('{"v": 1}\n', encoding="utf-8")
     git(tmp_path, "init", "-q", "-b", "main", str(origin))
     git(origin, "add", "-A")
