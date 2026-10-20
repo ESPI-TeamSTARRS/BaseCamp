@@ -37,13 +37,15 @@ La configuration se lit dans les variables d'environnement préfixées `APP_` (v
 
 ## Pile complète en local (Docker Compose)
 
-Le fichier `docker-compose.yml` (racine) démarre : Traefik, le front, `shop` (avec sa migration Alembic), Postgres, `payment` (avec sa migration et son Postgres dédié, isolé : ni routé ni publié), SeaweedFS (stockage objet compatible S3, bucket `product-images` rempli au démarrage par `seaweedfs-seed` avec les visuels du catalogue) et Mailpit.
+Le fichier `docker-compose.yml` (racine) démarre : Traefik, le front, `shop` (avec sa migration Alembic), Postgres, `auth` (avec sa migration et son Postgres dédié, isolé), `payment` (avec sa migration et son Postgres dédié, isolé : ni routé ni publié), SeaweedFS (stockage objet compatible S3, bucket `product-images` rempli au démarrage par `seaweedfs-seed` avec les visuels du catalogue) et Mailpit.
 
 ```bash
 cp .env.example .env          # valeurs factices, .env est ignoré par Git
+sh scripts/init-auth-keys.sh  # clés de signature d'auth dans .secrets/ (ignoré par Git, idempotent)
 docker compose up -d --build --wait
 curl http://127.0.0.1:8080/api/shop/health        # 200, via Traefik
 curl http://127.0.0.1:8080/api/shop/health/ready  # 200 si Postgres répond, 503 sinon
+curl http://127.0.0.1:8080/api/auth/health/ready  # 200 si la base d'auth répond, 503 sinon
 ```
 
 Le front est servi sur <http://127.0.0.1:8080/>. Arrêt : `docker compose down` (ajouter `-v` pour supprimer les données).
@@ -51,10 +53,11 @@ Le front est servi sur <http://127.0.0.1:8080/>. Arrêt : `docker compose down` 
 | Élément | Règle |
 |---|---|
 | Port publié | Traefik seul, sur `127.0.0.1:${GATEWAY_PORT}` (8080 par défaut). Postgres, SeaweedFS, Mailpit, `shop` et le front ne sont pas joignables depuis l'hôte. |
-| Réseaux | `edge` (Traefik, hôte), `app` (Traefik, front, `shop`, SeaweedFS, Mailpit; interne), `data` (`shop`, Postgres, SeaweedFS; interne). |
-| Routage | `/api/shop/*` vers `shop` (préfixe retiré), tout le reste vers le front. |
+| Réseaux | `edge` (Traefik, hôte), `app` (Traefik, front, `shop`, `auth`, SeaweedFS, Mailpit; interne), `data` (`shop`, Postgres, SeaweedFS; interne), `auth-data` (`auth`, Postgres dédié; interne, inaccessible à `shop` et `payment`). |
+| Routage | `/api/shop/*` vers `shop`, `/api/auth/*` vers `auth` (préfixe retiré), tout le reste vers le front. `/api/auth/internal/*` n'est jamais routé : réservé aux appels entre services. |
 | Base | Postgres crée au premier démarrage un rôle et une base propres à `shop`; le compte administrateur n'est pas utilisé par les services. |
-| Migrations | Le service one-shot `shop-migrate` exécute `alembic upgrade head` avant `shop`; il est rejouable sans erreur. |
+| Clés de signature | `scripts/init-auth-keys.sh` génère une paire Ed25519 dans `.secrets/auth/`, montée en secret Docker dans `auth`. Jamais versionnée; `--force` pour la renouveler. |
+| Migrations | Les services one-shot `shop-migrate` et `auth-migrate` exécutent `alembic upgrade head` avant leur service; rejouables sans erreur. |
 | Conteneurs | Utilisateur non-root, `no-new-privileges`, capacités retirées, redémarrage `unless-stopped`, healthcheck sur chaque service. |
 
 Les variables sont documentées dans `.env.example` (aucune valeur réelle). Les fins de ligne sont normalisées en LF par `.gitattributes` (Windows, WSL, Linux).
