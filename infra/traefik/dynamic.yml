@@ -82,12 +82,10 @@ http:
   services:
     media:
       loadBalancer:
-        serversTransport: default
         servers:
           - url: "http://seaweedfs:8888"
     shop:
       loadBalancer:
-        serversTransport: default
         serversTransport: default
         servers:
           - url: "http://shop:8000"
