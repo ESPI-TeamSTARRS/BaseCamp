@@ -14,3 +14,7 @@ class TestHealthStatus:
         status = HealthStatus(service="payment", status=ServiceStatus.UP)
         assert status.service == "payment"
         assert status.status is ServiceStatus.UP
+
+    def test_is_up_only_when_status_is_up(self) -> None:
+        assert HealthStatus(service="payment", status=ServiceStatus.UP).is_up is True
+        assert HealthStatus(service="payment", status=ServiceStatus.DOWN).is_up is False
