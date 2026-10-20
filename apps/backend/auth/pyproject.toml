@@ -4,9 +4,12 @@ version = "0.1.0"
 description = "Authentification (comptes, JWT)"
 requires-python = ">=3.13"
 dependencies = [
+    "alembic>=1.13",
     "fastapi>=0.115.0",
     "pydantic>=2.9.0",
+    "psycopg[binary]>=3.2",
     "pydantic-settings>=2.5.0",
+    "sqlalchemy>=2.0",
     "structlog>=24.4.0",
     "uvicorn[standard]>=0.30.0",
 ]
@@ -84,7 +87,8 @@ lint            = "ruff check ."
 "format:check"  = "ruff format --check ."
 format          = "ruff format ."
 typecheck       = "mypy ."
-test            = "pytest"
+test            = "pytest -m 'unit or integ'"
+"test:e2e"      = "pytest -m e2e --no-cov"
 "test:unit"     = "pytest -m unit --no-cov"
 "test:integ"    = "pytest -m integ --no-cov"
 "test:cov"      = "pytest -m 'unit or integ' --cov=app --cov-fail-under=80"
