@@ -71,7 +71,7 @@ select = ["E", "W", "F", "I", "B", "C4", "UP", "N", "SIM", "RUF", "S"]
 ignore = ["E501", "N818"]
 
 [tool.ruff.lint.per-file-ignores]
-"**/__tests__/**/*.py" = ["S101"]
+"**/__tests__/**/*.py" = ["S101", "S105", "S106"]
 "tests/**/*.py" = ["S101"]
 "conftest.py" = ["S101"]
 
