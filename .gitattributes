@@ -1,0 +1,10 @@
+# Fins de ligne : LF partout dans le depot (Windows / WSL / Linux / conteneurs).
+* text=auto eol=lf
+*.sh text eol=lf
+*.bat text eol=crlf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ico binary
+*.woff2 binary
