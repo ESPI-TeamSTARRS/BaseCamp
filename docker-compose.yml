@@ -1,0 +1,160 @@
+# Pile complete locale : `cp .env.example .env && docker compose up --build`
+# Seul Traefik est publie (127.0.0.1:${GATEWAY_PORT}). Reseaux :
+#   edge : traefik <-> hote        app  : traefik, front, shop, mailpit (interne)
+#   data : shop, postgres, seaweedfs   (interne, jamais publie)
+
+name: basecamp
+
+x-hardening: &hardening
+  restart: unless-stopped
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: ["ALL"]
+
+services:
+  traefik:
+    <<: *hardening
+    image: traefik:v3.2
+    user: "65532:65532"
+    command:
+      - --providers.file.filename=/etc/traefik/dynamic.yml
+      - --entrypoints.web.address=:9080
+      - --ping=true
+      - --log.level=INFO
+    ports:
+      - "127.0.0.1:${GATEWAY_PORT:-8080}:9080"
+    volumes:
+      - ./infra/traefik/dynamic.yml:/etc/traefik/dynamic.yml:ro
+    networks: [edge, app]
+    read_only: true
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    depends_on:
+      front: { condition: service_healthy }
+      shop: { condition: service_healthy }
+
+  front:
+    <<: *hardening
+    build:
+      context: ./apps/frontend
+      args:
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:8080}
+        NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:?voir .env.example}
+    environment:
+      SHOP_API_URL: ${SHOP_API_URL:-http://shop:8000}
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:8080}
+      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:?voir .env.example}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:?voir .env.example}
+      RESEND_API_KEY: ${RESEND_API_KEY:?voir .env.example}
+      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:?voir .env.example}
+    networks: [app]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+  shop-migrate:
+    build: ./apps/backend/shop
+    image: basecamp-shop
+    restart: "no"
+    command: ["alembic", "upgrade", "head"]
+    environment: &shop-env
+      APP_ENVIRONMENT: local
+      APP_DB_HOST: postgres
+      APP_DB_PORT: "5432"
+      APP_DB_NAME: ${SHOP_DB_NAME:-shop}
+      APP_DB_USER: ${SHOP_DB_USER:-shop}
+      APP_DB_PASSWORD: ${SHOP_DB_PASSWORD:?voir .env.example}
+    networks: [data]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  shop:
+    <<: *hardening
+    build: ./apps/backend/shop
+    image: basecamp-shop
+    environment: *shop-env
+    networks: [app, data]
+    read_only: true
+    depends_on:
+      shop-migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/health', timeout=2)"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  postgres:
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    image: postgres:17-alpine
+    user: postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?voir .env.example}
+      SHOP_DB_NAME: ${SHOP_DB_NAME:-shop}
+      SHOP_DB_USER: ${SHOP_DB_USER:-shop}
+      SHOP_DB_PASSWORD: ${SHOP_DB_PASSWORD:?voir .env.example}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infra/postgres/init-shop-db.sh:/docker-entrypoint-initdb.d/10-init-shop-db.sh:ro
+    networks: [data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  seaweedfs:
+    <<: *hardening
+    image: chrislusf/seaweedfs:latest
+    user: "1000:1000"
+    command: ["mini", "-dir=/data", "-ip=seaweedfs"]
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:?voir .env.example}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:?voir .env.example}
+      S3_BUCKET: ${S3_BUCKET:-product-images}
+    volumes:
+      - seaweedfs-data:/data
+    networks: [data]
+    healthcheck:
+      # Sain = le serveur repond ET le bucket cree au demarrage existe.
+      test:
+        - CMD-SHELL
+        - "wget -q -O- --header 'Accept: application/json' http://127.0.0.1:8888/buckets/ | grep -q \"/buckets/$$S3_BUCKET\""
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  mailpit:
+    <<: *hardening
+    image: axllent/mailpit:latest
+    user: "1000:1000"
+    networks: [app]
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+networks:
+  edge: {}
+  app:
+    internal: true
+  data:
+    internal: true
+
+volumes:
+  postgres-data: {}
+  seaweedfs-data: {}

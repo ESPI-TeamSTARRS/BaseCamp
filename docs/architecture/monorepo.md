@@ -9,7 +9,9 @@
 │   │   └── payment/    idem
 │   └── frontend/       Next.js (package.json, Dockerfile)
 ├── docs/               cette documentation
+├── infra/              configuration de la passerelle (Traefik) et de Postgres, pour Docker Compose
 ├── scripts/hooks/      outils des hooks Git
+├── docker-compose.yml  pile complète locale (voir getting-started.md)
 ├── .github/workflows/  CI
 ├── .pre-commit-config.yaml
 └── pyproject.toml      orchestrateur racine (tâches poe)
