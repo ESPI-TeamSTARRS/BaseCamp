@@ -42,8 +42,29 @@ Via la passerelle : `/api/auth/health` et `/api/auth/health/ready` (préfixe ret
 |---|---|
 | `APP_SERVICE_NAME`, `APP_ENVIRONMENT` | identité et environnement |
 | `APP_DB_HOST`, `APP_DB_PORT`, `APP_DB_NAME`, `APP_DB_USER`, `APP_DB_PASSWORD` | connexion à la base d'`auth` (le mot de passe vient de l'environnement) |
+| `APP_LOG_PSEUDONYM_KEY` | clé HMAC des empreintes d'email dans les logs; obligatoire hors `dev` et `local` |
 
 Côté compose : `AUTH_DB_NAME`, `AUTH_DB_USER`, `AUTH_DB_PASSWORD` (voir `.env.example`).
+
+## Événements métier
+Le module de journalisation (port `BusinessEventLogger`, adaptateur JSON, middleware `X-Correlation-ID`) est en place; format et règles : [journalisation métier](../development/logging.md). Aucun cas d'usage métier n'existe encore : chaque ticket d'auth émet ses événements et les ajoute à ce catalogue.
+
+Déjà émis : `service.request_rejected` (denied, `invalid_request`, requête rejetée par la validation) et `service.unhandled_error` (error, `internal_error`).
+
+Catalogue cible (à émettre par les tickets d'auth, sans mot de passe, jeton ni email en clair; l'email n'apparaît que sous la forme `attributes.email_hash`) :
+
+| Événement | Outcome | Reason |
+|---|---|---|
+| `auth.account_registered` | success | |
+| `auth.registration_rejected` | denied | `email_already_used`, `weak_password` |
+| `auth.login_succeeded` | success | |
+| `auth.login_failed` | denied | `invalid_credentials`, `account_locked` (avec `client_ip`) |
+| `auth.token_refreshed` | success | |
+| `auth.token_rejected` | denied | `expired`, `invalid`, `revoked` |
+| `auth.logout` | success | |
+| `auth.password_changed` | success | |
+
+Avant l'authentification, l'acteur est inconnu : seul `email_hash` identifie la tentative.
 
 ## Tests
 `uv run poe test` (unit et integ, couverture ≥ 80 %); `uv run poe test:e2e` sur la pile lancée (`E2E_BASE_URL`, `http://127.0.0.1:8080` par défaut).
