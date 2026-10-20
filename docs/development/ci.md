@@ -9,6 +9,7 @@ Workflow : `.github/workflows/ci.yml`, déclenché à chaque push et sur les pul
 | `secrets-scan` | gitleaks sur l'historique complet |
 | `outils-racine` | tests des scripts des hooks |
 | `stack-e2e` | construit les images `shop`, `auth` et `front` (cache GitHub Actions), génère un `.env` factice depuis `.env.example`, démarre la pile minimale (`docker compose up --wait traefik` : Traefik, front, `shop`, `auth` et leurs bases), génère les clés de signature d'`auth` (`scripts/init-auth-keys.sh`), joue `poe test:e2e` de `shop` puis d'`auth` contre Traefik, publie les logs des conteneurs en artefact (`stack-e2e-logs`) en cas d'échec, puis supprime la pile |
+| `pr-title` (workflow séparé) | le titre de la PR respecte le format Conventional Commits (même script que le hook `commit-msg`); à rendre obligatoire avec `ci-ok` |
 | `ci-ok` | job final (attend aussi `stack-e2e`), seul check à rendre obligatoire dans la protection de branche |
 
 Chaque job appelle les tâches `poe` ou `npm` du service, jamais un outil en direct. Les permissions du jeton sont réduites au strict nécessaire (`contents: read`).
@@ -16,3 +17,7 @@ Chaque job appelle les tâches `poe` ou `npm` du service, jamais un outil en dir
 ## Ajouter un service
 
 Ajouter son nom dans la liste `service` de la matrice du job `backend`.
+
+## Release
+
+Le workflow `.github/workflows/release.yml` se déclenche à la fin d'une CI verte sur `main` et pose les tags de version par service. Détails dans [versioning.md](versioning.md).

@@ -1,0 +1,30 @@
+name: Titre de PR
+
+# Le titre de la PR devient le message du commit squash sur main, et python-semantic-release
+# en deduit la version. Meme validation que le hook commit-msg local (scripts/hooks/check_commit_msg.py).
+# Check a rendre obligatoire dans la protection de branche, en plus de `ci-ok`.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  pr-title:
+    name: pr-title
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/hooks
+      - name: Titre au format Conventional Commits
+        env:
+          # Passe par l'environnement : jamais d'interpolation du titre dans le script.
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          printf '%s\n' "$PR_TITLE" > "$RUNNER_TEMP/titre.txt"
+          python3 scripts/hooks/check_commit_msg.py "$RUNNER_TEMP/titre.txt"

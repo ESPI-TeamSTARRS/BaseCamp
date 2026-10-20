@@ -7,4 +7,5 @@
 - [TDD et tests](testing.md)
 - [Git trunk-based, commits et hooks](git-and-hooks.md)
 - [Intégration continue](ci.md)
+- [Versionnement](versioning.md)
 - [Sécurité](security.md)
