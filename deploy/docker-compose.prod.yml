@@ -217,6 +217,7 @@ services:
       APP_DB_NAME: ${AUTH_DB_NAME:-auth}
       APP_DB_USER: ${AUTH_DB_USER:-auth}
       APP_DB_PASSWORD: ${AUTH_DB_PASSWORD:?voir deploy/prod.env.example}
+      APP_LOG_PSEUDONYM_KEY: ${LOG_PSEUDONYM_KEY:?voir deploy/prod.env.example}
     networks: [auth-data]
     depends_on:
       postgres-auth: { condition: service_healthy }
