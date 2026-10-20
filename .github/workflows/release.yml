@@ -54,23 +54,30 @@ jobs:
           fetch-depth: 0
       - uses: astral-sh/setup-uv@v5
       - name: Branche main (python-semantic-release refuse un HEAD detache)
-        run: git checkout -B main "${{ github.event.workflow_run.head_sha }}"
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: git checkout -B main "$HEAD_SHA"
         working-directory: .
       - name: Prochaine version
         id: next
+        env:
+          PSR_CONFIG: ${{ matrix.config }}
         run: |
-          next="$(uvx --from "$PSR" semantic-release --config ${{ matrix.config }} version --print || true)"
+          next="$(uvx --from "$PSR" semantic-release --config "$PSR_CONFIG" version --print || true)"
           echo "Prochaine version : ${next:-aucune}"
-          last="$(uvx --from "$PSR" semantic-release --config ${{ matrix.config }} version --print-last-released || true)"
+          last="$(uvx --from "$PSR" semantic-release --config "$PSR_CONFIG" version --print-last-released || true)"
           if [ -n "$next" ] && [ "$next" != "$last" ]; then
             echo "version=$next" >> "$GITHUB_OUTPUT"
           fi
-      - name: Tag ${{ matrix.service }}-v${{ steps.next.outputs.version }}
+      - name: Tag du service
         if: steps.next.outputs.version != ''
+        env:
+          PSR_CONFIG: ${{ matrix.config }}
+          TAG: ${{ matrix.service }}-v${{ steps.next.outputs.version }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          uvx --from "$PSR" semantic-release --config ${{ matrix.config }} \
+          uvx --from "$PSR" semantic-release --config "$PSR_CONFIG" \
             version --no-commit --no-changelog --no-vcs-release --no-push
           # Seul le tag part : pousser la branche echouerait si main a avance entre-temps.
-          git push origin "refs/tags/${{ matrix.service }}-v${{ steps.next.outputs.version }}"
+          git push origin "refs/tags/$TAG"
