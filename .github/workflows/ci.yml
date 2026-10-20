@@ -191,8 +191,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - run: uv sync --frozen
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+      - run: uv sync --frozen --no-build
       - name: Bascule et retour arriere de scripts/deploy.sh (panne volontaire)
         run: uv run poe deploy-test
 

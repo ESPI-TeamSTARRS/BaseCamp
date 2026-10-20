@@ -9,9 +9,11 @@ Format (deploy/manifest.json) :
 Le manifeste est l'unite de deploiement et de retour arriere : une version de chaque composant, par
 digest. Utilisation (appele par scripts/deploy.sh) :
 
-    manifest.py validate <fichier>   verifie le format, code 0 si valide
-    manifest.py id <fichier>         identifiant stable (empreinte des seules images)
-    manifest.py env <fichier>        lignes VARIABLE=valeur pour docker compose
+    manifest.py validate < manifeste.json   verifie le format, code 0 si valide
+    manifest.py id < manifeste.json         identifiant stable (empreinte des seules images)
+    manifest.py env < manifeste.json        lignes VARIABLE=valeur pour docker compose
+
+Le manifeste est lu sur l'entree standard : le script n'ouvre aucun chemin recu en argument.
 """
 
 from __future__ import annotations
@@ -21,7 +23,6 @@ import json
 import os
 import re
 import sys
-from pathlib import Path
 
 DEFAULT_SERVICES = ("frontend", "shop", "auth", "payment")
 # Variable de compose de chaque composant (le front garde l'historique FRONT_IMAGE).
@@ -43,10 +44,10 @@ def env_name(service: str) -> str:
     return ENV_NAMES.get(service, f"{service.upper()}_IMAGE")
 
 
-def load(path: str | Path) -> dict:
+def load(text: str) -> dict:
     try:
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
         raise ManifestError(f"manifeste illisible : {exc}") from exc
     validate(data)
     return data
@@ -84,11 +85,11 @@ def to_env(data: dict) -> str:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 3 or argv[1] not in {"validate", "id", "env"}:
+    if len(argv) != 2 or argv[1] not in {"validate", "id", "env"}:
         print(__doc__, file=sys.stderr)
         return 2
     try:
-        data = load(argv[2])
+        data = load(sys.stdin.read())
     except ManifestError as exc:
         print(f"manifeste invalide : {exc}", file=sys.stderr)
         return 1

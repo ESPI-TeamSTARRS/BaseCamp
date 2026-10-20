@@ -152,4 +152,4 @@ expect "pas de current" test ! -f "$WORK/state-h/current.json"
 
 echo
 echo "Resultat : $PASS verifications reussies, $FAIL en echec."
-[ "$FAIL" = 0 ]
+[[ "$FAIL" == 0 ]]

@@ -1,4 +1,5 @@
 import importlib.util
+import io
 import json
 from pathlib import Path
 
@@ -75,18 +76,20 @@ def test_liste_des_services_configurable(monkeypatch: pytest.MonkeyPatch) -> Non
     assert manifest.to_env(data).startswith("SHOP_IMAGE=")
 
 
-def test_cli_manifeste_illisible(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    bad = tmp_path / "m.json"
-    bad.write_text("{pas du json", encoding="utf-8")
-    assert manifest.main(["manifest.py", "validate", str(bad)]) == 1
+def test_cli_manifeste_illisible(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    monkeypatch.setattr("sys.stdin", io.StringIO("{pas du json"))
+    assert manifest.main(["manifest.py", "validate"]) == 1
     assert "manifeste invalide" in capsys.readouterr().err
 
 
-def test_cli_env(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    path = tmp_path / "m.json"
-    path.write_text(json.dumps(sample()), encoding="utf-8")
-    assert manifest.main(["manifest.py", "env", str(path)]) == 0
+def test_cli_env(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(sample())))
+    assert manifest.main(["manifest.py", "env"]) == 0
     assert "SHOP_IMAGE=" in capsys.readouterr().out
+
+
+def test_cli_refuse_les_arguments_de_chemin() -> None:
+    assert manifest.main(["manifest.py", "env", "/etc/passwd"]) == 2
 
 
 def test_accepte_un_registre_avec_port() -> None:

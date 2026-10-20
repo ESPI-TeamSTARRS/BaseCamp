@@ -56,13 +56,13 @@ for arg in "$@"; do
   case "$arg" in
     --force) FORCE=1 ;;
     -*) usage ;;
-    *) [ -z "$MANIFEST" ] && MANIFEST="$arg" || usage ;;
+    *) [[ -z "$MANIFEST" ]] && MANIFEST="$arg" || usage ;;
   esac
 done
-[ -n "$MANIFEST" ] || usage
+[[ -n "$MANIFEST" ]] || usage
 
-"$PYTHON" "$MANIFEST_PY" validate "$MANIFEST" || exit 3
-NEW_ID="$("$PYTHON" "$MANIFEST_PY" id "$MANIFEST")"
+"$PYTHON" "$MANIFEST_PY" validate < "$MANIFEST" || exit 3
+NEW_ID="$("$PYTHON" "$MANIFEST_PY" id < "$MANIFEST")"
 
 mkdir -p "$STATE_DIR/backups"
 chmod 700 "$STATE_DIR"
@@ -82,10 +82,10 @@ REJECTED="$STATE_DIR/rejected"
 touch "$REJECTED"
 
 CURRENT_ID=""
-[ -f "$CURRENT_JSON" ] && CURRENT_ID="$("$PYTHON" "$MANIFEST_PY" id "$CURRENT_JSON")"
+[[ -f "$CURRENT_JSON" ]] && CURRENT_ID="$("$PYTHON" "$MANIFEST_PY" id < "$CURRENT_JSON")"
 
-if [ "$FORCE" = 0 ]; then
-  if [ "$NEW_ID" = "$CURRENT_ID" ]; then
+if [[ "$FORCE" == 0 ]]; then
+  if [[ "$NEW_ID" == "$CURRENT_ID" ]]; then
     log "ce manifeste est deja en place, rien a faire."
     exit 0
   fi
@@ -100,7 +100,7 @@ fi
 COMPOSE_ENV="$STATE_DIR/compose.env"
 build_env() { # build_env <release.env> <sortie>
   {
-    if [ -n "$ENV_FILE" ] && [ -f "$ENV_FILE" ]; then cat "$ENV_FILE"; echo; fi
+    if [[ -n "$ENV_FILE" ]] && [[ -f "$ENV_FILE" ]]; then cat "$ENV_FILE"; echo; fi
     cat "$1"
   } > "$2"
   chmod 600 "$2"
@@ -113,7 +113,7 @@ compose() { docker compose "$@"; }
 
 # --- 1. images : tirage par digest (avant toute modification) ---------------------------------
 NEW_ENV="$STATE_DIR/release.env.new"
-"$PYTHON" "$MANIFEST_PY" env "$MANIFEST" > "$NEW_ENV"
+"$PYTHON" "$MANIFEST_PY" env < "$MANIFEST" > "$NEW_ENV"
 chmod 600 "$NEW_ENV"
 
 log "tirage des images du manifeste $NEW_ID"
@@ -125,13 +125,13 @@ fi
 
 # --- 2. sauvegarde des bases ------------------------------------------------------------------
 backup_databases() {
-  [ -n "$BACKUP_TARGETS" ] || return 0
+  [[ -n "$BACKUP_TARGETS" ]] || return 0
   local stamp dir target service uservar dbvar
   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
   dir="$STATE_DIR/backups/$stamp"
   for target in $BACKUP_TARGETS; do
     IFS=: read -r service uservar dbvar <<<"$target"
-    if [ -z "$(compose ps --status running -q "$service" 2>/dev/null)" ]; then
+    if [[ -z "$(compose ps --status running -q "$service" 2>/dev/null)" ]]; then
       log "sauvegarde ignoree : $service ne tourne pas (premier deploiement ?)"
       continue
     fi
@@ -151,7 +151,7 @@ backup_databases() {
 # porte son propre `|| return 1`.
 apply_release() {
   local svc
-  if [ -n "$DB_SERVICES" ]; then
+  if [[ -n "$DB_SERVICES" ]]; then
     log "demarrage des bases"
     # shellcheck disable=SC2086
     compose up -d --wait --wait-timeout "$WAIT_TIMEOUT" $DB_SERVICES || return 1
@@ -162,7 +162,7 @@ apply_release() {
   done
   log "demarrage de la pile"
   compose up -d --wait --wait-timeout "$WAIT_TIMEOUT" --remove-orphans || return 1
-  if [ ! -f "$CURRENT_JSON" ] && compose --profile jobs config --services 2>/dev/null | grep -qx seaweedfs-seed; then
+  if [[ ! -f "$CURRENT_JSON" ]] && compose --profile jobs config --services 2>/dev/null | grep -qx seaweedfs-seed; then
     log "premier deploiement : amorcage du bucket d'images"
     compose --profile jobs run --rm seaweedfs-seed || return 1
   fi
@@ -183,12 +183,12 @@ restore_previous() {
 
 backup_databases
 
-[ -f "$RELEASE_ENV" ] && cp "$RELEASE_ENV" "$STATE_DIR/release.env.previous"
+[[ -f "$RELEASE_ENV" ]] && cp "$RELEASE_ENV" "$STATE_DIR/release.env.previous"
 mv "$NEW_ENV" "$RELEASE_ENV"
 mv "$COMPOSE_ENV.new" "$COMPOSE_ENV"
 
 if (apply_release); then
-  [ -f "$CURRENT_JSON" ] && cp "$CURRENT_JSON" "$PREVIOUS_JSON"
+  [[ -f "$CURRENT_JSON" ]] && cp "$CURRENT_JSON" "$PREVIOUS_JSON"
   cp "$MANIFEST" "$CURRENT_JSON"
   log "SUCCES : manifeste $NEW_ID en production."
   exit 0
@@ -198,7 +198,7 @@ fi
 log "ECHEC du deploiement de $NEW_ID, retour arriere."
 echo "$NEW_ID" >> "$REJECTED"
 
-if [ -f "$CURRENT_JSON" ] && [ -f "$STATE_DIR/release.env.previous" ]; then
+if [[ -f "$CURRENT_JSON" ]] && [[ -f "$STATE_DIR/release.env.previous" ]]; then
   cp "$STATE_DIR/release.env.previous" "$RELEASE_ENV"
   build_env "$RELEASE_ENV" "$COMPOSE_ENV"
   if (restore_previous); then
