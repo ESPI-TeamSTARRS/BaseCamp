@@ -1,7 +1,8 @@
 # Pile complete locale : `cp .env.example .env && docker compose up --build`
 # Seul Traefik est publie (127.0.0.1:${GATEWAY_PORT}). Reseaux :
-#   edge : traefik <-> hote        app  : traefik, front, shop, mailpit (interne)
+#   edge : traefik <-> hote        app  : traefik, front, shop, auth, mailpit (interne)
 #   data : shop, postgres, seaweedfs   (interne, jamais publie)
+#   auth-data : auth, postgres-auth    (interne, isole : ni shop ni payment n'y accedent)
 #   payment-net  : shop <-> payment (interne) ; payment n'est ni sur app ni publie
 #   payment-data : payment <-> payment-db (interne, jamais publie)
 
@@ -40,6 +41,7 @@ services:
     depends_on:
       front: { condition: service_healthy }
       shop: { condition: service_healthy }
+      auth: { condition: service_healthy }
 
   front:
     <<: *hardening
@@ -178,6 +180,64 @@ services:
       timeout: 3s
       retries: 10
 
+  auth-migrate:
+    build: ./apps/backend/auth
+    image: basecamp-auth
+    restart: "no"
+    command: ["alembic", "upgrade", "head"]
+    environment: &auth-env
+      APP_ENVIRONMENT: local
+      APP_DB_HOST: postgres-auth
+      APP_DB_PORT: "5432"
+      APP_DB_NAME: ${AUTH_DB_NAME:-auth}
+      APP_DB_USER: ${AUTH_DB_USER:-auth}
+      APP_DB_PASSWORD: ${AUTH_DB_PASSWORD:?voir .env.example}
+    networks: [auth-data]
+    depends_on:
+      postgres-auth: { condition: service_healthy }
+
+  auth:
+    <<: *hardening
+    build: ./apps/backend/auth
+    image: basecamp-auth
+    environment: *auth-env
+    # Cles de signature generees par scripts/init-auth-keys.sh (jamais versionnees).
+    secrets: [auth_jwt_private_key, auth_jwt_public_key]
+    networks: [app, auth-data]
+    read_only: true
+    depends_on:
+      auth-migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/health', timeout=2)"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  # Postgres dedie a auth : conteneur, volume, reseau et role propres.
+  # Le role auth est le seul compte de cette instance (aucun acces croise avec shop).
+  postgres-auth:
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    image: postgres:17-alpine
+    user: postgres
+    environment:
+      POSTGRES_USER: ${AUTH_DB_USER:-auth}
+      POSTGRES_DB: ${AUTH_DB_NAME:-auth}
+      POSTGRES_PASSWORD: ${AUTH_DB_PASSWORD:?voir .env.example}
+    volumes:
+      - postgres-auth-data:/var/lib/postgresql/data
+    networks: [auth-data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   seaweedfs:
     <<: *hardening
     image: chrislusf/seaweedfs:latest
@@ -234,8 +294,17 @@ networks:
     internal: true
   payment-data:
     internal: true
+  auth-data:
+    internal: true
 
 volumes:
   postgres-data: {}
+  postgres-auth-data: {}
   payment-db-data: {}
   seaweedfs-data: {}
+
+secrets:
+  auth_jwt_private_key:
+    file: ./.secrets/auth/jwt-private.pem
+  auth_jwt_public_key:
+    file: ./.secrets/auth/jwt-public.pem
