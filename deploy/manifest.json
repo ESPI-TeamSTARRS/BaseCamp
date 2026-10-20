@@ -14,8 +14,8 @@
       "version": "0.1.2"
     },
     "shop": {
-      "image": "ghcr.io/espi-teamstarrs/basecamp-shop@sha256:d78dac93891a9edd334ac78f97e769713f900ef7518872cd73f73ba3d7d6422c",
-      "version": "0.1.2"
+      "image": "ghcr.io/espi-teamstarrs/basecamp-shop@sha256:b53228ac8db17ac56df1392dd1bd1bf5619aa356dcbaa8e5d2ba37c10cf9befd",
+      "version": "0.2.0"
     }
   }
 }
