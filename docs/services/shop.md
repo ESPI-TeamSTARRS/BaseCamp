@@ -11,6 +11,7 @@ Catalogue, commandes et stock. Demande les paiements au service [payment](paymen
 | GET | `/health` | liveness : le processus répond (toujours 200) |
 | GET | `/health/ready` | readiness : 200 si la base répond, **503** sinon (corps `{"service", "status": "up" \| "down"}`) |
 | GET | `/products` | catalogue paginé, filtrable par catégorie (voir ci-dessous) |
+| GET | `/products/{slug}` | fiche détaillée d'un produit |
 
 Derrière la passerelle, ces routes sont exposées sous `/api/shop/` (ex. `/api/shop/health/ready`). Le healthcheck Docker utilise `/health` (un conteneur dont la base est arrêtée reste vivant); `/health/ready` sert aux sondes de disponibilité.
 
@@ -21,7 +22,14 @@ Réponse : `{items, page, page_size, total}`. Chaque produit expose `id`, `slug`
 
 Une catégorie inconnue ou une pagination invalide renvoie **422** avec un message fixe : la valeur reçue n'est jamais reflétée. Les images (`/media/<fichier>`) sont servies en lecture seule par la passerelle depuis le bucket `product-images`.
 
-Les autres routes métier (fiche produit, commandes) s'ajoutent par tranche et se documentent ici.
+### `GET /products/{slug}`
+Renvoie la même représentation qu'un élément de la liste : `description`, `specs` (`weight_grams`, `waterproofing_mm`, `comfort_temp_c`, `seasons`, `capacity_liters`, `material`, chacune absente du produit = `null`), `image_urls` (galerie), `rating_value`, `rating_count`, prix en centimes et `availability`.
+
+Un slug inconnu renvoie **404** avec le message fixe `{"detail": "Produit introuvable."}` : le slug demandé n'est jamais reflété. Il est transmis à la base comme paramètre lié (jamais concaténé).
+
+Côté front, `/produits/[slug]` lit cette route, calcule la méta-description (140 à 160 caractères) et le JSON-LD `Product` (prix, disponibilité, note) à partir de la réponse, et `sitemap.xml` liste les produits de l'API (sans eux si l'API est arrêtée).
+
+Les autres routes métier (commandes) s'ajoutent par tranche et se documentent ici.
 
 ## Invariants
 - Les prix viennent toujours du catalogue serveur.
