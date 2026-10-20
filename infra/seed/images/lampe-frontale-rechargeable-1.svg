@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600" role="img" aria-label="Lampe Frontale Rechargeable">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3E3A2B"/><stop offset="1" stop-color="#9C8F5A"/></linearGradient></defs>
+  <rect width="800" height="600" fill="url(#g)"/>
+  <path d="M0 520 L160 400 L260 470 L420 330 L560 450 L680 380 L800 470 V600 H0 Z" fill="#000" opacity="0.18"/>
+  
+  <circle cx="400" cy="340" r="135" fill="#F5F2EB" opacity="0.92"/><path d="M400 235 L430 340 L400 445 L370 340 Z" fill="#E05638"/><path d="M400 235 L430 340 L370 340 Z" fill="#3E3A2B" opacity="0.8"/><circle cx="400" cy="340" r="10" fill="#3E3A2B"/>
+  <text x="400" y="555" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700" fill="#F5F2EB">Lampe Frontale Rechargeable</text>
+</svg>

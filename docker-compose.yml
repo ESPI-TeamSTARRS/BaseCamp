@@ -181,23 +181,36 @@ services:
     <<: *hardening
     image: chrislusf/seaweedfs:latest
     user: "1000:1000"
-    command: ["mini", "-dir=/data", "-ip=seaweedfs"]
+    command: ["mini", "-dir=/data", "-ip=seaweedfs", "-filer.disableDirListing"]
     environment:
       AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:?voir .env.example}
       AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:?voir .env.example}
       S3_BUCKET: ${S3_BUCKET:-product-images}
     volumes:
       - seaweedfs-data:/data
-    networks: [data]
+    networks: [app, data]
     healthcheck:
-      # Sain = le serveur repond ET le bucket cree au demarrage existe.
+      # Sain = master et filer repondent (le listage des dossiers est desactive).
       test:
         - CMD-SHELL
-        - "wget -q -O- --header 'Accept: application/json' http://127.0.0.1:8888/buckets/ | grep -q \"/buckets/$$S3_BUCKET\""
+        - "wget -q -O /dev/null http://127.0.0.1:9333/cluster/healthz && wget -q -O /dev/null http://127.0.0.1:8888/healthz"
       interval: 5s
       timeout: 3s
       retries: 20
       start_period: 5s
+
+  seaweedfs-seed:
+    image: chrislusf/seaweedfs:latest
+    restart: "no"
+    user: "1000:1000"
+    environment:
+      S3_BUCKET: ${S3_BUCKET:-product-images}
+    entrypoint: ["/bin/sh", "/seed/upload-images.sh"]
+    volumes:
+      - ./infra/seed:/seed:ro
+    networks: [app]
+    depends_on:
+      seaweedfs: { condition: service_healthy }
 
   mailpit:
     <<: *hardening

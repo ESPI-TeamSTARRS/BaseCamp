@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600" role="img" aria-label="Sac de Couchage Synthétique Confort 0°C">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2B3F5C"/><stop offset="1" stop-color="#587CA6"/></linearGradient></defs>
+  <rect width="800" height="600" fill="url(#g)"/>
+  <path d="M0 520 L160 400 L260 470 L420 330 L560 450 L680 380 L800 470 V600 H0 Z" fill="#000" opacity="0.18"/>
+  
+  <rect x="170" y="330" width="460" height="130" rx="65" fill="#F5F2EB" opacity="0.92"/><rect x="200" y="300" width="130" height="80" rx="40" fill="#F5F2EB" opacity="0.7"/><path d="M360 340 V450 M440 340 V450 M520 340 V450" stroke="#2B3F5C" stroke-width="5" opacity="0.5"/>
+  <text x="400" y="555" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700" fill="#F5F2EB">Sac de Couchage Synthétique Confort 0°C</text>
+</svg>
