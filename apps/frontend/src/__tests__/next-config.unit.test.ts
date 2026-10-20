@@ -6,8 +6,8 @@ const CONFIG_PATH = path.resolve(__dirname, '../../next.config.mjs');
 
 async function loadConfig() {
   // Chemin dynamique : le fichier .mjs n'est pas résolu par TypeScript (allowJs désactivé).
-  const module = await import(/* @vite-ignore */ pathToFileURL(CONFIG_PATH).href);
-  return module.default as {
+  const configModule = await import(/* @vite-ignore */ pathToFileURL(CONFIG_PATH).href);
+  return configModule.default as {
     images: { remotePatterns?: { protocol?: string; hostname: string }[] };
   };
 }
