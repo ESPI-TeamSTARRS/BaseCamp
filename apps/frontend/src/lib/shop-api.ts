@@ -107,8 +107,17 @@ export async function fetchAllProducts(
   }
 }
 
+/** Fiche détaillée : `product: null` si le slug est inconnu (404), `ok: false` si l'API est indisponible. */
 export async function fetchProductBySlug(slug: string, fetchImpl: FetchLike = fetch): Promise<ProductResult> {
-  const catalog = await fetchAllProducts(undefined, fetchImpl);
-  if (!catalog.ok) return { ok: false };
-  return { ok: true, product: catalog.products.find((p) => p.slug === slug) ?? null };
+  try {
+    const response = await fetchImpl(`${shopApiUrl()}/products/${encodeURIComponent(slug)}`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (response.status === 404) return { ok: true, product: null };
+    if (!response.ok) return { ok: false };
+    return { ok: true, product: mapApiProduct(ApiProductSchema.parse(await response.json())) };
+  } catch {
+    return { ok: false };
+  }
 }
