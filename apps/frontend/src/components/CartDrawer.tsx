@@ -4,26 +4,18 @@ import Image from 'next/image';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X, Minus, Plus, ShoppingBag } from 'lucide-react';
 import { useState } from 'react';
-import { useCart, FREE_SHIPPING_THRESHOLD_EUR } from '../context/CartContext';
+import { useCart } from '../context/CartContext';
 
 export function CartDrawer() {
-  const {
-    isOpen,
-    closeCart,
-    items,
-    subtotalEur,
-    shippingEur,
-    totalEur,
-    amountRemainingForFreeShippingEur,
-    setQuantity,
-    removeItem,
-  } = useCart();
+  const { isOpen, closeCart, items, quote, quoteStatus, setQuantity, removeItem } = useCart();
   const [isCheckingOut, setIsCheckingOut] = useState(false);
 
-  const progressPct = Math.min(
-    100,
-    ((FREE_SHIPPING_THRESHOLD_EUR - amountRemainingForFreeShippingEur) / FREE_SHIPPING_THRESHOLD_EUR) * 100
-  );
+  // Tous les montants affichés viennent du devis du serveur, franco compris.
+  const threshold = quote?.freeShippingThresholdEur ?? 0;
+  const amountRemaining = quote?.amountRemainingForFreeShippingEur ?? 0;
+  const progressPct = threshold > 0 ? Math.min(100, ((threshold - amountRemaining) / threshold) * 100) : 0;
+  const quoteByProduct = new Map((quote?.lines ?? []).map((line) => [line.productId, line]));
+  const canCheckout = quoteStatus === 'ready' && quote !== null && !quote.hasIssues && !isCheckingOut;
 
   async function handleCheckout() {
     setIsCheckingOut(true);
@@ -80,11 +72,11 @@ export function CartDrawer() {
               </button>
             </div>
 
-            {amountRemainingForFreeShippingEur > 0 ? (
+            {quote && items.length > 0 && amountRemaining > 0 ? (
               <div className="px-5 py-3 text-sm">
                 <p className="text-forest-deep">
-                  Plus que <strong>{amountRemainingForFreeShippingEur.toFixed(2)} €</strong> pour la livraison
-                  offerte !
+                  Plus que <strong>{amountRemaining.toFixed(2)} €</strong> pour la livraison offerte (dès{' '}
+                  {threshold.toFixed(2)} €) !
                 </p>
                 <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-granite/10">
                   <motion.div
@@ -95,7 +87,7 @@ export function CartDrawer() {
                   />
                 </div>
               </div>
-            ) : items.length > 0 ? (
+            ) : quote && items.length > 0 ? (
               <div className="px-5 py-3 text-sm font-medium text-forest-deep">
                 🎉 Livraison offerte débloquée !
               </div>
@@ -108,76 +100,105 @@ export function CartDrawer() {
                 </p>
               ) : (
                 <ul className="divide-y divide-granite/10">
-                  {items.map(({ product, quantity, lineTotalEur }) => (
-                    <li key={product.id} className="flex gap-3 py-4">
-                      <div className="relative h-20 w-20 flex-shrink-0 overflow-hidden rounded-lg bg-sand-dark">
-                        {product.images[0] && (
-                          <Image
-                            src={product.images[0]}
-                            alt={product.name}
-                            fill
-                            className="object-cover"
-                            sizes="80px"
-                          />
-                        )}
-                      </div>
-                      <div className="flex flex-1 flex-col">
-                        <span className="text-sm font-medium text-granite">{product.name}</span>
-                        <span className="text-sm text-granite/60">{product.priceEur.toFixed(2)} €</span>
-                        <div className="mt-auto flex items-center gap-2">
-                          <button
-                            type="button"
-                            aria-label="Diminuer la quantité"
-                            onClick={() => setQuantity(product.id, quantity - 1)}
-                            className="flex h-7 w-7 items-center justify-center rounded-full border border-granite/20 hover:bg-granite/5"
-                          >
-                            <Minus size={13} />
-                          </button>
-                          <span className="w-6 text-center text-sm">{quantity}</span>
-                          <button
-                            type="button"
-                            aria-label="Augmenter la quantité"
-                            onClick={() => setQuantity(product.id, quantity + 1)}
-                            className="flex h-7 w-7 items-center justify-center rounded-full border border-granite/20 hover:bg-granite/5"
-                          >
-                            <Plus size={13} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => removeItem(product.id)}
-                            className="ml-auto text-xs text-granite/50 underline hover:text-bivouac"
-                          >
-                            Retirer
-                          </button>
+                  {items.map(({ product, quantity }) => {
+                    const quoted = quoteByProduct.get(product.id);
+                    return (
+                      <li key={product.id} className="flex gap-3 py-4">
+                        <div className="relative h-20 w-20 flex-shrink-0 overflow-hidden rounded-lg bg-sand-dark">
+                          {product.images[0] && (
+                            <Image
+                              src={product.images[0]}
+                              alt={product.name}
+                              fill
+                              className="object-cover"
+                              sizes="80px"
+                            />
+                          )}
                         </div>
-                      </div>
-                      <span className="self-start text-sm font-semibold text-granite">
-                        {lineTotalEur.toFixed(2)} €
-                      </span>
-                    </li>
-                  ))}
+                        <div className="flex flex-1 flex-col">
+                          <span className="text-sm font-medium text-granite">{product.name}</span>
+                          <span className="text-sm text-granite/60">
+                            {quoted ? `${quoted.unitPriceEur.toFixed(2)} €` : '…'}
+                          </span>
+                          {quoted?.status === 'insufficient_stock' && (
+                            <span role="alert" className="text-xs font-semibold text-red-700">
+                              Stock insuffisant :{' '}
+                              {quoted.availableQuantity === 0
+                                ? 'produit épuisé'
+                                : `${quoted.availableQuantity} disponible${quoted.availableQuantity > 1 ? 's' : ''}`}
+                            </span>
+                          )}
+                          <div className="mt-auto flex items-center gap-2">
+                            <button
+                              type="button"
+                              aria-label="Diminuer la quantité"
+                              onClick={() => setQuantity(product.id, quantity - 1)}
+                              className="flex h-7 w-7 items-center justify-center rounded-full border border-granite/20 hover:bg-granite/5"
+                            >
+                              <Minus size={13} />
+                            </button>
+                            <span className="w-6 text-center text-sm">{quantity}</span>
+                            <button
+                              type="button"
+                              aria-label="Augmenter la quantité"
+                              onClick={() => setQuantity(product.id, quantity + 1)}
+                              className="flex h-7 w-7 items-center justify-center rounded-full border border-granite/20 hover:bg-granite/5"
+                            >
+                              <Plus size={13} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => removeItem(product.id)}
+                              className="ml-auto text-xs text-granite/50 underline hover:text-bivouac"
+                            >
+                              Retirer
+                            </button>
+                          </div>
+                        </div>
+                        <span className="self-start text-sm font-semibold text-granite">
+                          {quoted ? `${quoted.lineTotalEur.toFixed(2)} €` : '…'}
+                        </span>
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </div>
 
             {items.length > 0 && (
               <div className="border-t border-granite/10 px-5 py-4">
+                {quoteStatus === 'error' && (
+                  <p role="alert" className="mb-2 text-sm text-red-700">
+                    Impossible de vérifier votre panier pour le moment. Réessayez dans quelques instants.
+                  </p>
+                )}
+                {quote?.hasIssues && (
+                  <p role="alert" className="mb-2 text-sm text-red-700">
+                    Ajustez les quantités signalées avant de payer.
+                  </p>
+                )}
                 <div className="flex justify-between text-sm text-granite/70">
                   <span>Sous-total</span>
-                  <span>{subtotalEur.toFixed(2)} €</span>
+                  <span>{quote ? `${quote.subtotalEur.toFixed(2)} €` : '…'}</span>
                 </div>
                 <div className="flex justify-between text-sm text-granite/70">
                   <span>Livraison</span>
-                  <span>{shippingEur === 0 ? 'Offerte' : `${shippingEur.toFixed(2)} €`}</span>
+                  <span>
+                    {quote
+                      ? quote.shippingEur === 0
+                        ? 'Offerte'
+                        : `${quote.shippingEur.toFixed(2)} €`
+                      : '…'}
+                  </span>
                 </div>
                 <div className="mt-2 flex justify-between text-base font-bold text-granite">
                   <span>Total</span>
-                  <span>{totalEur.toFixed(2)} €</span>
+                  <span>{quote ? `${quote.totalEur.toFixed(2)} €` : '…'}</span>
                 </div>
                 <button
                   type="button"
                   onClick={handleCheckout}
-                  disabled={isCheckingOut}
+                  disabled={!canCheckout}
                   className="mt-4 flex w-full items-center justify-center rounded-full bg-bivouac py-3.5 text-base font-semibold text-white transition-transform duration-150 hover:bg-bivouac-dark active:scale-[0.98] disabled:opacity-60"
                 >
                   {isCheckingOut ? 'Redirection…' : 'Passer au paiement sécurisé'}

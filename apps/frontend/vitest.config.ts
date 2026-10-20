@@ -18,6 +18,7 @@ export default defineConfig({
         'src/lib/shop-api.ts',
         'src/lib/cart-lines.ts',
         'src/lib/categories.ts',
+        'src/lib/cart-quote.ts',
       ],
       thresholds: { lines: 80, functions: 80, branches: 80, statements: 80 },
     },

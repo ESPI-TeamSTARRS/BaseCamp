@@ -10,6 +10,7 @@ Catalogue, commandes et stock. Demande les paiements au service [payment](paymen
 |---|---|---|
 | GET | `/health` | liveness : le processus répond (toujours 200) |
 | GET | `/health/ready` | readiness : 200 si la base répond, **503** sinon (corps `{"service", "status": "up" \| "down"}`) |
+| POST | `/cart/quote` | devis d'un panier calculé par le serveur (voir ci-dessous) |
 | GET | `/products` | catalogue paginé, filtrable par catégorie (voir ci-dessous) |
 | GET | `/products/{slug}` | fiche détaillée d'un produit |
 
@@ -37,6 +38,7 @@ Les autres routes métier (commandes) s'ajoutent par tranche et se documentent i
 - Le stock ne devient jamais négatif (contrainte en base et dans l'entité).
 - Les prix sont des entiers en centimes, jamais des flottants; le front convertit pour l'affichage.
 - Un produit à stock 0 est « rupture » et ne peut pas être commandé.
+- Le serveur seul décide des prix, de la livraison et de la disponibilité : le client n'envoie que `productId` et `quantity`.
 - La liveness ne dépend jamais de la base; seule la readiness la teste.
 - Le service n'utilise que son propre rôle Postgres, jamais le compte administrateur.
 
