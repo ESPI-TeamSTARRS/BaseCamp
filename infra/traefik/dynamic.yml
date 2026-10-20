@@ -1,0 +1,27 @@
+# Routage de la passerelle (provider "file" : pas d'acces a la socket Docker).
+http:
+  routers:
+    shop:
+      rule: "PathPrefix(`/api/shop`)"
+      entryPoints: [web]
+      middlewares: [strip-api-shop]
+      service: shop
+      priority: 100
+    front:
+      rule: "PathPrefix(`/`)"
+      entryPoints: [web]
+      service: front
+      priority: 1
+  middlewares:
+    strip-api-shop:
+      stripPrefix:
+        prefixes: ["/api/shop"]
+  services:
+    shop:
+      loadBalancer:
+        servers:
+          - url: "http://shop:8000"
+    front:
+      loadBalancer:
+        servers:
+          - url: "http://front:3000"
