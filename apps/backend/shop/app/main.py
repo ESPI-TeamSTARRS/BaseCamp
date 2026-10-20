@@ -1,7 +1,13 @@
 from fastapi import FastAPI
 from sqlalchemy import create_engine
 
+from app.catalog.application.list_products import ListProductsUseCase
+from app.catalog.infrastructure.repositories.sqlalchemy_product_repository import (
+    SqlAlchemyProductRepository,
+)
+from app.catalog.presentation.router import router as catalog_router
 from app.core.config import Settings
+from app.core.errors import register_error_handlers
 from app.health.application.get_readiness import GetReadinessUseCase
 from app.health.infrastructure.clients.sqlalchemy_database_probe import SqlAlchemyDatabaseProbe
 from app.health.presentation.router import router as health_router
@@ -20,7 +26,12 @@ def create_app() -> FastAPI:
     application.state.readiness_use_case = GetReadinessUseCase(
         settings.service_name, SqlAlchemyDatabaseProbe(engine)
     )
+    application.state.list_products_use_case = ListProductsUseCase(
+        SqlAlchemyProductRepository(engine)
+    )
+    register_error_handlers(application)
     application.include_router(health_router)
+    application.include_router(catalog_router)
     return application
 
 
