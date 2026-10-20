@@ -183,10 +183,22 @@ jobs:
         if: always()
         run: docker compose down -v
 
+  deploy-rollback:
+    name: deploy-rollback
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      # Aucune dependance Python a installer : le script n'utilise que la bibliotheque standard.
+      - name: Bascule et retour arriere de scripts/deploy.sh (panne volontaire)
+        run: bash scripts/deploy/test-deploy.sh
+
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [backend, frontend, secrets-scan, tools, stack-e2e]
+    needs: [backend, frontend, secrets-scan, tools, stack-e2e, deploy-rollback]
     runs-on: ubuntu-latest
     permissions: {}
     steps:
