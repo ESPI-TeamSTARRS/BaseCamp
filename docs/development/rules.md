@@ -10,7 +10,7 @@ Règles applicables à tout changement. Elles se vérifient automatiquement quan
 4. **Exceptions de domaine typées** (code et message); les erreurs techniques sont converties en infrastructure; le routeur n'attrape pas les erreurs de domaine, un handler global s'en charge.
 5. **Validation de toute entrée** (Pydantic avec `extra="forbid"`; Zod `.strict()` côté front).
 6. **Aucun secret dans le code** : variables d'environnement, validées au démarrage.
-7. **Journaux structurés** (JSON), sans donnée sensible; erreurs renvoyées au client assainies.
+7. **Journaux structurés** (JSON), sans donnée sensible; erreurs renvoyées au client assainies. Chaque cas d'usage métier émet ses événements de succès et de refus ([logging.md](logging.md)).
 8. **Un service n'importe jamais le code d'un autre** et aucune bibliothèque n'est partagée entre services ([architecture/principles.md](../architecture/principles.md)).
 9. **Interface mobile first**.
 

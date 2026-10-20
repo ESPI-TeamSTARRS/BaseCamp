@@ -9,4 +9,5 @@
 - [Intégration continue](ci.md)
 - [Versionnement](versioning.md)
 - [Images de conteneur](images.md)
+- [Journalisation métier](logging.md)
 - [Sécurité](security.md)

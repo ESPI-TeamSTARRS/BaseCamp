@@ -101,6 +101,7 @@ services:
       APP_DB_NAME: ${SHOP_DB_NAME:-shop}
       APP_DB_USER: ${SHOP_DB_USER:-shop}
       APP_DB_PASSWORD: ${SHOP_DB_PASSWORD:?voir deploy/prod.env.example}
+      APP_LOG_PSEUDONYM_KEY: ${LOG_PSEUDONYM_KEY:?voir deploy/prod.env.example}
     networks: [data]
     depends_on:
       postgres: { condition: service_healthy }

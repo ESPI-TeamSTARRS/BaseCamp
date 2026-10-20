@@ -1,16 +1,19 @@
+import json
 from typing import Any
 
+import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.cart.__tests__.fake_cart_product_reader import FakeCartProductReader, default_catalog
 from app.cart.application.quote_cart import QuoteCartUseCase
+from app.core.__tests__.in_memory_business_event_logger import InMemoryBusinessEventLogger
 from app.main import create_app
 
 
 async def _post(payload: Any) -> tuple[int, Any]:
     application = create_app()
     application.state.quote_cart_use_case = QuoteCartUseCase(
-        FakeCartProductReader(default_catalog())
+        FakeCartProductReader(default_catalog()), InMemoryBusinessEventLogger()
     )
     async with AsyncClient(transport=ASGITransport(app=application), base_url="http://t") as client:
         response = await client.post("/cart/quote", json=payload)
@@ -92,3 +95,31 @@ class TestCartQuoteRouter:
 
         assert status_code == 422
         assert "zz-evil-zz" not in str(body)
+
+
+class TestCartQuoteLogging:
+    async def test_the_quote_writes_one_correlated_json_line_on_stdout(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        application = create_app()
+        application.state.quote_cart_use_case = QuoteCartUseCase(
+            FakeCartProductReader(default_catalog()), application.state.events
+        )
+        correlation_id = "7c1f0e52-3a0b-4f1e-9a52-1d6f7a9b2c10"
+        transport = ASGITransport(app=application)
+        async with AsyncClient(transport=transport, base_url="http://t") as client:
+            response = await client.post(
+                "/cart/quote",
+                json=_lines(("tente", 1)),
+                headers={"X-Correlation-ID": correlation_id},
+            )
+
+        (line,) = capsys.readouterr().out.strip().splitlines()
+        record = json.loads(line)
+        assert response.headers["X-Correlation-ID"] == correlation_id
+        assert (record["event"], record["outcome"], record["service"]) == (
+            "cart.quoted",
+            "success",
+            "basecamp-shop",
+        )
+        assert record["correlation_id"] == correlation_id

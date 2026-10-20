@@ -6,6 +6,7 @@ from app.catalog.application.list_products import ListProductsUseCase
 from app.catalog.domain.entities.product import Product
 from app.catalog.domain.enums.product_category import ProductCategory
 from app.catalog.domain.interfaces.product_repository import ProductRepository
+from app.core.__tests__.in_memory_business_event_logger import InMemoryBusinessEventLogger
 
 
 class FakeProductRepository(ProductRepository):
@@ -24,11 +25,13 @@ class FakeProductRepository(ProductRepository):
         return [p for p in self._products if category is None or p.category is category]
 
 
-def _use_case() -> ListProductsUseCase:
+def _use_case(events: InMemoryBusinessEventLogger | None = None) -> ListProductsUseCase:
     products = [make_product(f"tente-{i}") for i in range(5)] + [
         make_product("sac-1", category=ProductCategory.SACS_A_DOS)
     ]
-    return ListProductsUseCase(FakeProductRepository(products))
+    return ListProductsUseCase(
+        FakeProductRepository(products), events or InMemoryBusinessEventLogger()
+    )
 
 
 class TestListProducts:
@@ -60,3 +63,45 @@ class TestListProducts:
     def test_invalid_pagination_is_rejected(self, page: int, page_size: int) -> None:
         with pytest.raises(InvalidCatalogQueryError):
             _use_case().execute(category=None, page=page, page_size=page_size)
+
+
+class TestListProductsEvents:
+    def test_a_listing_emits_catalog_products_listed(self) -> None:
+        events = InMemoryBusinessEventLogger()
+
+        _use_case(events).execute(category="sacs-a-dos", page=2, page_size=4)
+
+        (event,) = events.events
+        assert (event.event, event.outcome.value, event.reason) == (
+            "catalog.products_listed",
+            "success",
+            None,
+        )
+        assert event.attributes == {"category": "sacs-a-dos", "page": 2, "page_size": 4, "total": 1}
+
+    def test_a_listing_without_category_omits_it(self) -> None:
+        events = InMemoryBusinessEventLogger()
+
+        _use_case(events).execute(category=None, page=1, page_size=20)
+
+        assert "category" not in events.events[0].attributes
+
+    @pytest.mark.parametrize(
+        ("category", "page", "page_size"),
+        [("<script>x</script>", 1, 10), (None, 0, 10), (None, 1, 101)],
+    )
+    def test_a_rejected_query_emits_a_denied_event_without_the_input(
+        self, category: str | None, page: int, page_size: int
+    ) -> None:
+        events = InMemoryBusinessEventLogger()
+
+        with pytest.raises(InvalidCatalogQueryError):
+            _use_case(events).execute(category=category, page=page, page_size=page_size)
+
+        (event,) = events.events
+        assert (event.event, event.outcome.value, event.reason) == (
+            "catalog.query_rejected",
+            "denied",
+            "invalid_query",
+        )
+        assert "script" not in repr(event)

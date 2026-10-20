@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basecamp.local/schemas/log-event.schema.json",
+  "title": "Evenement metier Basecamp",
+  "description": "Une ligne JSON par evenement metier sur la sortie standard des services shop, payment et auth. Contrat commun : on ajoute des champs optionnels, on ne renomme ni ne supprime jamais un champ ou un event publie.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["timestamp", "service", "level", "event", "correlation_id", "outcome"],
+  "properties": {
+    "timestamp": {
+      "description": "Horodatage ISO 8601 en UTC, a la milliseconde, suffixe Z.",
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+    },
+    "service": {
+      "description": "Nom du service emetteur (APP_SERVICE_NAME).",
+      "type": "string",
+      "minLength": 1
+    },
+    "level": {
+      "description": "info pour success, warning pour denied, error pour error.",
+      "enum": ["info", "warning", "error"]
+    },
+    "event": {
+      "description": "Nom stable <domaine>.<action>, jamais renomme une fois publie.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$"
+    },
+    "correlation_id": {
+      "description": "Identifiant de la requete, identique dans tous les services traverses.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9-]{8,64}$"
+    },
+    "outcome": {
+      "description": "success, denied (refus metier ou securite attendu) ou error (defaillance technique).",
+      "enum": ["success", "denied", "error"]
+    },
+    "reason": {
+      "description": "Code stable en snake_case, present si et seulement si outcome n'est pas success.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "resource_type": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+    "resource_id": { "type": "string", "minLength": 1 },
+    "actor_type": { "enum": ["user", "service"] },
+    "actor_id": { "type": "string", "minLength": 1 },
+    "duration_ms": { "type": "integer", "minimum": 0 },
+    "client_ip": {
+      "description": "Adresse du client (donnee personnelle), uniquement sur les refus d'auth et payment.",
+      "type": "string"
+    },
+    "attributes": {
+      "description": "Objet plat de valeurs scalaires non sensibles propres a l'evenement. Jamais de mot de passe, jeton, cle d'idempotence, numero de carte ni email en clair (email_hash seulement).",
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_]*$" },
+      "additionalProperties": {
+        "type": ["string", "number", "boolean", "null"]
+      }
+    }
+  },
+  "dependentRequired": {
+    "resource_id": ["resource_type"]
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "outcome": { "const": "success" } }, "required": ["outcome"] },
+      "then": { "not": { "required": ["reason"] }, "properties": { "level": { "const": "info" } } },
+      "else": { "required": ["reason"] }
+    },
+    {
+      "if": { "properties": { "outcome": { "const": "denied" } }, "required": ["outcome"] },
+      "then": { "properties": { "level": { "const": "warning" } } }
+    },
+    {
+      "if": { "properties": { "outcome": { "const": "error" } }, "required": ["outcome"] },
+      "then": { "properties": { "level": { "const": "error" } } }
+    }
+  ]
+}

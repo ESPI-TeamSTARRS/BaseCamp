@@ -1,5 +1,8 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
+
+DEVELOPMENT_ENVIRONMENTS = frozenset({"dev", "local"})
 
 
 class Settings(BaseSettings):
@@ -17,6 +20,16 @@ class Settings(BaseSettings):
     db_password: str = ""  # fournie par l'environnement (APP_DB_PASSWORD), jamais versionnee
 
     media_base_url: str = "/media"  # prefixe public des images (servies par la passerelle)
+
+    log_pseudonym_key: str = (
+        ""  # cle HMAC des empreintes d'email dans les logs (APP_LOG_PSEUDONYM_KEY)
+    )
+
+    @model_validator(mode="after")
+    def _require_pseudonym_key_outside_development(self) -> "Settings":
+        if self.environment not in DEVELOPMENT_ENVIRONMENTS and not self.log_pseudonym_key:
+            raise ValueError("APP_LOG_PSEUDONYM_KEY is required outside dev and local")
+        return self
 
     @property
     def database_url(self) -> str:
