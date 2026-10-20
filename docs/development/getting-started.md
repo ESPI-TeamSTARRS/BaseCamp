@@ -63,3 +63,27 @@ Le front est servi sur <http://127.0.0.1:8080/>. Arrêt : `docker compose down` 
 Les variables sont documentées dans `.env.example` (aucune valeur réelle). Les fins de ligne sont normalisées en LF par `.gitattributes` (Windows, WSL, Linux).
 
 Mailpit, SeaweedFS et Postgres n'ont volontairement pas de port publié; pour les inspecter : `docker compose exec <service> ...` ou `docker compose logs <service>`.
+
+## Tester `main` en local (pile de test)
+
+Pour essayer l'application telle que `main` la livre, sans toucher aux branches de développement, un script met à jour un clone séparé de `main` et reconstruit la pile.
+
+```powershell
+.\scripts\test-stack.ps1
+```
+
+À lancer après chaque fusion sur `main` (Windows PowerShell 5.1 ou PowerShell 7, Docker démarré). Le script :
+
+1. clone le dépôt au premier lancement, puis `git fetch` + `git reset --hard origin/main` + `git clean -fd` dans le clone de test (tout travail local y est perdu : ne jamais y développer);
+2. crée `.env` depuis `.env.example` au premier lancement (valeurs factices, jamais versionné, jamais écrasé ensuite);
+3. exécute `docker compose -p basecamp-test up -d --build --wait --remove-orphans`;
+4. affiche l'état des services, l'adresse à ouvrir et le résultat de `/api/shop/health/ready`.
+
+| Élément | Règle |
+|---|---|
+| Clone de test | `~\Desktop\Projects\BaseCamp-test` par défaut; autre emplacement via `-Path` ou la variable `BASECAMP_TEST_DIR`. Il doit rester hors du dépôt de développement et de ses worktrees (le script refuse un chemin à l'intérieur). |
+| Projet compose | `basecamp-test` : conteneurs, réseaux et volumes distincts de la pile de développement (`basecamp`). |
+| Port | `127.0.0.1:8180` (`-Port` à la création du `.env`; ensuite modifier `GATEWAY_PORT` dans le `.env` du clone), pour ne pas entrer en conflit avec le 8080 des piles de développement. |
+| Arrêt | `.\scripts\test-stack.ps1 -Down` (garde les données), avec `-Purge` pour les supprimer. |
+
+Limite connue : les images locales `basecamp-shop`, `basecamp-payment` et `basecamp-front` portent le même nom dans toutes les piles; reconstruire la pile de test déplace ces étiquettes, sans effet sur les conteneurs de développement déjà démarrés (ils sont reconstruits au prochain `up --build`).
