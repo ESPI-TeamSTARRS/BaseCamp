@@ -2,6 +2,8 @@
 # Seul Traefik est publie (127.0.0.1:${GATEWAY_PORT}). Reseaux :
 #   edge : traefik <-> hote        app  : traefik, front, shop, mailpit (interne)
 #   data : shop, postgres, seaweedfs   (interne, jamais publie)
+#   payment-net  : shop <-> payment (interne) ; payment n'est ni sur app ni publie
+#   payment-data : payment <-> payment-db (interne, jamais publie)
 
 name: basecamp
 
@@ -80,7 +82,7 @@ services:
     build: ./apps/backend/shop
     image: basecamp-shop
     environment: *shop-env
-    networks: [app, data]
+    networks: [app, data, payment-net]
     read_only: true
     depends_on:
       shop-migrate: { condition: service_completed_successfully }
@@ -112,6 +114,61 @@ services:
     networks: [data]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  payment-migrate:
+    build: ./apps/backend/payment
+    image: basecamp-payment
+    restart: "no"
+    command: ["alembic", "upgrade", "head"]
+    environment: &payment-env
+      APP_ENVIRONMENT: local
+      APP_DB_HOST: payment-db
+      APP_DB_PORT: "5432"
+      APP_DB_NAME: ${PAYMENT_DB_NAME:-payment}
+      APP_DB_USER: ${PAYMENT_DB_USER:-payment}
+      APP_DB_PASSWORD: ${PAYMENT_DB_PASSWORD:?voir .env.example}
+    networks: [payment-data]
+    depends_on:
+      payment-db: { condition: service_healthy }
+
+  payment:
+    <<: *hardening
+    build: ./apps/backend/payment
+    image: basecamp-payment
+    environment: *payment-env
+    networks: [payment-net, payment-data]
+    read_only: true
+    depends_on:
+      payment-migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/health', timeout=2)"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  payment-db:
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    image: postgres:17-alpine
+    user: postgres
+    # Conteneur dedie : le role applicatif est le seul compte, proprietaire de sa base.
+    environment:
+      POSTGRES_USER: ${PAYMENT_DB_USER:-payment}
+      POSTGRES_PASSWORD: ${PAYMENT_DB_PASSWORD:?voir .env.example}
+      POSTGRES_DB: ${PAYMENT_DB_NAME:-payment}
+    volumes:
+      - payment-db-data:/var/lib/postgresql/data
+    networks: [payment-data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -155,7 +212,12 @@ networks:
     internal: true
   data:
     internal: true
+  payment-net:
+    internal: true
+  payment-data:
+    internal: true
 
 volumes:
   postgres-data: {}
+  payment-db-data: {}
   seaweedfs-data: {}
