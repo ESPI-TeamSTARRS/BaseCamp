@@ -104,23 +104,40 @@ describe('fetchAllProducts', () => {
 });
 
 describe('fetchProductBySlug', () => {
-  it('retrouve un produit par son slug', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(pageOf([apiProduct], 1, 1)));
+  it('appelle la fiche detail de l API et retourne le produit', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(apiProduct));
 
     const result = await fetchProductBySlug('tente-a', fetchMock);
 
-    expect(result).toMatchObject({ ok: true, product: { slug: 'tente-a' } });
+    expect(result).toMatchObject({ ok: true, product: { slug: 'tente-a', priceEur: 329 } });
+    expect(String(fetchMock.mock.calls[0][0])).toMatch(/\/products\/tente-a$/);
   });
 
-  it('retourne product:null pour un slug inconnu', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(pageOf([apiProduct], 1, 1)));
+  it('encode le slug dans l URL', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ detail: 'Produit introuvable.' }, 404));
+
+    await fetchProductBySlug('../etc/passwd?x=1', fetchMock);
+
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/products/..%2Fetc%2Fpasswd%3Fx%3D1');
+  });
+
+  it('retourne product:null sur un 404', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ detail: 'Produit introuvable.' }, 404));
 
     expect(await fetchProductBySlug('inconnu', fetchMock)).toEqual({ ok: true, product: null });
   });
 
-  it('propage l indisponibilite de l API', async () => {
+  it('retourne ok:false quand l API est arretee', async () => {
     const fetchMock = vi.fn().mockRejectedValue(new Error('down'));
 
     expect(await fetchProductBySlug('tente-a', fetchMock)).toEqual({ ok: false });
+  });
+
+  it('retourne ok:false sur une erreur serveur ou un corps inattendu', async () => {
+    const serverError = vi.fn().mockResolvedValue(jsonResponse({ detail: 'boom' }, 500));
+    const badBody = vi.fn().mockResolvedValue(jsonResponse({ nope: true }));
+
+    expect(await fetchProductBySlug('tente-a', serverError)).toEqual({ ok: false });
+    expect(await fetchProductBySlug('tente-a', badBody)).toEqual({ ok: false });
   });
 });
