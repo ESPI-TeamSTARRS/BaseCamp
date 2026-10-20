@@ -293,7 +293,6 @@ networks:
     internal: true
   payment-data:
     internal: true
-
   auth-data:
     internal: true
 
