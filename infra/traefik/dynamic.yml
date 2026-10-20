@@ -20,7 +20,7 @@ http:
       # Images du catalogue : lecture seule (GET/HEAD) du bucket product-images via le filer.
       rule: "PathPrefix(`/media/`) && (Method(`GET`) || Method(`HEAD`))"
       entryPoints: [web]
-      middlewares: [media-path]
+      middlewares: [media-path, security-headers]
       service: media
       priority: 150
     front:
