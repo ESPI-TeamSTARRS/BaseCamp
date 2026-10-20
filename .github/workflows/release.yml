@@ -2,13 +2,16 @@ name: Release
 
 # A chaque push sur main : rejoue la CI (workflow reutilise), puis, si elle est verte, calcule la
 # prochaine version semver de chaque composant (shop, auth, payment, frontend) avec
-# python-semantic-release et pose le tag `<service>-vX.Y.Z` sur le commit de main. Aucun commit n'est ecrit sur main (branche protegee) : le tag est la
-# version de reference. Les etapes de build et de publication d'image viendront dans CE workflow
-# (un tag pousse avec GITHUB_TOKEN ne declenche aucun autre workflow).
+# python-semantic-release et pose le tag `<service>-vX.Y.Z` sur le commit de main. Aucun commit
+# n'est ecrit sur main (branche protegee) : le tag est la version de reference. Le build et la
+# publication de l'image se font dans CE workflow (un tag pousse avec GITHUB_TOKEN ne declenche
+# aucun autre workflow).
 
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    # Publie les images d'une version deja taguee mais pas encore publiee (ex. les premiers tags v0.1.0).
 
 concurrency:
   group: release
@@ -29,6 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      packages: write
     strategy:
       fail-fast: false
       matrix:
@@ -84,3 +88,89 @@ jobs:
             version --no-commit --no-changelog --no-vcs-release --no-push
           # Seul le tag part : pousser la branche echouerait si main a avance entre-temps.
           git push origin "refs/tags/$TAG"
+      - name: Cible de publication
+        id: target
+        env:
+          PSR_CONFIG: ${{ matrix.config }}
+          EVENT: ${{ github.event_name }}
+          NEXT_VERSION: ${{ steps.next.outputs.version }}
+          SERVICE: ${{ matrix.service }}
+        run: |
+          # Nouvelle version = on construit le commit courant. Declenchement manuel sans nouvelle
+          # version = on republie la derniere version taguee si son image manque.
+          version="$NEXT_VERSION"
+          if [ -z "$version" ] && [ "$EVENT" = workflow_dispatch ]; then
+            version="$(semantic-release --config "$PSR_CONFIG" version --print-last-released || true)"
+            [ "$version" = "0.0.0" ] && version=""
+            if [ -n "$version" ]; then
+              git checkout --detach "refs/tags/$SERVICE-v$version"
+            fi
+          fi
+          if [ -z "$version" ]; then
+            echo "Rien a publier pour $SERVICE."
+            exit 0
+          fi
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/$owner/basecamp-$SERVICE" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Connexion a GHCR
+        if: steps.target.outputs.version != ''
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Image deja publiee ?
+        id: exists
+        if: steps.target.outputs.version != ''
+        env:
+          REF: ${{ steps.target.outputs.image }}:${{ steps.target.outputs.version }}
+        run: |
+          # Un tag de version est immuable : on ne republie jamais par-dessus.
+          if docker buildx imagetools inspect "$REF" > /dev/null 2>&1; then
+            echo "$REF existe deja, publication ignoree."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        if: steps.target.outputs.version != '' && steps.exists.outputs.skip != 'true'
+      - name: Build et push (provenance + SBOM)
+        id: build
+        if: steps.target.outputs.version != '' && steps.exists.outputs.skip != 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ matrix.dir }}
+          push: true
+          # Tag provisoire par commit : les tags de version ne sont poses qu'apres controle (ci-dessous).
+          tags: ${{ steps.target.outputs.image }}:sha-${{ steps.target.outputs.short_sha }}
+          provenance: mode=max
+          sbom: true
+          # Seule valeur de build : une URL publique, jamais un secret (voir docs/development/images.md).
+          build-args: ${{ matrix.service == 'frontend' && format('NEXT_PUBLIC_SITE_URL={0}', vars.SITE_URL || 'https://basecamp.tempulse.fr') || '' }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.target.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.title=basecamp-${{ matrix.service }}
+      - name: Poser les tags de version sur le digest construit
+        if: steps.target.outputs.version != '' && steps.exists.outputs.skip != 'true'
+        env:
+          IMAGE: ${{ steps.target.outputs.image }}
+          VERSION: ${{ steps.target.outputs.version }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          SERVICE: ${{ matrix.service }}
+        run: |
+          minor="${VERSION%.*}"
+          docker buildx imagetools create -t "$IMAGE:$VERSION" -t "$IMAGE:$minor" "$IMAGE@$DIGEST"
+          printf '{"service":"%s","version":"%s","image":"%s@%s"}\n' \
+            "$SERVICE" "$VERSION" "$IMAGE" "$DIGEST" > "$RUNNER_TEMP/image-$SERVICE.json"
+          cat "$RUNNER_TEMP/image-$SERVICE.json"
+          echo "### $SERVICE $VERSION" >> "$GITHUB_STEP_SUMMARY"
+          echo "$IMAGE@$DIGEST" >> "$GITHUB_STEP_SUMMARY"
+      - name: Digest en artefact (entree du manifeste de deploiement)
+        if: steps.target.outputs.version != '' && steps.exists.outputs.skip != 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: image-${{ matrix.service }}
+          path: ${{ runner.temp }}/image-${{ matrix.service }}.json
+          retention-days: 90

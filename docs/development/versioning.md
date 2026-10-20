@@ -25,7 +25,7 @@ La configuration est dans `[tool.semantic_release]` de chaque `apps/backend/<ser
 2. Si elle est verte, il calcule, pour chacun des quatre composants, la prochaine version.
 3. Si un composant a changé, il pose et pousse le tag `<service>-vX.Y.Z` sur le commit de `main`. Aucun commit n'est écrit sur `main`.
 
-Le build et la publication des images se font dans ce même workflow (un tag poussé avec `GITHUB_TOKEN` ne déclenche pas d'autre workflow).
+Le build et la publication des images se font dans ce même workflow : voir [images.md](images.md).
 
 ## Vérifier en local
 
