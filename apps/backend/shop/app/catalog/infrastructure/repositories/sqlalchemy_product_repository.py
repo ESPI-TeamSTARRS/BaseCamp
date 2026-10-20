@@ -1,3 +1,5 @@
+from typing import Any
+
 from sqlalchemy import Engine, Select, func, select
 from sqlalchemy.orm import Session
 
@@ -32,9 +34,7 @@ class SqlAlchemyProductRepository(ProductRepository):
             return session.scalar(statement) or 0
 
     @staticmethod
-    def _filtered[T: tuple[object, ...]](
-        statement: Select[T], category: ProductCategory | None
-    ) -> Select[T]:
+    def _filtered(statement: Select[Any], category: ProductCategory | None) -> Select[Any]:
         if category is None:
             return statement
         return statement.where(ProductModel.category == category.value)

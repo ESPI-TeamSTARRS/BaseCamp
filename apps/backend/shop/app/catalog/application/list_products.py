@@ -1,4 +1,7 @@
 from app.catalog.application.invalid_catalog_query_error import InvalidCatalogQueryError
+from app.catalog.domain.entities.product import (
+    Product as Product,  # re-export: la presentation ne voit que l application
+)
 from app.catalog.domain.entities.product_page import ProductPage
 from app.catalog.domain.enums.product_category import ProductCategory
 from app.catalog.domain.interfaces.product_repository import ProductRepository
