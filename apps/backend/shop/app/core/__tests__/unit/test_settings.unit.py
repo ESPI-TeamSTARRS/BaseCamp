@@ -23,3 +23,28 @@ class TestSettingsDatabaseUrl:
 
         assert url.startswith("postgresql+psycopg://shop:")
         assert url.endswith("@localhost:5432/shop")
+
+
+class TestSettingsLogPseudonymKey:
+    def test_key_is_optional_in_dev_and_local(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("APP_LOG_PSEUDONYM_KEY", raising=False)
+        for environment in ("dev", "local"):
+            monkeypatch.setenv("APP_ENVIRONMENT", environment)
+
+            assert Settings().log_pseudonym_key == ""
+
+    @pytest.mark.parametrize("environment", ["staging", "production"])
+    def test_startup_fails_outside_dev_without_the_key(
+        self, monkeypatch: pytest.MonkeyPatch, environment: str
+    ) -> None:
+        monkeypatch.delenv("APP_LOG_PSEUDONYM_KEY", raising=False)
+        monkeypatch.setenv("APP_ENVIRONMENT", environment)
+
+        with pytest.raises(ValueError, match="APP_LOG_PSEUDONYM_KEY"):
+            Settings()
+
+    def test_key_is_read_from_the_environment(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("APP_ENVIRONMENT", "production")
+        monkeypatch.setenv("APP_LOG_PSEUDONYM_KEY", "une-cle-longue-et-secrete")
+
+        assert Settings().log_pseudonym_key == "une-cle-longue-et-secrete"

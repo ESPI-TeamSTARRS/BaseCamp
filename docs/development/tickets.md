@@ -19,7 +19,7 @@ Un ticket mixte se découpe; à défaut, Story.
 
 1. **Contexte et valeur** : le problème, pour qui, le bénéfice.
 2. **User story** : En tant que `<rôle>`, je veux `<action>` afin de `<bénéfice>` (pour une tâche : l'objectif et ce qu'il débloque).
-3. **Critères d'acceptation** : Étant donné / Quand / Alors, vérifiables, avec au moins un cas d'erreur ou limite.
+3. **Critères d'acceptation** : Étant donné / Quand / Alors, vérifiables, avec au moins un cas d'erreur ou limite. Pour un cas d'usage métier, un critère de journalisation : « le cas d'usage émet les événements `<service>.<action>` (succès et refus) du catalogue, vérifiés par test, sans donnée sensible » ([logging.md](logging.md)).
 4. **Périmètre** et **hors périmètre**.
 5. **Découpage par service** : ce qui change dans `shop`, `auth`, `payment`, `frontend`.
 6. **Exigences de qualité** : TDD, tests colocalisés, couverture ≥ 80 %, tests d'architecture, validation des entrées, documentation à jour.
