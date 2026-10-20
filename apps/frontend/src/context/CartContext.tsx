@@ -10,10 +10,10 @@ import {
   type CartLine,
   type CartProduct,
 } from '../lib/cart-lines';
+import { fetchCartQuote, type CartQuote } from '../lib/cart-quote';
 import type { Product } from '../types/product';
 
-export const FREE_SHIPPING_THRESHOLD_EUR = 80;
-export const STANDARD_SHIPPING_EUR = 5.9;
+export type QuoteStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 interface CartContextValue {
   lines: CartLine[];
@@ -25,11 +25,10 @@ interface CartContextValue {
   removeItem: (productId: string) => void;
   setQuantity: (productId: string, quantity: number) => void;
   itemCount: number;
-  items: Array<{ product: CartProduct; quantity: number; lineTotalEur: number }>;
-  subtotalEur: number;
-  shippingEur: number;
-  totalEur: number;
-  amountRemainingForFreeShippingEur: number;
+  items: Array<{ product: CartProduct; quantity: number }>;
+  /** Devis du serveur (prix, livraison, franco, stock) : le panier local ne décide jamais d'un montant. */
+  quote: CartQuote | null;
+  quoteStatus: QuoteStatus;
 }
 
 const CartContext = createContext<CartContextValue | null>(null);
@@ -42,6 +41,8 @@ function isFullProduct(product: Product | CartProduct): product is Product {
 export function CartProvider({ children }: { children: ReactNode }) {
   const [lines, setLines] = useState<CartLine[]>([]);
   const [isOpen, setIsOpen] = useState(false);
+  const [quote, setQuote] = useState<CartQuote | null>(null);
+  const [quoteStatus, setQuoteStatus] = useState<QuoteStatus>('idle');
 
   useEffect(() => {
     try {
@@ -60,6 +61,29 @@ export function CartProvider({ children }: { children: ReactNode }) {
     }
   }, [lines]);
 
+  // Chaque modification du panier redemande le devis au serveur (la dernière réponse l'emporte).
+  useEffect(() => {
+    let cancelled = false;
+    if (lines.length === 0) {
+      setQuote(null);
+      setQuoteStatus('idle');
+      return;
+    }
+    setQuoteStatus('loading');
+    fetchCartQuote(lines).then((result) => {
+      if (cancelled) return;
+      if (result.ok) {
+        setQuote(result.quote);
+        setQuoteStatus('ready');
+      } else {
+        setQuoteStatus('error');
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [lines]);
+
   const addItem = useCallback((product: Product | CartProduct, quantity = 1) => {
     if (product.availability === 'out_of_stock') return;
     const cartProduct = isFullProduct(product) ? toCartProduct(product) : product;
@@ -75,16 +99,6 @@ export function CartProvider({ children }: { children: ReactNode }) {
     setLines((prev) => setLineQuantity(prev, productId, quantity));
   }, []);
 
-  const items = useMemo(
-    () => lines.map((line) => ({ ...line, lineTotalEur: line.product.priceEur * line.quantity })),
-    [lines]
-  );
-
-  const subtotalEur = useMemo(() => items.reduce((sum, item) => sum + item.lineTotalEur, 0), [items]);
-  const shippingEur =
-    subtotalEur >= FREE_SHIPPING_THRESHOLD_EUR || subtotalEur === 0 ? 0 : STANDARD_SHIPPING_EUR;
-  const totalEur = subtotalEur + shippingEur;
-  const amountRemainingForFreeShippingEur = Math.max(0, FREE_SHIPPING_THRESHOLD_EUR - subtotalEur);
   const itemCount = useMemo(() => lines.reduce((sum, l) => sum + l.quantity, 0), [lines]);
 
   const value: CartContextValue = {
@@ -96,11 +110,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
     removeItem,
     setQuantity,
     itemCount,
-    items,
-    subtotalEur,
-    shippingEur,
-    totalEur,
-    amountRemainingForFreeShippingEur,
+    items: lines,
+    quote,
+    quoteStatus,
   };
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;

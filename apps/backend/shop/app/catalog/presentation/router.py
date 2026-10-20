@@ -31,7 +31,7 @@ def list_products(
     try:
         result = use_case.execute(category=category, page=page, page_size=page_size)
     except InvalidCatalogQueryError as error:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=error.message) from None
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=error.message) from None
     mapper = ProductResponseMapper(Settings().media_base_url)
     return ProductListResponse(
         items=[mapper.to_response(product) for product in result.items],

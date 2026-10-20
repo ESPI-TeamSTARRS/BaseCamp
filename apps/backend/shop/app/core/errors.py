@@ -4,13 +4,21 @@ from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+EXTRA_FORBIDDEN = "extra_forbidden"
+
 
 def _invalid_request(_: Request, error: Exception) -> JSONResponse:
-    """422 assaini : on nomme les parametres fautifs, jamais leur valeur."""
+    """422 assaini : on nomme au plus les champs declares fautifs, jamais une valeur ni une cle recue."""
     errors = cast(RequestValidationError, error).errors()
-    fields = sorted({str(item["loc"][-1]) for item in errors if item["loc"]})
+    fields = sorted(
+        {
+            str(item["loc"][-1])
+            for item in errors
+            if item["loc"] and item["type"] != EXTRA_FORBIDDEN and isinstance(item["loc"][-1], str)
+        }
+    )
     return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         content={"detail": "Requete invalide.", "fields": fields},
     )
 
