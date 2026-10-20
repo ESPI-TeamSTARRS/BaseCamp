@@ -20,6 +20,10 @@ services:
     command:
       - --providers.file.filename=/etc/traefik/dynamic.yml
       - --entrypoints.web.address=:9080
+      - --entrypoints.web.forwardedHeaders.insecure=false
+      - --entrypoints.web.transport.respondingTimeouts.readTimeout=30s
+      - --entrypoints.web.transport.respondingTimeouts.writeTimeout=30s
+      - --entrypoints.web.transport.respondingTimeouts.idleTimeout=60s
       - --ping=true
       - --log.level=INFO
     ports:

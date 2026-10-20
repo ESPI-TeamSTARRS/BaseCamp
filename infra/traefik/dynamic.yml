@@ -1,27 +1,71 @@
-# Routage de la passerelle (provider "file" : pas d'acces a la socket Docker).
+# Routage et protections de la passerelle (provider "file" : pas d'acces a la socket Docker).
+# Aucun secret ici. Les delais d'expiration des connexions entrantes sont dans docker-compose.yml
+# (entrypoints.web.transport.respondingTimeouts), ceux vers les services dans serversTransports.
 http:
   routers:
+    shop-orders:
+      # Limitation de debit stricte sur les commandes (ancien checkout : 10/min).
+      rule: "PathPrefix(`/api/shop/orders`)"
+      entryPoints: [web]
+      middlewares: [orders-rate-limit, body-limit, security-headers, strip-api-shop]
+      service: shop
+      priority: 200
     shop:
       rule: "PathPrefix(`/api/shop`)"
       entryPoints: [web]
-      middlewares: [strip-api-shop]
+      middlewares: [body-limit, security-headers, strip-api-shop]
       service: shop
       priority: 100
     front:
       rule: "PathPrefix(`/`)"
       entryPoints: [web]
+      middlewares: [security-headers]
       service: front
       priority: 1
+
   middlewares:
     strip-api-shop:
       stripPrefix:
         prefixes: ["/api/shop"]
+
+    orders-rate-limit:
+      # Cle = adresse reelle de la connexion (RemoteAddr). Pas d'ipStrategy.depth : un
+      # X-Forwarded-For fourni par le client n'est jamais lu, et l'entrypoint ne fait confiance
+      # a aucun proxy (forwardedHeaders.insecure=false, sans trustedIPs) donc il est ecrase.
+      # Derriere un load balancer, declarer ses IP dans entrypoints.web.forwardedHeaders.trustedIPs.
+      rateLimit:
+        average: 10
+        period: 1m
+        burst: 5
+
+    body-limit:
+      buffering:
+        maxRequestBodyBytes: 1048576 # 1 Mio -> 413 au-dela
+
+    security-headers:
+      headers:
+        forceSTSHeader: true # actif aussi en HTTP local; en production, derriere TLS
+        stsSeconds: 63072000
+        stsIncludeSubdomains: true
+        contentTypeNosniff: true
+        frameDeny: true
+        referrerPolicy: strict-origin-when-cross-origin
+
+  serversTransports:
+    default:
+      forwardingTimeouts:
+        dialTimeout: 5s
+        responseHeaderTimeout: 30s
+        idleConnTimeout: 60s
+
   services:
     shop:
       loadBalancer:
+        serversTransport: default
         servers:
           - url: "http://shop:8000"
     front:
       loadBalancer:
+        serversTransport: default
         servers:
           - url: "http://front:3000"
