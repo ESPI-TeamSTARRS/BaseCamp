@@ -10,7 +10,7 @@ BASE_URL = os.environ.get("E2E_BASE_URL", "http://127.0.0.1:8080")
 
 @pytest.fixture
 def client() -> httpx.Client:
-    return httpx.Client(base_url=BASE_URL, timeout=5.0)
+    return httpx.Client(base_url=BASE_URL, timeout=5.0, follow_redirects=True)
 
 
 class TestAuthStack:
