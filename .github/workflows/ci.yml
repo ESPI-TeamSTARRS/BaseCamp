@@ -159,7 +159,7 @@ jobs:
       - run: uv sync --frozen
         working-directory: apps/backend/auth
       - name: Scenarios e2e auth contre Traefik
-        run: uv run poe test:e2e
+        run: uv run --frozen poe test:e2e
         working-directory: apps/backend/auth
       - name: Isolation de payment (reseau, bases, migrations, readiness)
         run: sh scripts/check-payment-isolation.sh
