@@ -35,7 +35,7 @@ Types : `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `ci`, `build`, `perf
 3. Avant de pousser : `uv run poe quality` et `uv run poe test` pour les services touchés. Les hooks `pre-commit` et `pre-push` doivent passer, sans jamais être contournés (`--no-verify` interdit).
 4. Se resynchroniser avec `main` si besoin (`git fetch && git rebase origin/main`), puis pousser.
 5. Ouvrir la PR : titre au format commit, description courte (quoi, pourquoi, comment tester), tâche Linear liée. PR en brouillon tant que la CI n'est pas verte.
-6. Relecture, correctifs par commits supplémentaires, CI verte, **squash and merge**. Supprimer la branche.
+6. Relecture, correctifs par commits supplémentaires, CI verte, titre de PR au format commit (check `pr-title`), **squash and merge** avec le titre de la PR comme message (il fixe la version, voir `docs/development/versioning.md`). Supprimer la branche.
 7. La CD déploie `main`; surveiller le contrôle de santé.
 
 ## Feature flags

@@ -1,0 +1,86 @@
+name: Release
+
+# A chaque push sur main : rejoue la CI (workflow reutilise), puis, si elle est verte, calcule la
+# prochaine version semver de chaque composant (shop, auth, payment, frontend) avec
+# python-semantic-release et pose le tag `<service>-vX.Y.Z` sur le commit de main. Aucun commit n'est ecrit sur main (branche protegee) : le tag est la
+# version de reference. Les etapes de build et de publication d'image viendront dans CE workflow
+# (un tag pousse avec GITHUB_TOKEN ne declenche aucun autre workflow).
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  ci:
+    name: ci
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+
+  version:
+    name: version-${{ matrix.service }}
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: shop
+            dir: apps/backend/shop
+            config: pyproject.toml
+          - service: auth
+            dir: apps/backend/auth
+            config: pyproject.toml
+          - service: payment
+            dir: apps/backend/payment
+            config: pyproject.toml
+          - service: frontend
+            dir: apps/frontend
+            config: releaserc.toml
+    defaults:
+      run:
+        working-directory: ${{ matrix.dir }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+      - name: Branche main (python-semantic-release refuse un HEAD detache)
+        run: git checkout -B main "$GITHUB_SHA"
+        working-directory: .
+      - name: Installer python-semantic-release (versions et empreintes verrouillees)
+        run: |
+          uv venv "$RUNNER_TEMP/psr"
+          uv pip install --python "$RUNNER_TEMP/psr" --require-hashes -r "$GITHUB_WORKSPACE/scripts/release/requirements.txt"
+          echo "$RUNNER_TEMP/psr/bin" >> "$GITHUB_PATH"
+      - name: Prochaine version
+        id: next
+        env:
+          PSR_CONFIG: ${{ matrix.config }}
+        run: |
+          next="$(semantic-release --config "$PSR_CONFIG" version --print || true)"
+          echo "Prochaine version : ${next:-aucune}"
+          last="$(semantic-release --config "$PSR_CONFIG" version --print-last-released || true)"
+          if [ -n "$next" ] && [ "$next" != "$last" ]; then
+            echo "version=$next" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Tag du service
+        if: steps.next.outputs.version != ''
+        env:
+          PSR_CONFIG: ${{ matrix.config }}
+          TAG: ${{ matrix.service }}-v${{ steps.next.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          semantic-release --config "$PSR_CONFIG" \
+            version --no-commit --no-changelog --no-vcs-release --no-push
+          # Seul le tag part : pousser la branche echouerait si main a avance entre-temps.
+          git push origin "refs/tags/$TAG"
