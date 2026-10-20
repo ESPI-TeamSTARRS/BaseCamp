@@ -4,7 +4,9 @@
 Vitrine Next.js (App Router) : catalogue, fiches produit, panier, pages légales, SEO.
 
 ## Stack
-Next.js 14, TypeScript strict, Tailwind CSS, Framer Motion, Zod.
+Next.js 16 (App Router, React 19, Turbopack), TypeScript strict, Tailwind CSS, Framer Motion, Zod. ESLint 9 en configuration plate (`eslint.config.mjs`, `eslint .`), Node 20.9 ou plus.
+
+Les paramètres de route (`params`) sont asynchrones (`await params`). Les visuels du catalogue sont servis par la passerelle sous `/media` (même origine) : `images.remotePatterns` reste vide, sans domaine générique, et l'optimiseur d'images est désactivé. L'audit `npm audit --omit=dev --audit-level=high` est bloquant en CI (job `frontend`).
 
 ## Organisation
 `src/app` (routes), `src/components`, `src/context` (panier), `src/lib` (utilitaires métier), `src/types`.
