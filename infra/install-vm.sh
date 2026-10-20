@@ -105,7 +105,7 @@ if [[ ! -s "$ENV_FILE" ]]; then
       *) printf '%s\n' "$line" ;;
     esac
   done < "$BASE/repo/deploy/prod.env.example" > "$tmp"
-  # Cle de pseudonymisation des journaux metier : requise des que ce chantier est deploye.
+  # Cle de pseudonymisation des journaux metier (deja dans le modele ; filet si le modele change).
   grep -q '^LOG_PSEUDONYM_KEY=' "$tmp" || printf 'LOG_PSEUDONYM_KEY=%s\n' "$(openssl rand -hex 32)" >> "$tmp"
   install -o "$APP_USER" -g "$APP_USER" -m 600 "$tmp" "$ENV_FILE"
   rm -f "$tmp"
@@ -117,7 +117,7 @@ if grep -q 'change-me' "$ENV_FILE"; then
   log "ATTENTION : des valeurs 'change-me' subsistent dans $ENV_FILE, a remplacer avant d'activer les deploiements."
 fi
 if ! grep -q '^LOG_PSEUDONYM_KEY=' "$ENV_FILE"; then
-  log "NOTE : LOG_PSEUDONYM_KEY absente de $ENV_FILE. Elle sera obligatoire des que les journaux metier seront deployes ; ajouter une valeur aleatoire longue (openssl rand -hex 32), voir le runbook."
+  log "ATTENTION : LOG_PSEUDONYM_KEY absente de $ENV_FILE. Elle est OBLIGATOIRE (Compose refuse de demarrer sans elle) : ajouter une valeur aleatoire longue (openssl rand -hex 32), voir le runbook."
 fi
 
 # --- 6. cles de signature d'auth ---------------------------------------------------------------
