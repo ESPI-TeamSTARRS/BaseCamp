@@ -5,6 +5,8 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-install-project --no-dev
 COPY app ./app
+COPY alembic.ini ./
+COPY alembic ./alembic
 RUN uv sync --frozen --no-dev
 
 FROM python:3.13-slim AS runtime
