@@ -55,3 +55,9 @@ Un scan rouge laisse seulement le tag provisoire `sha-…` dans le registre, san
 ### Exception
 
 À réserver aux faux positifs ou aux failles non exploitables dans notre usage. On ajoute l'identifiant (CVE ou GHSA) au fichier `.trivyignore` à la racine, **avec un commentaire** : motif, auteur et date de réévaluation (3 mois maximum). L'exception se discute en relecture de PR comme n'importe quel changement. Ne jamais relever le seuil ni retirer le scan pour faire passer une release.
+
+### Choix de construction qui font passer le scan
+
+- Backends : `pip` est désinstallé de l'étape finale de l'image (`python -m pip uninstall`). L'application tourne depuis `/app/.venv` ; `pip` n'est pas utile à l'exécution et embarque des bibliothèques (msgpack, urllib3…) qui produisaient des alertes.
+- Front : `apk upgrade` applique les correctifs système (openssl), et npm/yarn sont retirés de l'image finale (le serveur est `node server.js`).
+- Le front ne contient plus de chaîne ressemblant à une clé Stripe : la valeur de repli de `lib/stripe.ts` est `placeholder_build_only`.

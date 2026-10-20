@@ -22,6 +22,10 @@ ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
+# Mises à jour de sécurité du système (openssl…), puis retrait de npm et yarn : inutiles à
+# l'exécution (le serveur est `node server.js`) et sources de CVE (bibliothèques embarquées).
+RUN apk upgrade --no-cache &&     rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx /opt/yarn-* /usr/local/bin/yarn /usr/local/bin/yarnpkg
+
 # Utilisateur système sans privilèges — ce conteneur ne doit jamais tourner en root.
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
