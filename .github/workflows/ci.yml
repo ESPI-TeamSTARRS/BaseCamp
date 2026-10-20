@@ -7,8 +7,11 @@ name: CI
 
 on:
   push:
+    # Sur main, la CI est jouee par release.yml (appel de ce workflow) avant le calcul des versions.
+    branches-ignore: [main]
   pull_request:
     branches: [main]
+  workflow_call:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}

@@ -1,15 +1,13 @@
 name: Release
 
-# Apres une CI verte sur main, calcule la prochaine version semver de chaque composant
-# (shop, auth, payment, frontend) avec python-semantic-release et pose le tag `<service>-vX.Y.Z`
-# sur le commit de main. Aucun commit n'est ecrit sur main (branche protegee) : le tag est la
+# A chaque push sur main : rejoue la CI (workflow reutilise), puis, si elle est verte, calcule la
+# prochaine version semver de chaque composant (shop, auth, payment, frontend) avec
+# python-semantic-release et pose le tag `<service>-vX.Y.Z` sur le commit de main. Aucun commit n'est ecrit sur main (branche protegee) : le tag est la
 # version de reference. Les etapes de build et de publication d'image viendront dans CE workflow
 # (un tag pousse avec GITHUB_TOKEN ne declenche aucun autre workflow).
 
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
+  push:
     branches: [main]
 
 concurrency:
@@ -22,9 +20,15 @@ env:
   PSR: python-semantic-release==10.5.3
 
 jobs:
+  ci:
+    name: ci
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+
   version:
     name: version-${{ matrix.service }}
-    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    needs: ci
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -50,13 +54,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
       - uses: astral-sh/setup-uv@v5
       - name: Branche main (python-semantic-release refuse un HEAD detache)
-        env:
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
-        run: git checkout -B main "$HEAD_SHA"
+        run: git checkout -B main "$GITHUB_SHA"
         working-directory: .
       - name: Prochaine version
         id: next

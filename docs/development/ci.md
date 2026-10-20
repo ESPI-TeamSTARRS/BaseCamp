@@ -1,6 +1,6 @@
 # Intégration continue
 
-Workflow : `.github/workflows/ci.yml`, déclenché à chaque push et sur les pull requests vers `main`.
+Workflow : `.github/workflows/ci.yml`, déclenché à chaque push (hors `main`) et sur les pull requests vers `main`. Sur `main`, la CI est jouée par `release.yml`, qui appelle `ci.yml` avant de calculer les versions.
 
 | Job | Contenu |
 |---|---|
@@ -20,4 +20,4 @@ Ajouter son nom dans la liste `service` de la matrice du job `backend`.
 
 ## Release
 
-Le workflow `.github/workflows/release.yml` se déclenche à la fin d'une CI verte sur `main` et pose les tags de version par service. Détails dans [versioning.md](versioning.md).
+Le workflow `.github/workflows/release.yml` se déclenche à chaque push sur `main`, rejoue la CI puis, si elle est verte, pose les tags de version par service. Détails dans [versioning.md](versioning.md).
