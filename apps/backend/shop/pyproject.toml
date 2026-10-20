@@ -90,6 +90,7 @@ typecheck       = "mypy ."
 test            = "pytest"
 "test:unit"     = "pytest -m unit --no-cov"
 "test:integ"    = "pytest -m integ --no-cov"
+"test:e2e"      = "pytest -m e2e --no-cov"
 "test:cov"      = "pytest -m 'unit or integ' --cov=app --cov-fail-under=80"
 "security:deps" = "pip-audit"
 security        = ["security:deps"]
