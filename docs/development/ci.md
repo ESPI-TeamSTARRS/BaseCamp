@@ -20,4 +20,4 @@ Ajouter son nom dans la liste `service` de la matrice du job `backend`.
 
 ## Release
 
-Le workflow `.github/workflows/release.yml` se déclenche à chaque push sur `main`, rejoue la CI puis, si elle est verte, pose les tags de version par service. Détails dans [versioning.md](versioning.md).
+Le workflow `.github/workflows/release.yml` se déclenche à chaque push sur `main`, rejoue la CI puis, si elle est verte, pose les tags de version par service et publie les images sur GHCR ([images.md](images.md)). Détails dans [versioning.md](versioning.md).

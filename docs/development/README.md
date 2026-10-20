@@ -8,4 +8,5 @@
 - [Git trunk-based, commits et hooks](git-and-hooks.md)
 - [Intégration continue](ci.md)
 - [Versionnement](versioning.md)
+- [Images de conteneur](images.md)
 - [Sécurité](security.md)
