@@ -11,6 +11,8 @@ RUN uv sync --frozen --no-dev
 
 FROM python:3.13-slim AS runtime
 RUN groupadd --system app && useradd --system --gid app --home /app app
+# pip (et ses bibliotheques embarquees) est inutile a l'execution : l'app tourne depuis /app/.venv.
+RUN python -m pip uninstall -y pip
 WORKDIR /app
 COPY --from=builder --chown=app:app /app /app
 ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1

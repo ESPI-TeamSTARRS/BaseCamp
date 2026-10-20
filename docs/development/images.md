@@ -9,7 +9,7 @@ Chaque composant (`shop`, `auth`, `payment`, `frontend`) est publié en image su
 | Dépôt d'images | `ghcr.io/espi-teamstarrs/basecamp-<service>` (images publiques) |
 | `:X.Y.Z` | version exacte, **immuable** : si le tag existe déjà, le workflow ne republie pas |
 | `:X.Y` | dernière version du palier mineur |
-| `:sha-<12 car.>` | tag provisoire posé au build, avant les contrôles |
+| `:sha-<12 car.>` | tag provisoire posé au build, avant le scan Trivy |
 | `latest` | **n'existe pas**, n'est jamais publié ni utilisé |
 | Référence de déploiement | toujours le **digest** (`basecamp-<service>@sha256:…`), jamais un tag |
 
@@ -42,3 +42,22 @@ Les tags posés avant l'existence de ce mécanisme n'ont pas d'image. Lancer à 
 ## Visibilité
 
 Un package GHCR est privé à sa création. Après le premier push, passer chaque package `basecamp-<service>` en **public** dans ses paramètres (Package settings → Change visibility). Le libellé `org.opencontainers.image.source` relie le package au dépôt.
+
+## Scan de sécurité (Trivy)
+
+Après le build du tag provisoire `sha-<12 car.>` et **avant** la pose des tags de version, le workflow scanne l'image par son digest avec Trivy (action épinglée par SHA) :
+
+- vulnérabilités de gravité **HIGH et CRITICAL** pour lesquelles un correctif existe (`ignore-unfixed`) : le job échoue, aucun tag de version n'est posé, aucun artefact de digest n'est publié, donc rien n'entre dans le manifeste de déploiement ;
+- **secrets** présents dans les couches de l'image : même effet.
+
+Un scan rouge laisse seulement le tag provisoire `sha-…` dans le registre, sans conséquence. Pour corriger : mettre à jour la dépendance ou l'image de base concernée par une PR courte, puis la release suivante repasse le scan.
+
+### Exception
+
+À réserver aux faux positifs ou aux failles non exploitables dans notre usage. On ajoute l'identifiant (CVE ou GHSA) au fichier `.trivyignore` à la racine, **avec un commentaire** : motif, auteur et date de réévaluation (3 mois maximum). L'exception se discute en relecture de PR comme n'importe quel changement. Ne jamais relever le seuil ni retirer le scan pour faire passer une release.
+
+### Choix de construction qui font passer le scan
+
+- Backends : `pip` est désinstallé de l'étape finale de l'image (`python -m pip uninstall`). L'application tourne depuis `/app/.venv` ; `pip` n'est pas utile à l'exécution et embarque des bibliothèques (msgpack, urllib3…) qui produisaient des alertes.
+- Front : `apk upgrade` applique les correctifs système (openssl), et npm/yarn sont retirés de l'image finale (le serveur est `node server.js`).
+- Le front ne contient plus de chaîne ressemblant à une clé Stripe : la valeur de repli de `lib/stripe.ts` est `placeholder_build_only`.

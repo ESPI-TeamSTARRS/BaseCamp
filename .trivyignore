@@ -1,0 +1,6 @@
+# Exceptions du scan Trivy des images (voir docs/development/images.md).
+# Une ligne = un identifiant (CVE-AAAA-NNNN ou GHSA-xxxx). Chaque exception DOIT etre precedee
+# d'un commentaire : motif, auteur et date de reevaluation (3 mois maximum).
+# Exemple :
+#   # Non exploitable : bibliotheque presente mais jamais appelee. Sam, a revoir le 2027-01-20.
+#   CVE-2099-0001
