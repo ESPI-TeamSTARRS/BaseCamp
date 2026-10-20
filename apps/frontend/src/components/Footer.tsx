@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { Mountain } from 'lucide-react';
-import { categoryLabels } from '../lib/products';
+import { categoryLabels } from '../lib/categories';
 
 export function Footer() {
   return (

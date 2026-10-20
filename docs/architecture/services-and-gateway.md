@@ -24,6 +24,7 @@ Un reverse proxy (Traefik) est le seul point d'entrée publié. Il route les req
 | Préfixe | Service |
 |---|---|
 | `/api/shop/*` | `shop` |
+| `/media/*` | images du catalogue (bucket `product-images`, lecture seule) |
 | `/api/auth/*` | `auth` |
 | `/api/payment/*` | `payment` (accès restreint) |
 

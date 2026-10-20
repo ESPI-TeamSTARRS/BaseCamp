@@ -139,8 +139,10 @@ jobs:
             NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_dummy
           cache-from: type=gha,scope=front
           cache-to: type=gha,scope=front,mode=max
-      - name: Pile minimale (Traefik, front, shop, payment et leurs bases) healthy
-        run: docker compose up -d --no-build --wait --wait-timeout 120 traefik payment
+      - name: Pile minimale (Traefik, front, shop, payment, bucket d images et leurs bases) healthy
+        run: docker compose up -d --no-build --wait --wait-timeout 120 traefik payment seaweedfs
+      - name: Amorcage du bucket (visuels du catalogue)
+        run: docker compose run --rm --no-deps seaweedfs-seed
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true

@@ -2,9 +2,17 @@ import { Hero } from '../components/Hero';
 import { ReassuranceBar } from '../components/ReassuranceBar';
 import { ProductCard } from '../components/ProductCard';
 import { JsonLd } from '../components/JsonLd';
-import { products, categoryLabels } from '../lib/products';
+import { CatalogUnavailable } from '../components/CatalogUnavailable';
+import { categoryLabels } from '../lib/categories';
+import { fetchAllProducts } from '../lib/shop-api';
 
-export default function HomePage() {
+// Le catalogue vient de l'API à chaque requête : rien n'est figé au build.
+export const dynamic = 'force-dynamic';
+
+const FEATURED_PRODUCTS = 8;
+
+export default async function HomePage() {
+  const catalog = await fetchAllProducts();
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://basecamp-outdoor.fr';
 
   return (
@@ -27,11 +35,15 @@ export default function HomePage() {
         <div className="mb-8 flex items-baseline justify-between">
           <h2 className="text-2xl font-bold text-granite">Les essentiels du bivouac</h2>
         </div>
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          {products.slice(0, 8).map((product) => (
-            <ProductCard key={product.id} product={product} />
-          ))}
-        </div>
+        {catalog.ok ? (
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {catalog.products.slice(0, FEATURED_PRODUCTS).map((product) => (
+              <ProductCard key={product.id} product={product} />
+            ))}
+          </div>
+        ) : (
+          <CatalogUnavailable />
+        )}
       </section>
 
       <section className="bg-forest-deep/5 py-16">

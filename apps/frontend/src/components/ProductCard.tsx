@@ -8,8 +8,15 @@ import type { Product } from '../types/product';
 import { TechBadgeList } from './TechBadge';
 import { useCart } from '../context/CartContext';
 
+const AVAILABILITY_LABELS: Record<Product['availability'], string> = {
+  in_stock: 'En stock',
+  low_stock: 'Dernières pièces',
+  out_of_stock: 'Rupture de stock',
+};
+
 export function ProductCard({ product }: { product: Product }) {
   const { addItem } = useCart();
+  const soldOut = product.availability === 'out_of_stock';
 
   return (
     <motion.div
@@ -57,6 +64,19 @@ export function ProductCard({ product }: { product: Product }) {
           </span>
         </div>
 
+        <p
+          data-availability={product.availability}
+          className={`text-xs font-semibold ${
+            soldOut
+              ? 'text-red-700'
+              : product.availability === 'low_stock'
+                ? 'text-bivouac-dark'
+                : 'text-forest'
+          }`}
+        >
+          {AVAILABILITY_LABELS[product.availability]}
+        </p>
+
         <div className="mt-auto flex items-center justify-between pt-2">
           <div className="flex items-baseline gap-2">
             <span className="text-xl font-bold text-forest-deep">{product.priceEur.toFixed(2)} €</span>
@@ -69,9 +89,10 @@ export function ProductCard({ product }: { product: Product }) {
 
           <button
             type="button"
-            onClick={() => addItem(product.id)}
-            aria-label={`Ajouter ${product.name} au panier`}
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-forest text-sand transition-transform duration-150 hover:bg-forest-light active:scale-95"
+            onClick={() => addItem(product)}
+            disabled={soldOut}
+            aria-label={soldOut ? `${product.name} : rupture de stock` : `Ajouter ${product.name} au panier`}
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-forest text-sand transition-transform duration-150 hover:bg-forest-light active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <ShoppingBag size={18} />
           </button>

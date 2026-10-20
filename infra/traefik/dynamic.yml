@@ -16,6 +16,13 @@ http:
       middlewares: [body-limit, security-headers, strip-api-shop]
       service: shop
       priority: 100
+    media:
+      # Images du catalogue : lecture seule (GET/HEAD) du bucket product-images via le filer.
+      rule: "PathPrefix(`/media/`) && (Method(`GET`) || Method(`HEAD`))"
+      entryPoints: [web]
+      middlewares: [media-path, security-headers]
+      service: media
+      priority: 150
     front:
       rule: "PathPrefix(`/`)"
       entryPoints: [web]
@@ -24,6 +31,10 @@ http:
       priority: 1
 
   middlewares:
+    media-path:
+      replacePathRegex:
+        regex: "^/media/(.*)"
+        replacement: "/buckets/product-images/$1"
     strip-api-shop:
       stripPrefix:
         prefixes: ["/api/shop"]
@@ -59,6 +70,10 @@ http:
         idleConnTimeout: 60s
 
   services:
+    media:
+      loadBalancer:
+        servers:
+          - url: "http://seaweedfs:8888"
     shop:
       loadBalancer:
         serversTransport: default

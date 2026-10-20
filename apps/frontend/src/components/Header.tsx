@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { ShoppingBag, Menu, Mountain } from 'lucide-react';
 import { useState } from 'react';
 import { useCart } from '../context/CartContext';
-import { categoryLabels } from '../lib/products';
+import { categoryLabels } from '../lib/categories';
 
 export function Header() {
   const { itemCount, openCart } = useCart();

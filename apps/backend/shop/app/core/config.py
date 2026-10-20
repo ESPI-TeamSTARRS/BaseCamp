@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     db_user: str = "shop"
     db_password: str = ""  # fournie par l'environnement (APP_DB_PASSWORD), jamais versionnee
 
+    media_base_url: str = "/media"  # prefixe public des images (servies par la passerelle)
+
     @property
     def database_url(self) -> str:
         url = URL.create(

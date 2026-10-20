@@ -11,7 +11,14 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
-      include: ['src/lib/rate-limit.ts', 'src/lib/validations.ts', 'src/lib/seo.ts'],
+      include: [
+        'src/lib/rate-limit.ts',
+        'src/lib/validations.ts',
+        'src/lib/seo.ts',
+        'src/lib/shop-api.ts',
+        'src/lib/cart-lines.ts',
+        'src/lib/categories.ts',
+      ],
       thresholds: { lines: 80, functions: 80, branches: 80, statements: 80 },
     },
   },

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600" role="img" aria-label="Sac à Dos Trek 55L">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5C3A21"/><stop offset="1" stop-color="#A3703F"/></linearGradient></defs>
+  <rect width="800" height="600" fill="url(#g)"/>
+  <path d="M0 520 L160 400 L260 470 L420 330 L560 450 L680 380 L800 470 V600 H0 Z" fill="#000" opacity="0.18"/>
+  
+  <rect x="285" y="200" width="230" height="280" rx="60" fill="#F5F2EB" opacity="0.92"/><rect x="325" y="320" width="150" height="110" rx="24" fill="#5C3A21" opacity="0.45"/><path d="M335 200 Q400 130 465 200" stroke="#F5F2EB" stroke-width="14" fill="none"/>
+  <text x="400" y="555" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700" fill="#F5F2EB">Sac à Dos Trek 55L</text>
+</svg>
