@@ -1,0 +1,330 @@
+# Pile de PRODUCTION (autonome, distincte de docker-compose.yml qui reste la pile de developpement).
+#
+#   docker compose -f deploy/docker-compose.prod.yml --env-file /opt/basecamp/.env \
+#     --env-file /opt/basecamp/release.env up -d --wait
+#
+# Principes (voir docs/deployment/README.md) :
+#   - aucune cle `build:` : les images applicatives viennent du registre, UNIQUEMENT par digest
+#     (SHOP_IMAGE=ghcr.io/espi-teamstarrs/basecamp-shop@sha256:...), jamais par tag ;
+#   - images tierces epinglees par tag ET digest ;
+#   - aucun port publie sur l'hote : la VM est partagee, le Traefik du serveur route le trafic ;
+#   - le Traefik interne (passerelle de la pile) rejoint le reseau externe `web` du Traefik du
+#     serveur, qui porte TLS et domaine ; noms de routeurs distincts (basecamp-gw) pour ne rien
+#     heurter dans l'ancienne pile ;
+#   - noms prefixes basecamp-prod, limites de memoire par conteneur, aucun secret dans ce fichier
+#     (valeurs lues dans /opt/basecamp/.env, hors depot).
+
+name: basecamp-prod
+
+x-hardening: &hardening
+  restart: unless-stopped
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: ["ALL"]
+  pids_limit: 256
+
+services:
+  traefik:
+    <<: *hardening
+    image: traefik:v3.6.23@sha256:f5dba1e65167778cd5f8d1b463fc5d200f49d40c6458fc9f4b391a68ebfb9534
+    user: "65532:65532"
+    mem_limit: 128m
+    command:
+      - --providers.file.filename=/etc/traefik/dynamic.yml
+      - --entrypoints.web.address=:9080
+      # Derriere le Traefik du serveur (lui-meme derriere Cloudflare) : on ne fait confiance qu'aux
+      # reseaux Docker pour lire X-Forwarded-*. Cle du rate limit : voir deploy/traefik/dynamic.prod.yml.
+      - --entrypoints.web.forwardedHeaders.trustedIPs=${PROXY_TRUSTED_IPS:-172.16.0.0/12}
+      - --entrypoints.web.transport.respondingTimeouts.readTimeout=30s
+      - --entrypoints.web.transport.respondingTimeouts.writeTimeout=30s
+      - --entrypoints.web.transport.respondingTimeouts.idleTimeout=60s
+      - --ping=true
+      - --log.level=INFO
+    volumes:
+      - ./traefik/dynamic.prod.yml:/etc/traefik/dynamic.yml:ro
+    networks: [web, app]
+    read_only: true
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: ${WEB_NETWORK:-web}
+      # Routeur HTTPS du Traefik du serveur vers la passerelle de la pile.
+      traefik.http.routers.basecamp-gw.rule: Host(`${BASECAMP_DOMAIN:?voir deploy/prod.env.example}`)
+      traefik.http.routers.basecamp-gw.entrypoints: ${TRAEFIK_ENTRYPOINT_HTTPS:-websecure}
+      traefik.http.routers.basecamp-gw.tls: "true"
+      traefik.http.routers.basecamp-gw.tls.certresolver: ${TRAEFIK_CERTRESOLVER:-letsencrypt}
+      traefik.http.routers.basecamp-gw.service: basecamp-gw
+      traefik.http.services.basecamp-gw.loadbalancer.server.port: "9080"
+      # Redirection HTTP -> HTTPS.
+      traefik.http.routers.basecamp-gw-http.rule: Host(`${BASECAMP_DOMAIN}`)
+      traefik.http.routers.basecamp-gw-http.entrypoints: ${TRAEFIK_ENTRYPOINT_HTTP:-web}
+      traefik.http.routers.basecamp-gw-http.middlewares: basecamp-gw-https-redirect
+      traefik.http.middlewares.basecamp-gw-https-redirect.redirectscheme.scheme: https
+      traefik.http.middlewares.basecamp-gw-https-redirect.redirectscheme.permanent: "true"
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    depends_on:
+      front: { condition: service_healthy }
+      shop: { condition: service_healthy }
+      auth: { condition: service_healthy }
+
+  front:
+    <<: *hardening
+    image: ${FRONT_IMAGE:?reference par digest, voir deploy/prod.env.example}
+    mem_limit: 384m
+    environment:
+      SHOP_API_URL: http://shop:8000
+      NEXT_PUBLIC_SITE_URL: https://${BASECAMP_DOMAIN}
+      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-}
+    networks: [app]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+  shop-migrate:
+    image: ${SHOP_IMAGE:?reference par digest, voir deploy/prod.env.example}
+    restart: "no"
+    mem_limit: 256m
+    command: ["alembic", "upgrade", "head"]
+    environment: &shop-env
+      APP_ENVIRONMENT: production
+      APP_DB_HOST: postgres
+      APP_DB_PORT: "5432"
+      APP_DB_NAME: ${SHOP_DB_NAME:-shop}
+      APP_DB_USER: ${SHOP_DB_USER:-shop}
+      APP_DB_PASSWORD: ${SHOP_DB_PASSWORD:?voir deploy/prod.env.example}
+    networks: [data]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  shop:
+    <<: *hardening
+    image: ${SHOP_IMAGE}
+    mem_limit: 256m
+    environment: *shop-env
+    networks: [app, data, payment-net]
+    read_only: true
+    depends_on:
+      shop-migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/health', timeout=2)"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  postgres:
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    user: postgres
+    mem_limit: 256m
+    environment:
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?voir deploy/prod.env.example}
+      SHOP_DB_NAME: ${SHOP_DB_NAME:-shop}
+      SHOP_DB_USER: ${SHOP_DB_USER:-shop}
+      SHOP_DB_PASSWORD: ${SHOP_DB_PASSWORD:?voir deploy/prod.env.example}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ../infra/postgres/init-shop-db.sh:/docker-entrypoint-initdb.d/10-init-shop-db.sh:ro
+    networks: [data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  payment-migrate:
+    image: ${PAYMENT_IMAGE:?reference par digest, voir deploy/prod.env.example}
+    restart: "no"
+    mem_limit: 256m
+    command: ["alembic", "upgrade", "head"]
+    environment: &payment-env
+      APP_ENVIRONMENT: production
+      APP_DB_HOST: payment-db
+      APP_DB_PORT: "5432"
+      APP_DB_NAME: ${PAYMENT_DB_NAME:-payment}
+      APP_DB_USER: ${PAYMENT_DB_USER:-payment}
+      APP_DB_PASSWORD: ${PAYMENT_DB_PASSWORD:?voir deploy/prod.env.example}
+      APP_SERVICE_TOKENS: '{"shop": "${PAYMENT_SERVICE_TOKEN_SHOP:?voir deploy/prod.env.example}"}'
+    networks: [payment-data]
+    depends_on:
+      payment-db: { condition: service_healthy }
+
+  payment:
+    <<: *hardening
+    image: ${PAYMENT_IMAGE}
+    mem_limit: 256m
+    environment: *payment-env
+    networks: [payment-net, payment-data]
+    read_only: true
+    depends_on:
+      payment-migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/health', timeout=2)"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  payment-db:
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    user: postgres
+    mem_limit: 192m
+    # Conteneur dedie : le role applicatif est le seul compte, proprietaire de sa base.
+    environment:
+      POSTGRES_USER: ${PAYMENT_DB_USER:-payment}
+      POSTGRES_PASSWORD: ${PAYMENT_DB_PASSWORD}
+      POSTGRES_DB: ${PAYMENT_DB_NAME:-payment}
+    volumes:
+      - payment-db-data:/var/lib/postgresql/data
+    networks: [payment-data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  auth-migrate:
+    image: ${AUTH_IMAGE:?reference par digest, voir deploy/prod.env.example}
+    restart: "no"
+    mem_limit: 256m
+    command: ["alembic", "upgrade", "head"]
+    environment: &auth-env
+      APP_ENVIRONMENT: production
+      APP_DB_HOST: postgres-auth
+      APP_DB_PORT: "5432"
+      APP_DB_NAME: ${AUTH_DB_NAME:-auth}
+      APP_DB_USER: ${AUTH_DB_USER:-auth}
+      APP_DB_PASSWORD: ${AUTH_DB_PASSWORD:?voir deploy/prod.env.example}
+    networks: [auth-data]
+    depends_on:
+      postgres-auth: { condition: service_healthy }
+
+  auth:
+    <<: *hardening
+    image: ${AUTH_IMAGE}
+    mem_limit: 256m
+    environment: *auth-env
+    # Cles de signature generees sur la VM par scripts/init-auth-keys.sh (jamais versionnees).
+    secrets: [auth_jwt_private_key, auth_jwt_public_key]
+    networks: [app, auth-data]
+    read_only: true
+    depends_on:
+      auth-migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/health', timeout=2)"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  postgres-auth:
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    user: postgres
+    mem_limit: 192m
+    environment:
+      POSTGRES_USER: ${AUTH_DB_USER:-auth}
+      POSTGRES_DB: ${AUTH_DB_NAME:-auth}
+      POSTGRES_PASSWORD: ${AUTH_DB_PASSWORD}
+    volumes:
+      - postgres-auth-data:/var/lib/postgresql/data
+    networks: [auth-data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  seaweedfs:
+    <<: *hardening
+    image: chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+    user: "1000:1000"
+    mem_limit: 512m
+    command: ["mini", "-dir=/data", "-ip=seaweedfs", "-filer.disableDirListing"]
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:?voir deploy/prod.env.example}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:?voir deploy/prod.env.example}
+      S3_BUCKET: ${S3_BUCKET:-product-images}
+    volumes:
+      - seaweedfs-data:/data
+    networks: [app, data]
+    healthcheck:
+      # Sain = master et filer repondent (le listage des dossiers est desactive).
+      test:
+        - CMD-SHELL
+        - "wget -q -O /dev/null http://127.0.0.1:9333/cluster/healthz && wget -q -O /dev/null http://127.0.0.1:8888/healthz"
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  # Tache ponctuelle (profil `jobs`) : amorce le bucket avec les visuels du catalogue.
+  #   docker compose ... --profile jobs run --rm seaweedfs-seed
+  seaweedfs-seed:
+    image: chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+    profiles: [jobs]
+    restart: "no"
+    user: "1000:1000"
+    mem_limit: 128m
+    environment:
+      S3_BUCKET: ${S3_BUCKET:-product-images}
+    entrypoint: ["/bin/sh", "/seed/upload-images.sh"]
+    volumes:
+      - ../infra/seed:/seed:ro
+    networks: [app]
+    depends_on:
+      seaweedfs: { condition: service_healthy }
+
+networks:
+  # Reseau du Traefik du serveur (cree par lui) : la seule porte d'entree de la pile.
+  web:
+    name: ${WEB_NETWORK:-web}
+    external: true
+  app:
+    internal: true
+  data:
+    internal: true
+  payment-net:
+    internal: true
+  payment-data:
+    internal: true
+  auth-data:
+    internal: true
+
+volumes:
+  postgres-data: {}
+  postgres-auth-data: {}
+  payment-db-data: {}
+  seaweedfs-data: {}
+
+secrets:
+  auth_jwt_private_key:
+    file: ${SECRETS_DIR:-/opt/basecamp/secrets}/auth/jwt-private.pem
+  auth_jwt_public_key:
+    file: ${SECRETS_DIR:-/opt/basecamp/secrets}/auth/jwt-public.pem
