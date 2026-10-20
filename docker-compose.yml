@@ -37,6 +37,7 @@ services:
 
   front:
     <<: *hardening
+    image: basecamp-front
     build:
       context: ./apps/frontend
       args:

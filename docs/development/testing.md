@@ -40,3 +40,16 @@ npm run test:coverage
 ## À tester en priorité (paiement)
 
 Idempotence, montant et devise valides, remboursement inférieur ou égal au montant capturé restant, signature de webhook invalide rejetée, rejeu d'événement ignoré, cohérence commande payée et transaction.
+
+## Scénarios e2e de la pile
+
+Un scénario e2e vit dans `apps/backend/shop/tests/e2e/scenarios/test_<parcours>.e2e.py` et parle à la pile Docker Compose réelle **par la passerelle Traefik**, avec `httpx` (jamais directement aux services). Il lit l'URL de la passerelle dans `E2E_BASE_URL`; sans cette variable, les scénarios sont ignorés, donc `poe test` ne dépend pas de la pile.
+
+```bash
+cp .env.example .env
+docker compose up -d --wait traefik          # pile minimale
+cd apps/backend/shop
+E2E_BASE_URL=http://127.0.0.1:8080 uv run poe test:e2e
+```
+
+Écrire d'abord le scénario (Red) avant d'ajouter la route ou le service qu'il exerce. Chaque scénario nettoie ses données et ne suppose pas d'ordre d'exécution. Les parcours navigateur (Playwright) sont hors de ce périmètre. En CI, voir le job `stack-e2e` dans [ci.md](ci.md).
