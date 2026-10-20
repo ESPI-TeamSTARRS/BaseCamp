@@ -25,3 +25,6 @@ coverage/
 # Environnement local (garder .env.example)
 .env.*
 !.env.example
+
+# Cles de signature generees localement (scripts/init-auth-keys.sh)
+.secrets/

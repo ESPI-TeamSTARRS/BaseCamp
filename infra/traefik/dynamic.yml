@@ -23,6 +23,13 @@ http:
       middlewares: [media-path, security-headers]
       service: media
       priority: 150
+    auth:
+      # Les routes /internal/* ne sont jamais exposees : elles sortent du routeur.
+      rule: "PathPrefix(`/api/auth`) && !PathPrefix(`/api/auth/internal`)"
+      entryPoints: [web]
+      middlewares: [body-limit, security-headers, strip-api-auth]
+      service: auth
+      priority: 100
     front:
       rule: "PathPrefix(`/`)"
       entryPoints: [web]
@@ -38,6 +45,9 @@ http:
     strip-api-shop:
       stripPrefix:
         prefixes: ["/api/shop"]
+    strip-api-auth:
+      stripPrefix:
+        prefixes: ["/api/auth"]
 
     orders-rate-limit:
       # Cle = adresse reelle de la connexion (RemoteAddr). Pas d'ipStrategy.depth : un
@@ -72,13 +82,20 @@ http:
   services:
     media:
       loadBalancer:
+        serversTransport: default
         servers:
           - url: "http://seaweedfs:8888"
     shop:
       loadBalancer:
         serversTransport: default
+        serversTransport: default
         servers:
           - url: "http://shop:8000"
+    auth:
+      loadBalancer:
+        serversTransport: default
+        servers:
+          - url: "http://auth:8000"
     front:
       loadBalancer:
         serversTransport: default
