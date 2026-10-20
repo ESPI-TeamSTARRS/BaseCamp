@@ -84,6 +84,8 @@ Pour essayer l'application telle que `main` la livre, sans toucher aux branches 
 | Clone de test | `~\Desktop\Projects\BaseCamp-test` par défaut; autre emplacement via `-Path` ou la variable `BASECAMP_TEST_DIR`. Il doit rester hors du dépôt de développement et de ses worktrees (le script refuse un chemin à l'intérieur). |
 | Projet compose | `basecamp-test` : conteneurs, réseaux et volumes distincts de la pile de développement (`basecamp`). |
 | Port | `127.0.0.1:8180` (`-Port` à la création du `.env`; ensuite modifier `GATEWAY_PORT` dans le `.env` du clone), pour ne pas entrer en conflit avec le 8080 des piles de développement. |
+| Dossier principal | `.scripts	est-stack.ps1 -InPlace -Path <dossier>` lance la pile depuis un checkout existant de `main` (par exemple le dossier de travail) : `git pull --ff-only` au lieu de `reset --hard`, refus si la branche n'est pas `main` ou s'il y a des modifications suivies, `.env` existant requis et jamais modifié, port imposé par variable d'environnement. |
+| Variables nouvelles | Hors `-InPlace`, les variables apparues dans `.env.example` sont ajoutées au `.env` du clone (jamais écrasées) et les clés de signature d'auth sont générées. |
 | Arrêt | `.\scripts\test-stack.ps1 -Down` (garde les données), avec `-Purge` pour les supprimer. |
 
 Limite connue : les images locales `basecamp-shop`, `basecamp-payment` et `basecamp-front` portent le même nom dans toutes les piles; reconstruire la pile de test déplace ces étiquettes, sans effet sur les conteneurs de développement déjà démarrés (ils sont reconstruits au prochain `up --build`).

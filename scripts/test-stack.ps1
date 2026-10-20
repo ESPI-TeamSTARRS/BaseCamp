@@ -28,7 +28,10 @@ param(
     # Arrete la pile de test (conserve les donnees) au lieu de la mettre a jour.
     [switch]$Down,
     # Avec -Down : supprime aussi les volumes (donnees).
-    [switch]$Purge
+    [switch]$Purge,
+    # Utilise -Path tel quel (ex. le dossier principal) : pull --ff-only sur main au lieu de reset/clean,
+    # .env jamais modifie, port impose par variable d'environnement (un .env existant est requis).
+    [switch]$InPlace
 )
 
 $ErrorActionPreference = 'Stop'
@@ -82,6 +85,12 @@ if (-not (Test-Path -LiteralPath (Join-Path $Path '.git'))) {
     }
     Write-Host "Clonage de $RepoUrl dans $Path"
     Invoke-Native 'git' @('clone', '--branch', $Branch, $RepoUrl, $Path)
+} elseif ($InPlace) {
+    Write-Host "Mise a jour (fast-forward) de $Path sur origin/$Branch"
+    $current = (& git -C $Path branch --show-current).Trim()
+    if ($current -ne $Branch) { throw "$Path est sur '$current' : -InPlace exige la branche $Branch." }
+    if (& git -C $Path status --porcelain --untracked-files=no) { throw "$Path a des modifications locales : les valider ou les ranger avant." }
+    Invoke-Native 'git' @('-C', $Path, 'pull', '--ff-only', 'origin', $Branch)
 } else {
     Write-Host "Mise a jour de $Path sur origin/$Branch"
     Invoke-Native 'git' @('-C', $Path, 'fetch', '--prune', 'origin', $Branch)
@@ -95,13 +104,34 @@ Write-Host "Version testee : $sha"
 
 # --- 2. Configuration locale (.env factice, non versionne) --------------------
 $envFile = Join-Path $Path '.env'
-if (-not (Test-Path -LiteralPath $envFile)) {
+if ($InPlace) {
+    if (-not (Test-Path -LiteralPath $envFile)) { throw "$envFile manquant : le creer depuis .env.example." }
+    $env:GATEWAY_PORT = "$Port"
+    $env:NEXT_PUBLIC_SITE_URL = "http://localhost:$Port"
+} elseif (-not (Test-Path -LiteralPath $envFile)) {
     Copy-Item -LiteralPath (Join-Path $Path '.env.example') -Destination $envFile
     Set-EnvValue $envFile 'GATEWAY_PORT' "$Port"
     Set-EnvValue $envFile 'NEXT_PUBLIC_SITE_URL' "http://localhost:$Port"
     Write-Host '.env cree depuis .env.example (valeurs factices).'
+} else {
+    # .env existant : jamais ecrase, mais on y ajoute les variables apparues depuis dans .env.example.
+    $have = @(Get-Content -LiteralPath $envFile | ForEach-Object { if ($_ -match '^\s*([A-Za-z_][A-Za-z0-9_]*)=') { $Matches[1] } })
+    $missing = @(Get-Content -LiteralPath (Join-Path $Path '.env.example') | Where-Object { $_ -match '^\s*([A-Za-z_][A-Za-z0-9_]*)=' -and ($have -notcontains $Matches[1]) })
+    if ($missing.Count -gt 0) {
+        $content = [System.IO.File]::ReadAllText($envFile).TrimEnd("`r", "`n")
+        [System.IO.File]::WriteAllText($envFile, ($content + "`n" + ($missing -join "`n") + "`n"), (New-Object System.Text.UTF8Encoding($false)))
+        Write-Host "$($missing.Count) variable(s) ajoutee(s) au .env depuis .env.example."
+    }
 }
-$currentPort = ((Get-Content -LiteralPath $envFile | Where-Object { $_ -match '^GATEWAY_PORT=' }) -replace '^GATEWAY_PORT=', '').Trim()
+
+# Cles de signature d'auth (ignorees par Git, generation idempotente).
+if (Test-Path -LiteralPath (Join-Path $Path 'scripts\init-auth-keys.sh')) {
+    $sh = Join-Path (Split-Path (Split-Path (Get-Command git).Source)) 'bin\sh.exe'
+    if (-not (Test-Path -LiteralPath $sh)) { $sh = 'sh' }
+    Push-Location $Path
+    try { Invoke-Native $sh @('scripts/init-auth-keys.sh') } finally { Pop-Location }
+}
+if ($InPlace) { $currentPort = "$Port" } else { $currentPort = ((Get-Content -LiteralPath $envFile | Where-Object { $_ -match '^GATEWAY_PORT=' }) -replace '^GATEWAY_PORT=', '').Trim() }
 if (-not $currentPort) { $currentPort = '8080' }
 
 # --- 3. Reconstruction de la pile ---------------------------------------------
