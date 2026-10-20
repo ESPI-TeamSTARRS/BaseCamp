@@ -28,3 +28,19 @@ Un reverse proxy (Traefik) est le seul point d'entrée publié. Il route les req
 | `/api/payment/*` | `payment` (accès restreint) |
 
 La passerelle porte les préoccupations transverses : TLS, limitation de débit par IP réelle, taille maximale des corps de requête, délais d'expiration, en-têtes de sécurité et filtrage applicatif. Les services restent sur un réseau interne et ne sont jamais publiés directement. Les appels entre services (par exemple `shop` vers `payment`) passent par le réseau interne avec un jeton de service.
+
+## Protections portées par la passerelle
+
+Configuration versionnée, sans secret : `infra/traefik/dynamic.yml` (routeurs et middlewares) et les arguments de Traefik dans `docker-compose.yml` (entrypoint et délais).
+
+| Protection | Réglage | Comportement |
+|---|---|---|
+| Limitation de débit | `/api/shop/orders*` : 10 requêtes/minute par IP, rafale de 5 | 429 avec `Retry-After` |
+| IP réelle | clé = adresse de la connexion (`RemoteAddr`), pas d'`ipStrategy.depth`; l'entrypoint `web` ne fait confiance à aucun proxy (`forwardedHeaders.insecure=false`, sans `trustedIPs`) | un `X-Forwarded-For` forgé est ignoré et ne contourne pas la limite |
+| Taille du corps | `buffering.maxRequestBodyBytes` = 1 Mio sur `/api/shop/*` | 413 au-delà |
+| Délais d'expiration | entrants : lecture 30 s, écriture 30 s, inactivité 60 s; vers les services : connexion 5 s, en-têtes de réponse 30 s | coupure de la connexion |
+| En-têtes de sécurité | HSTS (2 ans, sous-domaines), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy` | posés sur toutes les réponses (API et front) |
+
+Les compteurs de limitation sont tenus en mémoire par Traefik (bornés par IP active, sans Redis). Si un load balancer ou un CDN est placé devant Traefik, déclarer ses adresses dans `entrypoints.web.forwardedHeaders.trustedIPs` et utiliser `ipStrategy.depth`, sinon toutes les requêtes partageraient la même clé. Hors périmètre : filtrage applicatif (WAF) et limitation par client dans Redis.
+
+Les protections sont vérifiées par les scénarios `tests/e2e/scenarios/test_gateway_protection.e2e.py` (job CI `stack-e2e`). Ces scénarios consomment le seuil de l'IP locale : relancer un second passage immédiatement peut être limité pendant environ une minute.
