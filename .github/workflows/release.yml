@@ -152,6 +152,18 @@ jobs:
             org.opencontainers.image.version=${{ steps.target.outputs.version }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.title=basecamp-${{ matrix.service }}
+      - name: Scan Trivy bloquant avant tout tag de version (HIGH, CRITICAL corrigeables, secrets)
+        if: steps.target.outputs.version != '' && steps.exists.outputs.skip != 'true'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.target.outputs.image }}@${{ steps.build.outputs.digest }}
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          # Une faille sans correctif disponible ne bloque pas : on ne peut rien y faire (voir docs/development/images.md).
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+          trivyignores: .trivyignore
       - name: Poser les tags de version sur le digest construit
         if: steps.target.outputs.version != '' && steps.exists.outputs.skip != 'true'
         env:
