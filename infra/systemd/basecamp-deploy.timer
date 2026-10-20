@@ -1,0 +1,12 @@
+[Unit]
+Description=Basecamp : verifie le manifeste de release toutes les 3 minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitInactiveSec=3min
+RandomizedDelaySec=30
+Persistent=true
+Unit=basecamp-deploy.service
+
+[Install]
+WantedBy=timers.target

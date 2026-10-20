@@ -38,7 +38,7 @@ Le manifeste est l'unité de déploiement et de retour arrière : une version de
 |---|---|
 | 0 | succès, ou rien à faire |
 | 1 | échec : retour arrière réussi (ou rien n'a été modifié) |
-| 2 | échec **et** retour arrière en échec : intervention humaine ([runbook](README.md)) |
+| 2 | échec **et** retour arrière en échec : intervention humaine ([runbook](runbook.md)) |
 | 3 | usage ou manifeste invalide |
 
 ## Migrations et retour arrière

@@ -186,3 +186,88 @@ jobs:
           name: image-${{ matrix.service }}
           path: ${{ runner.temp }}/image-${{ matrix.service }}.json
           retention-days: 90
+
+  manifest:
+    name: manifeste-de-deploiement
+    needs: version
+    # Meme si un composant echoue (ex. scan Trivy), les autres, deja publies, entrent dans le manifeste.
+    if: ${{ !cancelled() && needs.version.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    # Aucun droit par defaut : les ecritures passent par le jeton court de la GitHub App.
+    permissions:
+      contents: read
+    env:
+      BRANCH: release/manifest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: image-*
+          path: ${{ runner.temp }}/images
+          merge-multiple: true
+      - name: Images publiees par ce run
+        id: images
+        run: |
+          if ls "$RUNNER_TEMP"/images/image-*.json > /dev/null 2>&1; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Aucune nouvelle image : le manifeste ne change pas."
+          fi
+      - name: Jeton de la GitHub App
+        id: app
+        if: steps.images.outputs.found == 'true'
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+      - name: Proposer la mise a jour du manifeste
+        if: steps.images.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${APP_SLUG}[bot]@users.noreply.github.com"
+
+          # Base : le manifeste de la PR ouverte (elle cumule les releases non fusionnees), sinon celui de main.
+          cp deploy/manifest.json "$RUNNER_TEMP/base.json"
+          open_pr="$(gh pr list --repo "$REPO" --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
+          if [[ -n "$open_pr" ]] && git fetch --quiet origin "$BRANCH"; then
+            git show "origin/$BRANCH:deploy/manifest.json" > "$RUNNER_TEMP/base.json"
+          fi
+
+          set +e
+          jq -c . "$RUNNER_TEMP/base.json" "$RUNNER_TEMP"/images/image-*.json | python3 scripts/deploy/update_manifest.py > "$RUNNER_TEMP/new.json"
+          rc=$?
+          set -e
+          if [[ "$rc" == 10 ]]; then echo "Manifeste deja a jour."; exit 0; fi
+          [[ "$rc" == 0 ]] || exit "$rc"
+
+          # Differences par rapport a main : titre et description de la PR.
+          jq -c . deploy/manifest.json "$RUNNER_TEMP/new.json" | python3 scripts/deploy/update_manifest.py describe > "$RUNNER_TEMP/changes.txt"
+          title="chore(release): deploie $(paste -sd, "$RUNNER_TEMP/changes.txt" | sed 's/ -> /->/g; s/,/, /g')"
+          {
+            echo "Mise a jour du manifeste de deploiement (images par digest, tests et scan Trivy passes) :"
+            echo
+            sed 's/^/- /' "$RUNNER_TEMP/changes.txt"
+            echo
+            echo "La fusion declenche le deploiement sur la VM (minuteur), avec retour automatique si le test de fumee echoue."
+          } > "$RUNNER_TEMP/body.md"
+
+          git checkout -B "$BRANCH" origin/main
+          cp "$RUNNER_TEMP/new.json" deploy/manifest.json
+          git add deploy/manifest.json
+          git commit --quiet -m "$title"
+          git push --force --quiet origin "$BRANCH"
+
+          if [[ -n "$open_pr" ]]; then
+            gh pr edit "$open_pr" --repo "$REPO" --title "$title" --body-file "$RUNNER_TEMP/body.md"
+          else
+            gh pr create --repo "$REPO" --base main --head "$BRANCH" --title "$title" --body-file "$RUNNER_TEMP/body.md"
+          fi
