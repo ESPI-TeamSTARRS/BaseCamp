@@ -16,6 +16,7 @@ from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 
+from app.caller_identity.__tests__.tokens import ADMIN_TOKEN, SHOP_TOKEN
 from app.core.config import Settings
 from app.core.events import service_event_names as names
 from app.core.logging.structlog_business_event_logger import StructlogBusinessEventLogger
@@ -23,8 +24,8 @@ from app.intent.infrastructure.models.base import Base as IntentBase
 from app.main import create_app
 from app.ratelimit.infrastructure.models.base import Base as RateLimitBase
 
-TOKEN = "tok-shop-test-0001-secret"
-OTHER_TOKEN = "tok-admin-test-0002-secret"
+TOKEN = SHOP_TOKEN
+OTHER_TOKEN = ADMIN_TOKEN
 CARD = "4242424242424242"
 SHOP = {"Authorization": f"Bearer {TOKEN}"}
 ADMIN = {"Authorization": f"Bearer {OTHER_TOKEN}"}
@@ -40,7 +41,7 @@ def _engine() -> Any:
 
 
 def _app(engine: Any = None, **overrides: Any) -> FastAPI:
-    settings = Settings(service_tokens={"shop": TOKEN, "admin": OTHER_TOKEN}, **overrides)
+    settings = Settings(**overrides)
     return create_app(settings, engine or _engine())
 
 
@@ -269,7 +270,7 @@ SCHEMA_PATH = Path(__file__).resolve().parents[7] / "docs/development/log-event.
 
 
 def _app_with_logs(stream: io.StringIO, **overrides: Any) -> FastAPI:
-    settings = Settings(service_tokens={"shop": TOKEN, "admin": OTHER_TOKEN}, **overrides)
+    settings = Settings(**overrides)
     events = StructlogBusinessEventLogger(settings.service_name, stream)
     return create_app(settings, _engine(), events)
 

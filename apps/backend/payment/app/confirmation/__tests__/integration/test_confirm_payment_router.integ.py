@@ -12,6 +12,7 @@ from httpx import Response
 from jsonschema import Draft202012Validator
 from sqlalchemy import Engine, StaticPool, create_engine, event, text
 
+from app.caller_identity.__tests__.tokens import SHOP_TOKEN
 from app.confirmation.wiring import build_confirmation_services
 from app.core.config import Settings
 from app.core.logging.structlog_business_event_logger import StructlogBusinessEventLogger
@@ -19,7 +20,7 @@ from app.intent.infrastructure.models.base import Base
 from app.main import create_app
 from app.ratelimit.infrastructure.models.base import Base as RateLimitBase
 
-TOKEN = "tok-shop-test-0001"
+TOKEN = SHOP_TOKEN
 CARD_NUMBER = "4242424242424242"
 TIMEOUT_SECONDS = 0.5
 CORRELATION_ID = "7c1f0e52-3a0b-4f1e-9a52-1d6f7a9b2c10"
@@ -45,7 +46,7 @@ def env() -> Iterator[Env]:
     )
     Base.metadata.create_all(engine)
     RateLimitBase.metadata.create_all(engine)
-    settings = Settings(service_tokens={"shop": TOKEN}, provider_timeout_seconds=TIMEOUT_SECONDS)
+    settings = Settings(provider_timeout_seconds=TIMEOUT_SECONDS)
     waits: list[float] = []
     log = io.StringIO()
     events = StructlogBusinessEventLogger(settings.service_name, log)

@@ -45,4 +45,10 @@ docker compose exec -T shop python -c \
   "import urllib.request as u; u.urlopen('http://payment:8000/health', timeout=3)" \
   || fail "liveness doit rester 200 base arretee"
 
+# 7. payment lit les cles publiques d'auth (JWKS) sur payment-net, et rien d'autre cote auth
+docker compose exec -T payment python -c \
+  "import urllib.request as u; u.urlopen('http://auth:8000/.well-known/jwks.json', timeout=3)" \
+  || fail "payment n'atteint pas les cles publiques d'auth"
+docker compose exec -T payment python -c "$RESOLVES" postgres-auth && fail "payment voit la base d'auth"
+
 echo "OK : payment est isole et sain"

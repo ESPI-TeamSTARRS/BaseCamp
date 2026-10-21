@@ -18,6 +18,7 @@ import httpx
 import pytest
 
 from app.__tests__.payment_stack import (
+    AUTH_CALL_PRELUDE,
     LEDGER_CHECK,
     ORDERS_PATH,
     compose,
@@ -44,7 +45,7 @@ request = urllib.request.Request(
     data=json.dumps({"payment_method": "pm_test_success"}).encode(),
     headers={
         "Content-Type": "application/json",
-        "Authorization": "Bearer " + os.environ["APP_PAYMENT_SERVICE_TOKEN"],
+        "Authorization": "Bearer " + service_token(),
         "Idempotency-Key": key,
     },
     method="POST",
@@ -99,7 +100,16 @@ class _LateOrder:
     def pay_at_payment(self) -> int:
         """Le client lent paie quand même : confirmation directe chez payment (shop refuserait en 409)."""
         key = f"e2e-{uuid.uuid4().hex}"
-        output = compose("exec", "-T", "shop", "python", "-c", CONFIRM_SCRIPT, self.intent_id, key)
+        output = compose(
+            "exec",
+            "-T",
+            "shop",
+            "python",
+            "-c",
+            AUTH_CALL_PRELUDE + CONFIRM_SCRIPT,
+            self.intent_id,
+            key,
+        )
         return int(json.loads(output.strip().splitlines()[-1])["status"])
 
     def outbox_status(self) -> str:

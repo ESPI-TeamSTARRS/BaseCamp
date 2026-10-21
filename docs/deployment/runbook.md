@@ -100,3 +100,11 @@ Si l'ordre n'est pas respecté, la production n'est pas touchée : Compose refus
 - **Retour arrière** : les services applicatifs reviennent aux images précédentes. Le worker est relancé avec elles ; s'il ne démarre pas (image sans worker), il est arrêté et le journal le dit. Les événements restent en base et partiront après le prochain déploiement réussi.
 - **Relancer des événements en échec** (état `dead`) : `docker compose -p basecamp-prod -f /opt/basecamp/repo/deploy/docker-compose.prod.yml --env-file /opt/basecamp/state/compose.env run --rm --no-deps payment-worker python -m app.webhook.presentation.requeue_main --all` (ou `--event-id <uuid>`).
 - **Vérifier le secret sans l'afficher** : `sudo awk -F= '/^PAYMENT_WEBHOOK_SECRET=/{print $1, length($2)}' /opt/basecamp/.env` doit afficher 48 ; de même pour `AUTH_SERVICE_CLIENT_SECRET_SHOP`.
+
+### Jetons d'auth pour payment (WORK-41)
+`payment` n'a plus de jeton statique : il vérifie les jetons signés par `auth`, et `shop` en demande un à `auth` avant d'appeler `payment`.
+- **Variables** : retirer `PAYMENT_SERVICE_TOKEN_SHOP` du `.env` (ignoré désormais). `shop` réutilise `AUTH_SERVICE_CLIENT_SECRET_SHOP`, déjà présent pour `auth-bootstrap` : rien à ajouter.
+- **Ordre** : l'image `auth` (scope `refunds:write`, réseau `payment-net`) doit être en service avant ou avec `payment` et `shop`; déployer les trois images dans le même manifeste. Avec une ancienne image `payment`, `shop` fonctionnerait encore mal (jeton refusé) : ne pas mélanger.
+- **Contrôle sans afficher de secret** : `sudo awk -F= '/^AUTH_SERVICE_CLIENT_SECRET_SHOP=/{print $1, length($2)}' /opt/basecamp/.env` doit afficher la longueur attendue (au moins 32); `docker compose ... exec -T payment python -c "import urllib.request as u; print(u.urlopen('http://auth:8000/.well-known/jwks.json', timeout=3).status)"` doit afficher 200.
+- **Symptôme** : `/pay` répond 503 si `auth` est injoignable et que `shop` n'a pas de jeton valide en mémoire; `payment` répond 503 s'il n'a jamais lu les clés d'`auth`. Relancer `auth`, le service repart seul.
+- **Retour arrière** : revenir aux images précédentes réintroduit le jeton statique : y remettre `PAYMENT_SERVICE_TOKEN_SHOP` dans le `.env` avant de revenir (sinon `payment` refuse de démarrer).

@@ -7,12 +7,13 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine
 
+from app.caller_identity.__tests__.tokens import SHOP_TOKEN
 from app.core.config import Settings
 from app.intent.infrastructure.models.base import Base
 from app.main import create_app
 from app.ratelimit.infrastructure.models.base import Base as RateLimitBase
 
-TOKEN = "tok-shop-test-0001"
+TOKEN = SHOP_TOKEN
 CORRELATION_ID = "7c1f0e52-3a0b-4f1e-9a52-1d6f7a9b2c10"
 HEADERS = {"Authorization": f"Bearer {TOKEN}", "Idempotency-Key": "key-0001"}
 BODY = {"order_reference": "CMD-1", "amount": 2500, "currency": "EUR"}
@@ -25,7 +26,7 @@ def client() -> Iterator[TestClient]:
     )
     Base.metadata.create_all(engine)
     RateLimitBase.metadata.create_all(engine)
-    settings = Settings(service_tokens={"shop": TOKEN})
+    settings = Settings()
     application = create_app(settings, engine)
     with TestClient(application, raise_server_exceptions=False) as test_client:
         yield test_client

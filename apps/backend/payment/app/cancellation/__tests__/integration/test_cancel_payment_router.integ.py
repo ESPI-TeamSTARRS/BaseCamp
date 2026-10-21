@@ -11,13 +11,14 @@ from httpx import Response
 from jsonschema import Draft202012Validator
 from sqlalchemy import Engine, StaticPool, create_engine, event, text
 
+from app.caller_identity.__tests__.tokens import SHOP_TOKEN
 from app.core.config import Settings
 from app.core.logging.structlog_business_event_logger import StructlogBusinessEventLogger
 from app.intent.infrastructure.models.base import Base
 from app.main import create_app
 from app.ratelimit.infrastructure.models.base import Base as RateLimitBase
 
-TOKEN = "tok-shop-test-0001"
+TOKEN = SHOP_TOKEN
 CORRELATION_ID = "7c1f0e52-3a0b-4f1e-9a52-1d6f7a9b2c10"
 SCHEMA_PATH = Path(__file__).resolve().parents[7] / "docs/development/log-event.schema.json"
 VALIDATOR = Draft202012Validator(json.loads(SCHEMA_PATH.read_text(encoding="utf-8")))
@@ -41,7 +42,7 @@ def env() -> Iterator[Env]:
     Base.metadata.create_all(engine)
     RateLimitBase.metadata.create_all(engine)
     log = io.StringIO()
-    settings = Settings(service_tokens={"shop": TOKEN})
+    settings = Settings()
     application = create_app(settings, engine, StructlogBusinessEventLogger("payment", log))
     with TestClient(application) as client:
         yield Env(client, engine, log)

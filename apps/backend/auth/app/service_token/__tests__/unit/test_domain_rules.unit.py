@@ -16,8 +16,12 @@ class TestServiceScope:
     def test_payments_write_belongs_to_the_payment_audience(self) -> None:
         assert ServiceScope.PAYMENTS_WRITE.audience is ServiceAudience.PAYMENT
 
+    def test_refunds_write_belongs_to_the_payment_audience(self) -> None:
+        assert ServiceScope.REFUNDS_WRITE.audience is ServiceAudience.PAYMENT
+
     def test_scope_value_is_the_wire_format(self) -> None:
         assert ServiceScope("payments:write") is ServiceScope.PAYMENTS_WRITE
+        assert ServiceScope("refunds:write") is ServiceScope.REFUNDS_WRITE
 
 
 class TestClientDeclaration:

@@ -171,7 +171,10 @@ Variables d'environnement préfixées `APP_` (voir `.env.example` à la racine) 
 | `APP_SMTP_FROM` / `APP_SMTP_TIMEOUT_SECONDS` | `commandes@basecamp.local` / `3` | expéditeur et délai d'envoi |
 | `APP_PAYMENT_PROVIDER` | `http` | fournisseur de paiement : `http` (service `payment`) ou `simulated` (sans réseau ni clé) |
 | `APP_PAYMENT_URL` | `http://payment:8000` | adresse interne de `payment` |
-| `APP_PAYMENT_SERVICE_TOKEN` | vide | jeton de service de `shop` auprès de `payment` (alimenté par `PAYMENT_SERVICE_TOKEN_SHOP`, jamais versionné) |
+| `APP_AUTH_ISSUE_URL` | `http://auth:8000/internal/token` | où `shop` demande son jeton de service (réseau interne, jamais routé par la passerelle) |
+| `APP_AUTH_CLIENT_ID` / `APP_AUTH_CLIENT_SECRET` | `shop` / vide | identifiants du client de service `shop` (le secret est `AUTH_SERVICE_CLIENT_SECRET_SHOP`, jamais versionné) |
+| `APP_PAYMENT_AUDIENCE` / `APP_PAYMENT_SCOPE` | `payment` / `payments:write` | audience et scope demandés (`shop` n'a pas `refunds:write`) |
+| `APP_PAYMENT_RENEW_MARGIN_SECONDS` | `30` | le jeton est renouvelé 30 s avant son expiration (il vit 5 min, en mémoire seulement) |
 | `APP_PAYMENT_CONNECT_TIMEOUT_SECONDS` / `APP_PAYMENT_READ_TIMEOUT_SECONDS` | `1` / `3` | délais des appels à `payment` |
 | `APP_AUTH_JWKS_URL` | `http://auth:8000/.well-known/jwks.json` | clés publiques de vérification des jetons clients (réseau interne) |
 | `APP_AUTH_PROFILE_URL` | `http://auth:8000/me` | profil du porteur du jeton (adresse, vérifiée ou non), pour le rattachement |

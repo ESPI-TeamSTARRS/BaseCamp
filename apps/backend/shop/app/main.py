@@ -58,6 +58,9 @@ from app.pay.application.start_payment import StartPaymentUseCase
 from app.pay.domain.interfaces.payment_gateway import PaymentGateway
 from app.pay.error_handlers import register_pay_error_handlers
 from app.pay.infrastructure.clients.http_payment_gateway import HttpPaymentGateway
+from app.pay.infrastructure.clients.http_service_token_provider import (
+    HttpServiceTokenProvider,
+)
 from app.pay.presentation.router import router as pay_router
 from app.payment_confirmation.application.receive_payment_webhook import (
     ReceivePaymentWebhookUseCase,
@@ -168,7 +171,18 @@ def create_app() -> FastAPI:
     gateway: PaymentGateway = (
         SimulatedPaymentGateway(engine)
         if settings.payment_provider == "simulated"
-        else HttpPaymentGateway(payment_client, settings.payment_service_token)
+        else HttpPaymentGateway(
+            payment_client,
+            HttpServiceTokenProvider(
+                auth_client,
+                settings.auth_issue_url,
+                settings.auth_client_id,
+                settings.auth_client_secret,
+                settings.payment_audience,
+                settings.payment_scope,
+                settings.payment_renew_margin_seconds,
+            ),
+        )
     )
     application.state.start_payment_use_case = StartPaymentUseCase(
         application.state.quote_cart_use_case, gateway, events

@@ -18,8 +18,16 @@ class Settings(BaseSettings):
     db_port: int = 5432
     db_name: str = "payment"
     db_user: str = "payment"
-    # Jetons de service statiques par appelant (APP_SERVICE_TOKENS='{"shop": "..."}'), via l'env.
-    service_tokens: dict[str, str] = {}
+    # Identification des appelants (WORK-41) : jetons signes par `auth`, verifies localement avec ses
+    # cles publiques (JWKS, reseau interne). Aucun secret statique : plus de jeton partage dans l'env.
+    auth_jwks_url: str = "http://auth:8000/.well-known/jwks.json"
+    auth_issuer: str = "basecamp-auth"
+    auth_service_audience: str = "payment"  # audience des jetons de service (appels de `shop`)
+    auth_client_audience: str = "basecamp-client-api"  # jetons clients (operateurs qui remboursent)
+    auth_jwks_ttl_seconds: float = Field(default=300.0, gt=0)
+    auth_jwks_min_refetch_seconds: float = Field(default=10.0, gt=0)
+    auth_connect_timeout_seconds: float = Field(default=1.0, gt=0)
+    auth_read_timeout_seconds: float = Field(default=2.0, gt=0)
     intent_ttl_minutes: int = 30
     max_amount_cents: int = 500_000  # plafond par intention : 5 000 EUR
     # Expiration des intentions non confirmées : nombre d'intentions traitées par transaction.

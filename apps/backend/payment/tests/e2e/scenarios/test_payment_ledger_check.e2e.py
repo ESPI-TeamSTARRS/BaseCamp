@@ -14,6 +14,8 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
+from app.caller_identity.__tests__.real_auth import operator_token, service_token
+
 REPO_ROOT = Path(__file__).resolve().parents[6]
 SCHEMA = json.loads(
     (REPO_ROOT / "docs/development/log-event.schema.json").read_text(encoding="utf-8")
@@ -64,7 +66,7 @@ def _call(method: str, path: str, key: str = "", body: dict[str, object] | None 
         *["exec", "-T", "shop", "python", "-c", CALL_SCRIPT],
         method,
         path,
-        _env_value("PAYMENT_SERVICE_TOKEN_SHOP"),
+        operator_token() if path.endswith("/refunds") else service_token(),
         key,
         json.dumps(body) if body is not None else "",
         timeout=60,
@@ -149,4 +151,4 @@ class TestLedgerCheckOnTheStack:
         (summary,) = records
         assert not list(Draft202012Validator(SCHEMA).iter_errors(summary)), summary
         assert (summary["event"], summary["outcome"]) == ("ledger.check_completed", "success")
-        assert _env_value("PAYMENT_SERVICE_TOKEN_SHOP") not in result.stdout + result.stderr
+        assert service_token() not in result.stdout + result.stderr

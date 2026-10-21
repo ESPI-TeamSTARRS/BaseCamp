@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
 from sqlalchemy import Engine, StaticPool, create_engine, event, text
 
+from app.caller_identity.__tests__.tokens import SHOP_TOKEN
 from app.core.config import Settings
 from app.core.logging.structlog_business_event_logger import StructlogBusinessEventLogger
 from app.intent.infrastructure.models.base import Base
@@ -29,7 +30,7 @@ from app.webhook.infrastructure.repositories.sqlalchemy_delivery_unit_of_work im
     SqlAlchemyDeliveryUnitOfWork,
 )
 
-TOKEN = "tok-shop-test-0001"
+TOKEN = SHOP_TOKEN
 SECRET = "whsec_flow_0123456789abcdef0123456789abcdef"
 SCHEMA_PATH = Path(__file__).resolve().parents[7] / "docs/development/log-event.schema.json"
 VALIDATOR = Draft202012Validator(json.loads(SCHEMA_PATH.read_text(encoding="utf-8")))
@@ -79,7 +80,7 @@ def env() -> Iterator[Env]:
     )
     Base.metadata.create_all(engine)
     RateLimitBase.metadata.create_all(engine)
-    settings = Settings(service_tokens={"shop": TOKEN}, provider_timeout_seconds=0.1)
+    settings = Settings(provider_timeout_seconds=0.1)
     log = io.StringIO()
     application = create_app(
         settings, engine, StructlogBusinessEventLogger(settings.service_name, log)
