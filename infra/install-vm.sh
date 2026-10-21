@@ -111,8 +111,13 @@ if [[ ! -s "$ENV_FILE" ]]; then
   rm -f "$tmp"
   log "$ENV_FILE cree avec des secrets aleatoires (visibles uniquement sur la VM)."
 else
-  log "$ENV_FILE existe deja : conserve tel quel."
+  log "$ENV_FILE existe deja : les valeurs renseignees sont conservees."
 fi
+# Dans tous les cas : ajoute, avec une valeur aleatoire, les variables obligatoires absentes ou vides
+# (repare un .env incomplet). Aucune valeur existante n'est modifiee, aucune n'est affichee.
+bash "$BASE/repo/infra/complete-env.sh" "$BASE/repo/deploy/prod.env.example" "$ENV_FILE"
+chown "$APP_USER:$APP_USER" "$ENV_FILE"
+chmod 600 "$ENV_FILE"
 if grep -q 'change-me' "$ENV_FILE"; then
   log "ATTENTION : des valeurs 'change-me' subsistent dans $ENV_FILE, a remplacer avant d'activer les deploiements."
 fi
