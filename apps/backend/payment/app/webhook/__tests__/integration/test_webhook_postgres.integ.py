@@ -81,7 +81,7 @@ class TestMigrationIsAdditive:
     def test_the_outbox_migration_only_adds_a_table(self, monkeypatch: pytest.MonkeyPatch) -> None:
         assert DATABASE_URL
         config = _config(monkeypatch)
-        command.upgrade(config, "0004")
+        command.upgrade(config, "0005")
         engine = create_engine(DATABASE_URL)
         try:
             before = _columns(engine)

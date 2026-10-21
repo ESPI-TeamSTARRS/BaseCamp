@@ -8,7 +8,7 @@ from app.intent.infrastructure.models.base import Base
 
 
 class OutboxEventModel(Base):
-    """Événements à livrer à la boutique (table `outbox`, migration 0005, ajout seul de schéma).
+    """Événements à livrer à la boutique (table `outbox`, migration 0006, ajout seul de schéma).
 
     `body` est le texte exact qui est signé puis envoyé à chaque tentative.
     """
