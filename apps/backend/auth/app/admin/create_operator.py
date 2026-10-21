@@ -25,12 +25,12 @@ from app.registration.domain.exceptions.invalid_email_error import InvalidEmailE
 from app.registration.domain.exceptions.weak_password_error import WeakPasswordError
 
 DB_CONNECT_TIMEOUT_SECONDS = 5
-PASSWORD_VARIABLE = "OPERATOR_PASSWORD"  # noqa: S105
+ENV_SECRET = "OPERATOR_PASSWORD"  # noqa: S105
 
 
 def read_password(environ: Mapping[str, str]) -> str:
     """Variable d'environnement, sinon saisie masquee confirmee."""
-    from_env = environ.get(PASSWORD_VARIABLE)
+    from_env = environ.get(ENV_SECRET)
     if from_env:
         return from_env
     first = getpass.getpass("Mot de passe : ")
