@@ -29,6 +29,7 @@ describe('orderStatusLabel', () => {
     expect(orderStatusLabel('pending_payment')).toBe('En attente de paiement');
     expect(orderStatusLabel('paid')).toBe('Payée');
     expect(orderStatusLabel('expired')).toBe('Expirée');
+    expect(orderStatusLabel('refunded')).toBe('Remboursée');
     expect(orderStatusLabel('autre')).toBe('Statut en cours de mise à jour');
   });
 });
