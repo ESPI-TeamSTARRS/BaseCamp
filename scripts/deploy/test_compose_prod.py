@@ -26,6 +26,7 @@ RATE_LIMITERS = {
     "auth-signup-rate-limit",
     "auth-password-rate-limit",
     "admin-rate-limit",
+    "backoffice-login-rate-limit",
 }  # cle IP differente en prod
 
 SAMPLE_ENV = {
@@ -194,3 +195,25 @@ def test_transport_des_mails_de_shop_configurable_sans_secret_dans_le_depot(comp
     for ligne in exemple.splitlines():
         if ligne.lstrip("# ").startswith("N8N_MAIL_SECRET="):
             assert ligne.split("=", 1)[1].strip() == "", "le secret n'a jamais de valeur dans le dépôt"
+
+
+def test_connexion_backoffice_seulement_sur_l_origine_admin() -> None:
+    for chemin in (DYNAMIC_PROD, DYNAMIC_DEV):
+        http = yaml.safe_load(chemin.read_text(encoding="utf-8"))["http"]
+        routeur = http["routers"]["auth-backoffice"]
+        assert routeur["rule"].startswith("HostRegexp("), chemin.name
+        assert "PathPrefix(`/api/auth/backoffice`)" in routeur["rule"]
+        assert "!PathPrefix(`/api/auth/backoffice`)" in http["routers"]["auth"]["rule"]
+        assert routeur["middlewares"][0] == "backoffice-login-rate-limit"
+        stricte = http["middlewares"]["backoffice-login-rate-limit"]["rateLimit"]
+        login = http["middlewares"]["auth-signup-rate-limit"]["rateLimit"]
+        assert stricte["average"] < login["average"] and stricte["burst"] < login["burst"]
+
+
+def test_le_backoffice_n_est_servi_que_sur_l_origine_admin() -> None:
+    for chemin in (DYNAMIC_PROD, DYNAMIC_DEV):
+        http = yaml.safe_load(chemin.read_text(encoding="utf-8"))["http"]
+        routeur = http["routers"]["backoffice"]
+        assert routeur["rule"].startswith("HostRegexp("), chemin.name
+        assert "!PathPrefix(`/api`)" in routeur["rule"]
+        assert routeur["priority"] > http["routers"]["front"]["priority"]

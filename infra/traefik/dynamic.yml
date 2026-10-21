@@ -55,6 +55,15 @@ http:
       middlewares: [auth-signup-rate-limit, body-limit, security-headers, strip-api-auth]
       service: auth
       priority: 200
+    auth-backoffice:
+      # Connexion du back-office (en trois temps) : repondue UNIQUEMENT sur l'origine admin (admin.<domaine>),
+      # avec un limiteur par adresse plus strict que /login. Sur le domaine principal, /api/auth/backoffice
+      # n'est pas route vers auth (le front repond 404).
+      rule: "HostRegexp(`^admin\\..+$`) && PathPrefix(`/api/auth/backoffice`)"
+      entryPoints: [web]
+      middlewares: [backoffice-login-rate-limit, body-limit, security-headers, strip-api-auth]
+      service: auth
+      priority: 300
     auth-jwks:
       # Cles publiques de verification des jetons (JWKS), lecture seule, sans prefixe retire :
       # le service les sert a /.well-known/jwks.json.
@@ -65,7 +74,7 @@ http:
       priority: 200
     auth:
       # Les routes /internal/* et /metrics ne sont jamais exposees : elles sortent du routeur.
-      rule: "PathPrefix(`/api/auth`) && !PathPrefix(`/api/auth/internal`) && !PathPrefix(`/api/auth/metrics`)"
+      rule: "PathPrefix(`/api/auth`) && !PathPrefix(`/api/auth/internal`) && !PathPrefix(`/api/auth/metrics`) && !PathPrefix(`/api/auth/backoffice`)"
       entryPoints: [web]
       middlewares: [body-limit, security-headers, strip-api-auth]
       service: auth
@@ -113,6 +122,13 @@ http:
         average: 60
         period: 1m
         burst: 30
+
+    backoffice-login-rate-limit:
+      # Limite plus stricte que /login (10/min, rafale 5) : surface d'administration publique. Meme cle que orders-rate-limit : adresse reelle de la connexion, X-Forwarded-For ignore.
+      rateLimit:
+        average: 10
+        period: 1m
+        burst: 5
 
     auth-password-rate-limit:
       # Meme cle que orders-rate-limit : adresse reelle de la connexion, X-Forwarded-For ignore.
