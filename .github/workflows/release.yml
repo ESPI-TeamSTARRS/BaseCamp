@@ -239,7 +239,7 @@ jobs:
 
           # Base : le manifeste de la PR ouverte (elle cumule les releases non fusionnees), sinon celui de main.
           cp deploy/manifest.json "$RUNNER_TEMP/base.json"
-          open_pr="$(gh pr list --repo "$REPO" --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
+          open_pr="$(gh api "repos/$REPO/pulls?state=open&head=${REPO%%/*}:$BRANCH" --jq '.[0].number // empty')"
           if [[ -n "$open_pr" ]] && git fetch --quiet origin "$BRANCH"; then
             git show "origin/$BRANCH:deploy/manifest.json" > "$RUNNER_TEMP/base.json"
           fi
@@ -268,8 +268,12 @@ jobs:
           git commit --quiet -m "$title"
           git push --force --quiet origin "$BRANCH"
 
+          # API REST (et non `gh pr create`, qui passe par GraphQL et a ete refuse pour l'App).
           if [[ -n "$open_pr" ]]; then
-            gh pr edit "$open_pr" --repo "$REPO" --title "$title" --body-file "$RUNNER_TEMP/body.md"
+            gh api --method PATCH "repos/$REPO/pulls/$open_pr" -f title="$title" -F body=@"$RUNNER_TEMP/body.md" --jq .html_url
           else
-            gh pr create --repo "$REPO" --base main --head "$BRANCH" --title "$title" --body-file "$RUNNER_TEMP/body.md"
-          fi
+            gh api --method POST "repos/$REPO/pulls" -f title="$title" -f head="$BRANCH" -f base=main -F body=@"$RUNNER_TEMP/body.md" --jq .html_url
+          fi || {
+            echo "La PR n'a pas pu etre ouverte. La branche est prete : https://github.com/$REPO/compare/main...$BRANCH"
+            exit 1
+          }
