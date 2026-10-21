@@ -5,7 +5,7 @@ JETABLE (le schéma est créé par `alembic upgrade`, puis supprimé).
 """
 
 import os
-from collections.abc import Iterator
+from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -49,7 +49,7 @@ def alembic_config(monkeypatch: pytest.MonkeyPatch) -> Config:
     return config
 
 
-def migrated_engine(monkeypatch: pytest.MonkeyPatch, revision: str = "head") -> Iterator[Engine]:
+def migrated_engine(monkeypatch: pytest.MonkeyPatch, revision: str = "head") -> Generator[Engine]:
     """Fournit un moteur sur une base migrée jusqu'à `revision`, vidée à la fin."""
     assert DATABASE_URL
     config = alembic_config(monkeypatch)

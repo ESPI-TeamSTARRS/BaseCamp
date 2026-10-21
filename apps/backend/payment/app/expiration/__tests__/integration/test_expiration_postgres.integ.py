@@ -133,23 +133,21 @@ class TestExpirationOnPostgres:
     def test_a_confirmation_in_progress_is_not_overwritten_by_the_expiration(
         self, engine: Engine
     ) -> None:
-        intent = add_intent(engine, datetime.now(UTC) - timedelta(minutes=29, seconds=59))
+        # La confirmation a lu l'heure avant l'échéance (horloge figée) et tient le verrou; pour
+        # l'expiration, l'échéance est dépassée : la ligne verrouillée doit être laissée de côté.
+        intent = add_intent(engine, LONG_AGO)
         confirmation = ConfirmPaymentUseCase(
             SqlAlchemyConfirmationUnitOfWork(engine),
             SlowApprovingProvider(),
-            lambda: datetime.now(UTC),
+            lambda: LONG_AGO,
             InMemoryBusinessEventLogger(),
         )
-        confirming = threading.Thread(
-            target=confirmation.execute,
-            args=(
-                ConfirmPaymentCommand(
-                    "shop", "confirm-key-0001", str(intent.id), "pm_test_success"
-                ),
-            ),
+        command = ConfirmPaymentCommand(
+            "shop", "confirm-key-0001", str(intent.id), "pm_test_success"
         )
+        confirming = threading.Thread(target=confirmation.execute, args=(command,))
         confirming.start()
-        time.sleep(0.2)  # l'échéance est passée pendant que la confirmation tient le verrou
+        time.sleep(0.2)
 
         expired = _expire(engine)
         confirming.join()
@@ -158,13 +156,11 @@ class TestExpirationOnPostgres:
         assert _status(engine, intent) == "succeeded"
         assert count_ledger_entries(engine) == 2
 
-    def test_a_cancellation_in_progress_is_not_overwritten_by_the_expiration(
-        self, engine: Engine
-    ) -> None:
-        intent = add_intent(engine, datetime.now(UTC) - timedelta(minutes=29, seconds=59))
+    def test_a_canceled_intent_is_not_overwritten_by_the_expiration(self, engine: Engine) -> None:
+        intent = add_intent(engine, LONG_AGO)  # annulée avant son échéance (horloge figée)
         cancellation = CancelPaymentIntentUseCase(
             SqlAlchemyCancellationUnitOfWork(engine),
-            lambda: datetime.now(UTC),
+            lambda: LONG_AGO,
             InMemoryBusinessEventLogger(),
         )
 
