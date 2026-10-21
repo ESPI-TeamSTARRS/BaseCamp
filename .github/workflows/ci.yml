@@ -179,7 +179,6 @@ jobs:
           tags: basecamp-front
           build-args: |
             NEXT_PUBLIC_SITE_URL=http://localhost:8080
-            NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_dummy
           cache-from: type=gha,scope=front
           cache-to: type=gha,scope=front,mode=max
       - name: Pile minimale (Traefik, front, shop, auth, payment et son worker, Mailpit, bucket d images et leurs bases) healthy

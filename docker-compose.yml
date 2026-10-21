@@ -51,13 +51,9 @@ services:
       context: ./apps/frontend
       args:
         NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:8080}
-        NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:?voir .env.example}
     environment:
       SHOP_API_URL: ${SHOP_API_URL:-http://shop:8000}
       NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:8080}
-      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY}
-      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:?voir .env.example}
-      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:?voir .env.example}
       RESEND_API_KEY: ${RESEND_API_KEY:?voir .env.example}
       RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:?voir .env.example}
     networks: [app]
