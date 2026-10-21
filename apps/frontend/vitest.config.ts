@@ -23,6 +23,7 @@ export default defineConfig({
         'src/lib/place-order.ts',
         'src/lib/account-api.ts',
         'src/lib/registration-flow.ts',
+        'src/lib/password-reset-flow.ts',
       ],
       thresholds: { lines: 80, functions: 80, branches: 80, statements: 80 },
     },

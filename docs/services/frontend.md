@@ -11,6 +11,8 @@ Les paramètres de route (`params`) sont asynchrones (`await params`). Les visue
 ## Comptes
 Pages `/compte/inscription` (formulaire, états d'erreur sans détail technique) et `/compte/verification` (jeton lu dans le fragment d'URL `#token=`, retiré de la barre d'adresse avant l'appel). Les appels vont à `/api/auth/register` et `/api/auth/verify-email` par la passerelle (même origine). La logique testée est dans `src/lib/account-api.ts` et `src/lib/registration-flow.ts`; les composants `RegistrationForm` et `EmailVerification` ne font que l'affichage.
 
+Réinitialisation du mot de passe : pages `/compte/mot-de-passe-oublie` (saisie de l'adresse; le message de succès est le même que le compte existe ou non) et `/compte/reinitialiser` (jeton dans le fragment `#token=`, retiré de la barre d'adresse avant tout appel; mot de passe et confirmation, mêmes règles que l'inscription, refus serveur affiché sur le champ; lien invalide, expiré ou déjà utilisé : un seul message). Appels à `/api/auth/password/forgot` et `/api/auth/password/reset`; logique testée dans `src/lib/account-api.ts` et `src/lib/password-reset-flow.ts`, composants `ForgotPasswordForm` et `ResetPasswordForm`.
+
 ## Organisation
 `src/app` (routes), `src/components`, `src/context` (panier), `src/lib` (utilitaires métier), `src/types`.
 

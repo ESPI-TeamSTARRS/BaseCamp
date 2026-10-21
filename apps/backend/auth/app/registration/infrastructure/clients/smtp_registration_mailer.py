@@ -1,9 +1,6 @@
-import smtplib
-from email.message import EmailMessage
-
-from app.registration.domain.exceptions.mail_delivery_error import MailDeliveryError
 from app.registration.domain.interfaces.registration_mailer import RegistrationMailer
 from app.registration.domain.value_objects.email_address import EmailAddress
+from app.registration.infrastructure.clients.smtp_email_sender import SmtpEmailSender
 
 VERIFICATION_SUBJECT = "Confirmez votre adresse email - Basecamp Outdoor"
 ACCOUNT_EXISTS_SUBJECT = "Un compte existe déjà avec cette adresse - Basecamp Outdoor"
@@ -43,10 +40,9 @@ class SmtpRegistrationMailer(RegistrationMailer):
         self._port = port
         self._sender = sender
         self._public_base_url = public_base_url.rstrip("/")
-        self._username = username
-        self._password = password
-        self._starttls = starttls
-        self._timeout_seconds = timeout_seconds
+        self._transport = SmtpEmailSender(
+            host, port, sender, username, password, starttls, timeout_seconds
+        )
 
     def send_verification(self, to: EmailAddress, token: str) -> None:
         link = f"{self._public_base_url}/compte/verification#token={token}"
@@ -56,17 +52,4 @@ class SmtpRegistrationMailer(RegistrationMailer):
         self._send(to, ACCOUNT_EXISTS_SUBJECT, ACCOUNT_EXISTS_BODY)
 
     def _send(self, to: EmailAddress, subject: str, body: str) -> None:
-        message = EmailMessage()
-        message["From"] = self._sender
-        message["To"] = to.value
-        message["Subject"] = subject
-        message.set_content(body)
-        try:
-            with smtplib.SMTP(self._host, self._port, timeout=self._timeout_seconds) as smtp:
-                if self._starttls:
-                    smtp.starttls()
-                if self._username:
-                    smtp.login(self._username, self._password)
-                smtp.send_message(message)
-        except (OSError, smtplib.SMTPException):
-            raise MailDeliveryError from None
+        self._transport.send(to, subject, body)

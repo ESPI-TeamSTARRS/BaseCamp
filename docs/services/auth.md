@@ -14,8 +14,9 @@ Tranches verticales Clean Architecture (`domain / application / infrastructure /
 | `health` | liveness (`GetHealthUseCase`) et readiness (`GetReadinessUseCase`, sonde `DatabaseProbe`) |
 | `service_token` | jetons de service : émission (`IssueServiceTokenUseCase`), vérification (`VerifyTokenUseCase`), JWKS, amorçage des clients, limitation de débit par client |
 | `registration` | inscription et vérification d'email : `RegisterAccountUseCase`, `VerifyEmailUseCase`, `PasswordPolicy`, `EmailAddress`, dépôts SQLAlchemy dans une unité de travail, hachage argon2id, envoi SMTP |
+| `password_reset` | réinitialisation du mot de passe : `RequestPasswordResetUseCase`, `ResetPasswordUseCase`, port `SessionRevoker`, limite par adresse en base; réutilise le domaine de `registration` (`PasswordPolicy`, `EmailAddress`, horloge, jetons, hachage) |
 
-Les autres tranches métier (`session`) s'ajoutent à côté; leurs routes se documentent ici. Le câblage de `registration` est dans `app/registration/composition.py` (seul endroit qui importe l'infrastructure).
+Les autres tranches métier (`session`) s'ajoutent à côté; leurs routes se documentent ici. Le câblage de chaque tranche est dans son `composition.py` (seul endroit qui importe l'infrastructure).
 
 ## API
 | Méthode | Route | Description |
@@ -26,8 +27,10 @@ Les autres tranches métier (`session`) s'ajoutent à côté; leurs routes se do
 | GET | `/internal/jwks` | clé publique de signature (réseau interne seulement) |
 | POST | `/register` | inscription `{email, password}` : 202 et message neutre, identique que l'adresse soit libre ou déjà inscrite; 422 assaini si la saisie est invalide |
 | POST | `/verify-email` | confirmation `{token}` : 200, ou 400 « Lien de vérification invalide ou expiré. » (jeton inconnu, expiré ou déjà utilisé, même réponse) |
+| POST | `/password/forgot` | demande de lien `{email}` : **toujours 202** et message neutre (compte existant ou non, adresse mal formée, limite atteinte); 422 assaini si le corps est mal formé |
+| POST | `/password/reset` | nouveau mot de passe `{token, password}` : 200, 400 « Lien de réinitialisation invalide ou expiré. » (jeton inconnu, expiré, déjà utilisé ou remplacé, même réponse) ou 422 assaini si le mot de passe est refusé |
 
-Via la passerelle : `/api/auth/health`, `/api/auth/health/ready`, `/api/auth/register` et `/api/auth/verify-email` (préfixe retiré par Traefik). `register` et `verify-email` ont un routeur dédié avec limitation de débit par IP (60 requêtes/minute, rafale de 30), car le hachage argon2id est coûteux.
+Via la passerelle : `/api/auth/health`, `/api/auth/health/ready`, `/api/auth/register`, `/api/auth/verify-email`, `/api/auth/password/forgot` et `/api/auth/password/reset` (préfixe retiré par Traefik). `register` et `verify-email` ont un routeur dédié avec limitation de débit par IP (60 requêtes/minute, rafale de 30), car le hachage argon2id est coûteux. `password/forgot` et `password/reset` ont le leur (`auth-password`, 20 requêtes/minute par IP, rafale de 10), en développement (`infra/traefik/dynamic.yml`) et en production (`deploy/traefik/dynamic.prod.yml`, clé IP réelle derrière Cloudflare).
 
 ### Inscription (`POST /register`)
 - Corps strict (`extra="forbid"`). Email normalisé (minuscules, sans espace ni retour à la ligne). Mot de passe : 12 à 128 caractères, mots de passe courants refusés (liste embarquée `app/registration/infrastructure/data/common_passwords.txt`, insensible à la casse), **aucune règle de composition**.
@@ -39,13 +42,33 @@ Via la passerelle : `/api/auth/health`, `/api/auth/health/ready`, `/api/auth/reg
 ### Vérification d'email (`POST /verify-email`)
 Jeton aléatoire de 256 bits (`secrets.token_urlsafe(32)`), **seul son SHA-256 est stocké**, valable **24 h**, à **usage unique** (un `UPDATE ... WHERE used_at IS NULL AND expires_at > now RETURNING` atomique). Le lien envoyé est `{APP_PUBLIC_BASE_URL}/compte/verification#token=...` : le jeton est dans le fragment, donc absent des journaux d'accès et du `Referer`.
 
+### Réinitialisation du mot de passe (`/password/forgot`, `/password/reset`)
+- **Demande** : réponse **toujours 202 avec le même corps et les mêmes en-têtes**, que le compte existe, que l'adresse soit inconnue ou mal formée, ou que la limite soit atteinte. Le travail en base est le même dans tous les cas (jeton généré, quota décompté); l'email part **après** la réponse (`BackgroundTasks`), donc le temps de réponse ne dépend ni de l'existence du compte ni d'une panne SMTP (comparé par un scénario e2e).
+- **Jeton** : 256 bits (`secrets.token_urlsafe(32)`), **seul son SHA-256 est stocké**, valable **30 min**, à usage unique (`UPDATE ... WHERE used_at IS NULL AND expires_at > now RETURNING` atomique). Une nouvelle demande **invalide** les jetons encore valides du compte. Le lien est `{APP_PUBLIC_BASE_URL}/compte/reinitialiser#token=...` : jeton dans le fragment (absent des journaux d'accès et du `Referer`), aucune donnée personnelle dans le lien.
+- **Limite par adresse** : 3 demandes par heure et par adresse, comptées en base (table `password_reset_attempts`, empreinte HMAC de l'adresse et non l'adresse), donc sans état en mémoire, partagées entre instances et conservées au redémarrage. Au-delà, même réponse 202 mais aucun email ni jeton. La limite par IP est celle de Traefik (voir ci-dessus); elle sera remplacée ou complétée par la limitation de débit applicative du ticket A6.
+- **Remplacement** : le mot de passe suit la politique de l'inscription (`PasswordPolicy`, 12 à 128 caractères, mots courants refusés, aucune règle de composition) et est haché en **argon2id**. Un mot de passe refusé (422 assaini) **ne consomme pas** le jeton. Dans une seule transaction : jeton consommé, mot de passe remplacé, **toutes les sessions révoquées** (port `SessionRevoker`). Puis email de notification de changement, envoyé après la réponse comme le lien (un échec est journalisé, il n'annule pas le changement).
+- Jeton inconnu, expiré, déjà utilisé ou remplacé : le même 400 générique.
+- Panne d'email : réponse inchangée, événement `auth.email_delivery_failed` (`kind` = `password_reset` ou `password_changed`).
+
+#### Point d'intégration des sessions (`SessionRevoker`)
+Les jetons de rafraîchissement sont créés par le ticket de connexion (WORK-34), qui n'existe pas encore dans cette base. Le cas d'usage dépend donc du port `app/password_reset/domain/interfaces/session_revoker.py` (`revoke_all(user_id, now)`), appelé **dans la transaction** du changement de mot de passe, et testé avec un faux. L'implémentation actuelle (`SqlAlchemySessionRevoker`) écrit un seuil par compte dans `session_revocations(user_id, revoked_at)` : toute session émise avant `revoked_at` est invalide.
+
+Pour brancher la connexion sans refonte, au choix du ticket de connexion :
+1. **Contrôler le seuil** : la vérification d'un jeton de rafraîchissement (et d'accès) refuse un `iat` antérieur à `session_revocations.revoked_at` du compte; rien à changer côté réinitialisation.
+2. **Remplacer l'adaptateur** : écrire un `SessionRevoker` qui marque les lignes de la table des jetons de rafraîchissement comme révoquées, et le substituer dans `app/password_reset/composition.py` (seul fichier à modifier). Le seuil peut alors rester ou être supprimé par une migration contract.
+
+Le futur changement de mot de passe depuis « mon compte » réutilisera le même port.
+
 ## Tables
-Migration `0004_users_et_verification` (down_revision `0003`).
+Migrations `0004_users_et_verification` (down_revision `0003`) et `0006_reinitialisation_mot_de_passe` (down_revision `0004`, additive : trois tables, rien de modifié ni supprimé; la numérotation sera ajustée à la fusion avec la migration de la connexion).
 
 | Table | Colonnes |
 |---|---|
 | `users` | `id` (uuid, clé primaire), `email` (unique, minuscules), `password_hash`, `role` (`customer` ou `operator`), `email_verified_at` (nullable), `created_at` |
 | `email_verification_tokens` | `id`, `user_id` (clé étrangère, suppression en cascade), `token_hash` (SHA-256 hex, unique), `expires_at`, `used_at` (nullable) |
+| `password_reset_tokens` | `id`, `user_id` (clé étrangère, suppression en cascade), `token_hash` (SHA-256 hex, unique), `expires_at`, `used_at` (nullable) |
+| `password_reset_attempts` | `id`, `email_fingerprint` (HMAC de l'adresse, indexé), `requested_at` (indexé); purgée à chaque demande au-delà de la fenêtre d'une heure |
+| `session_revocations` | `user_id` (clé primaire et étrangère, cascade), `revoked_at` : seuil de révocation des sessions |
 
 Les horodatages sont en UTC avec fuseau. Un test compare la migration aux modèles SQLAlchemy (aucune dérive possible sans échec). Les routes `/internal/*` (appels entre services) ne sont jamais routées par la passerelle : un appel externe reçoit 404 (couvert par le test e2e `test_auth_stack.e2e.py`).
 
@@ -177,7 +200,15 @@ Déjà émis hors tranche : `service.request_rejected` (denied, `invalid_request
 | `auth.registration_rejected` | denied | `invalid_email`, `weak_password` | `account`; `rule` (`email_invalid`, `password_too_short`, `password_too_long`, `password_too_common`) |
 | `auth.email_verified` | success | | `account` + id |
 | `auth.email_verification_failed` | denied | `invalid_or_expired_token` | `email_verification` |
-| `auth.email_delivery_failed` | error | `mail_delivery_failed` | `email_verification`; `kind` (`verification` ou `account_exists`) |
+| `auth.email_delivery_failed` | error | `mail_delivery_failed` | `email_verification`, `password_reset` ou `account`; `kind` (`verification`, `account_exists`, `password_reset` ou `password_changed`) |
+| `auth.password_reset_requested` | success | | `account` + id; `email_hash` (compte existant, lien émis) |
+| `auth.password_reset_rejected` | denied | `unknown_account`, `rate_limited` | `account`; `email_hash` |
+| `auth.password_reset_rejected` | denied | `invalid_email` | `account` |
+| `auth.password_reset_rejected` | denied | `weak_password` | `account`; `rule` (`password_too_short`, `password_too_long`, `password_too_common`) |
+| `auth.password_reset_rejected` | denied | `invalid_or_expired_token` | `password_reset` |
+| `auth.password_reset_completed` | success | | `account` + id |
+
+Ces distinctions ne sont visibles que dans les journaux : la réponse HTTP de `/password/forgot` ne les révèle jamais.
 
 Catalogue cible des prochains tickets d'auth (même règles) :
 
@@ -190,8 +221,9 @@ Catalogue cible des prochains tickets d'auth (même règles) :
 | `auth.logout` | success | |
 | `auth.password_changed` | success | |
 
+
 Avant l'authentification, l'acteur est inconnu : seul `email_hash` identifie la tentative.
 
 ## Tests
 `uv run poe test` (unit et integ, couverture ≥ 80 %); `uv run poe test:e2e` sur la pile lancée (`E2E_BASE_URL`, `http://127.0.0.1:8080` par défaut); les scénarios de jetons appellent `auth` depuis le conteneur `shop` (réseau `app`, `docker compose exec`) et lisent le secret du client `shop` dans `AUTH_SERVICE_CLIENT_SECRET_SHOP` ou `.env`.
-`uv run poe test` (unit et integ, couverture ≥ 80 %); `uv run poe test:e2e` sur la pile lancée (`E2E_BASE_URL`, `http://127.0.0.1:8080` par défaut). Les scénarios d'inscription lisent les emails dans Mailpit via `E2E_MAILPIT_URL` (ignorés sans cette variable); `E2E_CHECK_LOGS=1` ajoute le contrôle des journaux des conteneurs (`docker compose logs`) : ni mot de passe, ni jeton, ni adresse.
+`uv run poe test` (unit et integ, couverture ≥ 80 %); `uv run poe test:e2e` sur la pile lancée (`E2E_BASE_URL`, `http://127.0.0.1:8080` par défaut). Les scénarios d'inscription et de réinitialisation lisent les emails dans Mailpit via `E2E_MAILPIT_URL` (ignorés sans cette variable); `E2E_CHECK_LOGS=1` ajoute le contrôle des journaux des conteneurs (`docker compose logs`) : ni mot de passe, ni jeton, ni adresse.
