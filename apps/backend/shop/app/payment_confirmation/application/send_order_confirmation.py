@@ -25,11 +25,11 @@ class SendOrderConfirmationUseCase:
     def execute(self, mail: ConfirmationMail) -> None:
         try:
             self._sender.send(mail)
-        except ConfirmationDeliveryError:
+        except ConfirmationDeliveryError as error:
             self._events.log(
                 BusinessEvent.error(
                     names.CONFIRMATION_EMAIL_FAILED,
-                    "delivery_failed",
+                    error.reason,
                     resource_type="order",
                     resource_id=mail.order_number,
                     attributes={"email_hash": self._pseudonymizer.pseudonymize(mail.to)},

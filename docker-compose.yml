@@ -98,6 +98,10 @@ services:
       APP_SMTP_HOST: mailpit
       APP_SMTP_PORT: "1025"
       APP_SMTP_FROM: ${SHOP_SMTP_FROM:-commandes@basecamp.local}
+      # Transport des emails : smtp (Mailpit, defaut) ou n8n (webhook ; URL et secret alors obligatoires).
+      APP_MAIL_TRANSPORT: ${MAIL_TRANSPORT:-smtp}
+      APP_N8N_MAIL_URL: ${N8N_MAIL_URL:-}
+      APP_N8N_MAIL_SECRET: ${N8N_MAIL_SECRET:-}
       # Televersement des images produit (API d'administration) : API S3 de SeaweedFS, cles de la pile.
       APP_S3_ENDPOINT: http://seaweedfs:8333
       APP_S3_BUCKET: ${S3_BUCKET:-product-images}
