@@ -11,7 +11,7 @@ from sqlalchemy.schema import SchemaItem
 from app.login.__tests__.schema import load_migration
 from app.login.infrastructure.models.login_base import LoginBase
 
-NAME = "0004_login"
+NAME = "0005_login"
 
 
 @pytest.fixture
@@ -30,11 +30,11 @@ def _only_declared(
     return not (reflected and compare_to is None)
 
 
-class TestMigration0004:
-    def test_it_follows_revision_0002_and_is_additive(self) -> None:
+class TestMigration0005:
+    def test_it_follows_revision_0004_and_is_additive(self) -> None:
         migration = load_migration(NAME)
 
-        assert (migration.revision, migration.down_revision) == ("0004", "0002")
+        assert (migration.revision, migration.down_revision) == ("0005", "0004")
 
     def test_upgrade_matches_the_login_models(self, engine: Engine) -> None:
         with engine.begin() as connection:
@@ -42,7 +42,7 @@ class TestMigration0004:
                 connection, opts={"include_object": _only_declared}
             )
             with Operations.context(context):
-                load_migration("0002_users_et_verification").upgrade()
+                load_migration("0004_users_et_verification").upgrade()
                 load_migration(NAME).upgrade()
             differences = compare_metadata(context, LoginBase.metadata)
 
@@ -51,7 +51,7 @@ class TestMigration0004:
     def test_upgrade_only_adds_a_nullable_column_and_a_table(self, engine: Engine) -> None:
         with engine.begin() as connection:
             with Operations.context(MigrationContext.configure(connection)):
-                load_migration("0002_users_et_verification").upgrade()
+                load_migration("0004_users_et_verification").upgrade()
                 before = {c["name"] for c in inspect(connection).get_columns("users")}
                 load_migration(NAME).upgrade()
             columns = {c["name"]: c for c in inspect(connection).get_columns("users")}
@@ -65,7 +65,7 @@ class TestMigration0004:
     def test_downgrade_restores_the_previous_schema(self, engine: Engine) -> None:
         with engine.begin() as connection:
             with Operations.context(MigrationContext.configure(connection)):
-                load_migration("0002_users_et_verification").upgrade()
+                load_migration("0004_users_et_verification").upgrade()
                 load_migration(NAME).upgrade()
                 load_migration(NAME).downgrade()
             inspector = inspect(connection)
