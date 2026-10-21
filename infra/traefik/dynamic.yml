@@ -31,6 +31,14 @@ http:
       middlewares: [auth-signup-rate-limit, body-limit, security-headers, strip-api-auth]
       service: auth
       priority: 200
+    auth-password:
+      # Reinitialisation du mot de passe : envoi d'email (forgot) et hachage argon2id (reset).
+      # Limite par IP (20/min, rafale de 10) en plus de la limite par adresse faite par le service.
+      rule: "Path(`/api/auth/password/forgot`) || Path(`/api/auth/password/reset`)"
+      entryPoints: [web]
+      middlewares: [auth-password-rate-limit, body-limit, security-headers, strip-api-auth]
+      service: auth
+      priority: 200
     auth:
       # Les routes /internal/* ne sont jamais exposees : elles sortent du routeur.
       rule: "PathPrefix(`/api/auth`) && !PathPrefix(`/api/auth/internal`)"
@@ -73,6 +81,13 @@ http:
         average: 60
         period: 1m
         burst: 30
+
+    auth-password-rate-limit:
+      # Meme cle que orders-rate-limit : adresse reelle de la connexion, X-Forwarded-For ignore.
+      rateLimit:
+        average: 20
+        period: 1m
+        burst: 10
 
     body-limit:
       buffering:
