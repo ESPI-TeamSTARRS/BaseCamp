@@ -92,3 +92,17 @@ def test_remplit_une_valeur_vide_et_est_idempotent(tmp_path: Path) -> None:
     assert len(first["AUTH_DB_PASSWORD"]) >= 32
     assert run(env_file).returncode == 0
     assert values(env_file) == first
+
+
+def test_l_installation_ne_conseille_jamais_de_supprimer_l_ancienne_pile() -> None:
+    script = (ROOT / "infra" / "install-vm.sh").read_text(encoding="utf-8")
+    assert "docker compose down" not in script
+    assert "stop, jamais down" in script
+
+
+def test_l_installation_conserve_l_etat_du_minuteur() -> None:
+    script = (ROOT / "infra" / "install-vm.sh").read_text(encoding="utf-8")
+    # Rechargement des unites sans restart/disable : l'etat actif/active d'un minuteur existant est conserve.
+    assert "daemon-reload" in script
+    assert "systemctl restart basecamp-deploy" not in script
+    assert "systemctl disable" not in script
