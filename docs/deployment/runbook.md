@@ -80,3 +80,7 @@ L'ancienne pile (projet compose `basecamp-outdoor`, dossier `/home/anto/basecamp
 
 - **Limiteur de débit derrière Cloudflare** : dans les journaux d'accès, l'adresse cliente doit varier d'une requête à l'autre (voir [README](README.md)). Si toutes les requêtes montrent la même adresse, ajuster `PROXY_TRUSTED_IPS` et la liste `excludedIPs` de `deploy/traefik/dynamic.prod.yml`.
 - **Mises à jour de sécurité de la VM** : hors périmètre de ce runbook (infra).
+
+## Démonstration du retour automatique
+
+Sans toucher à la production : `bash scripts/deploy/demo-rollback.sh` (sur la VM, depuis `/opt/basecamp/repo`, avec `PYTHON=python3` par défaut). Le script monte une pile **jetable** (projet compose `basecamp-demo`, autre dossier d'état, autres volumes, secrets aléatoires, aucun routage), y déploie le manifeste de `main`, puis tente un manifeste dont le front est une image qui plante. On voit l'échec, le retour automatique, le test de fumée de nouveau vert, et le script vérifie que `current.json` n'a pas bougé et que le manifeste fautif est noté refusé. Durée : 5 à 8 minutes, environ 0,5 Gio de mémoire en plus. Il supprime ensuite la pile jetable ; `--cleanup` supprime une pile restée en place après une interruption. Les mêmes scénarios sont joués en CI (`deploy-rollback`).
