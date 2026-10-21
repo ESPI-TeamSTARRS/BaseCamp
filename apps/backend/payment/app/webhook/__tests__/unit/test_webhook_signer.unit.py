@@ -29,6 +29,22 @@ class TestHeader:
         )
         assert len(header.split("v1=")[1]) == 64
 
+    def test_the_vector_published_in_the_service_doc_stays_stable(self) -> None:
+        body = (
+            '{"id":"0b6d4e0e-6a3f-4c58-9d8e-5f0f4d1d9a11","type":"payment.succeeded",'
+            '"created_at":"2026-10-21T09:00:00.123Z","data":{"payment_intent_id":'
+            '"7d2f3c1e-8a41-4d3b-9c55-2a6e0f9b1c42","order_reference":"CMD-2026-0001",'
+            '"amount":4990,"currency":"EUR","status":"succeeded"}}'
+        )
+
+        header = WebhookSigner(["whsec_exemple_0123456789abcdef01234567"]).header(
+            1_790_000_000, body
+        )
+
+        assert header == (
+            "t=1790000000,v1=21fa5b167eea0d087d55bd99aa776360368b23f1ff542077eaee49f7618acd9e"
+        )
+
     def test_during_a_rotation_both_secrets_sign_the_same_message(self) -> None:
         header = WebhookSigner([SECRET, OLD_SECRET]).header(NOW, BODY)
 
