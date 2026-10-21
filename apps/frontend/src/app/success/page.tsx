@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { CheckCircle2 } from 'lucide-react';
+import { OrderRecap } from '@/components/OrderRecap';
 
 export const metadata = {
   robots: { index: false, follow: false },
@@ -24,6 +25,7 @@ export default async function SuccessPage({ searchParams }: Props) {
           Numéro de commande : <strong className="text-granite">{number}</strong>
         </p>
       )}
+      {number && <OrderRecap number={number} />}
       <p className="text-granite/70">
         Votre paiement de démonstration a bien été enregistré. Conservez votre numéro de commande et votre
         email pour suivre son état.

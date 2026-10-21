@@ -12,6 +12,7 @@ import {
   type OrderForm,
   type OrderFormErrors,
 } from '../lib/order-form';
+import { rememberLastOrder } from '../lib/order-recap';
 import { IdempotencyKeys, placeOrder } from '../lib/place-order';
 
 type Phase = 'idle' | 'submitting' | 'redirecting';
@@ -74,6 +75,7 @@ export function CartPage() {
       return;
     }
     setPhase('redirecting');
+    rememberLastOrder(window.sessionStorage, result.order.number, checked.form.email);
     router.push(`/paiement/${result.order.id}`);
   }
 
