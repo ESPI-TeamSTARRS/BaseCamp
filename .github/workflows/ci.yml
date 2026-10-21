@@ -29,25 +29,12 @@ jobs:
       fail-fast: false
       matrix:
         service: [shop, auth, payment]
-    # Postgres jetable pour les tests Postgres de payment (concurrence, migrations). Valeurs factices.
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-          POSTGRES_DB: payment_test
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U test -d payment_test"
-          --health-interval 5s --health-timeout 3s --health-retries 10
-    env:
-      PAYMENT_TEST_DATABASE_URL: postgresql+psycopg://test:test@localhost:5432/payment_test
     defaults:
       run:
         working-directory: apps/backend/${{ matrix.service }}
-    # Postgres jetable pour le test de concurrence de shop (SELECT ... FOR UPDATE), sans mot de passe
-    # (trust) car il n'ecoute que dans le job. Les autres services ignorent la variable.
+    # Postgres jetable pour le test de concurrence de shop (SELECT ... FOR UPDATE) et les tests Postgres
+    # de payment (concurrence, migrations), sans mot de passe (trust) car il n'ecoute que dans le job.
+    # Les services ignorent la variable qui ne les concerne pas.
     services:
       postgres:
         image: postgres:17-alpine
@@ -58,6 +45,7 @@ jobs:
           --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 3s --health-retries 10
     env:
       APP_TEST_POSTGRES_URL: postgresql+psycopg://postgres@127.0.0.1:5432/postgres
+      PAYMENT_TEST_DATABASE_URL: postgresql+psycopg://postgres@127.0.0.1:5432/postgres
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
