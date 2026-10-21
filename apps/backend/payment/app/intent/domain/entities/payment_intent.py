@@ -56,3 +56,17 @@ class PaymentIntent:
 
     def fail(self) -> "PaymentIntent":
         return replace(self, status=IntentStatus.FAILED)
+
+    def can_be_refunded(self) -> bool:
+        """Seule une intention encaissée (`succeeded`) se rembourse."""
+        return self.status is IntentStatus.SUCCEEDED
+
+    @property
+    def refundable_cents(self) -> int:
+        """Ce qui reste remboursable : le montant capturé moins ce qui a déjà été rendu."""
+        return self.amount.cents - self.refunded_amount
+
+    def refund(self, amount: Amount) -> "PaymentIntent":
+        if amount.cents > self.refundable_cents:
+            raise ValueError("amount exceeds the refundable amount")
+        return replace(self, refunded_amount=self.refunded_amount + amount.cents)
