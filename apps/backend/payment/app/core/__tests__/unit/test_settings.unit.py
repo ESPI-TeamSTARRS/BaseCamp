@@ -1,4 +1,5 @@
 import pytest
+from pydantic import ValidationError
 
 from app.core.config import Settings
 
@@ -48,3 +49,13 @@ class TestSettingsLogPseudonymKey:
         monkeypatch.setenv("APP_LOG_PSEUDONYM_KEY", "une-cle-longue-et-secrete")
 
         assert Settings().log_pseudonym_key == "une-cle-longue-et-secrete"
+
+
+class TestMetricsSettings:
+    def test_the_ledger_lookback_defaults_to_one_day(self) -> None:
+        assert Settings().metrics_ledger_lookback_hours == 24
+
+    @pytest.mark.parametrize("hours", [0, 721, -1])
+    def test_the_ledger_lookback_is_bounded(self, hours: int) -> None:
+        with pytest.raises(ValidationError):
+            Settings(metrics_ledger_lookback_hours=hours)
