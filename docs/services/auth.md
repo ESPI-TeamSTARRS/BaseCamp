@@ -17,6 +17,8 @@ Tranches verticales Clean Architecture (`domain / application / infrastructure /
 | `password_reset` | réinitialisation du mot de passe : `RequestPasswordResetUseCase`, `ResetPasswordUseCase`, port `SessionRevoker` (supprime les jetons de rafraîchissement), limite par adresse en base; réutilise le domaine de `registration` (`PasswordPolicy`, `EmailAddress`, horloge, jetons, hachage) |
 | `login` | connexion et jetons d'accès clients : `LoginAccountUseCase`, `GetCurrentAccountUseCase`, `GetPublicKeysUseCase`, trousseau Ed25519 (`Ed25519KeyRing`, `LazyEd25519KeyRing`), signature et vérification JWT (`JwtAccessTokenSigner`, `JwtAccessTokenVerifier`), vérificateur argon2id avec hachage factice, dépôts SQLAlchemy |
 
+| `admin` | administration des comptes par un opérateur : `ListAccountsUseCase`, `ChangeAccountStatusUseCase` (désactiver, réactiver), `CreateOperatorUseCase` (commande d'exploitation seulement); lit et écrit un sous-ensemble de `users` avec sa propre base SQLAlchemy et supprime les `refresh_tokens` du compte désactivé; réutilise `PasswordPolicy`, le hachage et l'horloge de `registration` |
+
 Les autres tranches métier (par exemple « déconnecter tous mes appareils ») s'ajoutent à côté; leurs routes se documentent ici. Le câblage de chaque tranche est dans son `composition.py` ou `wiring.py` (seul endroit qui importe l'infrastructure). `login` ne dépend d'aucune autre tranche : elle déclare ses propres modèles sur la table `users` (colonnes lues seulement) avec une base SQLAlchemy distincte; seul `app/login/composition.py` réutilise `Ed25519KeyStore` pour lire le secret de signature monté, afin que jetons clients et jetons de service partagent la même clé et le même `kid`.
 
 ## API
@@ -34,6 +36,8 @@ Les autres tranches métier (par exemple « déconnecter tous mes appareils ») 
 | POST | `/refresh` | rotation de session : cookie `refresh_token` + en-tête `X-Requested-With` obligatoire (anti-CSRF, sinon 403 « Requête refusée. »); 200 `{access_token, token_type: "Bearer", expires_in}` et **nouveau** cookie; 401 « Session expirée. » identique pour jeton absent, inconnu, expiré, rejoué ou de compte désactivé, avec effacement du cookie |
 | POST | `/logout` | révoque la session (famille du jeton) : 204 et cookie effacé; **idempotent** (jeton absent, inconnu ou déjà révoqué : même 204); `X-Requested-With` obligatoire |
 | GET | `/me` | profil `{id, email, roles, email_verified}` du porteur d'un `Authorization: Bearer <jeton>` valide; 401 « Authentification requise. » (en-tête `WWW-Authenticate: Bearer`) pour tout jeton absent, expiré, falsifié, sans signature, d'une autre audience, de service ou d'un compte désactivé |
+| GET | `/admin/users` | **rôle `operator` requis** : liste paginée `{items: [{id, email, role, email_verified, disabled, created_at}], total, limit, offset}` (`limit` 1 à 100, 50 par défaut; `offset` ≥ 0), jamais de hachage; 401 sans jeton, 403 avec un jeton `customer` |
+| POST | `/admin/users/{id}/disable` et `/enable` | **rôle `operator` requis** : désactive (révoque ses jetons de rafraîchissement) ou réactive le compte; renvoie le compte; idempotent; 404 compte inconnu, 409 `cannot_disable_self` ou `cannot_disable_last_operator` |
 | GET | `/.well-known/jwks.json` | **unique route JWKS** (clés publiques de vérification, RFC 7517/8037), `Cache-Control: public, max-age=300`; lisible aussi sur le réseau interne par `http://auth:8000/.well-known/jwks.json` |
 
 Via la passerelle : `/api/auth/health`, `/api/auth/health/ready`, `/api/auth/register`, `/api/auth/verify-email`, `/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout`, `/api/auth/me`, `/api/auth/password/forgot` et `/api/auth/password/reset` (préfixe retiré par Traefik). `register`, `verify-email` et `login` ont un routeur dédié avec limitation de débit par IP (60 requêtes/minute, rafale de 30), car le hachage argon2id est coûteux. `password/forgot` et `password/reset` ont le leur (`auth-password`, 20 requêtes/minute par IP, rafale de 10), en développement (`infra/traefik/dynamic.yml`) et en production (`deploy/traefik/dynamic.prod.yml`, clé IP réelle derrière Cloudflare). Le JWKS est servi à la racine de la passerelle, `/.well-known/jwks.json` (routeur `auth-jwks`, lecture seule, sans retrait de préfixe), et aussi à `/api/auth/.well-known/jwks.json`. L'ancienne route `/internal/jwks` n'existe plus : une seule route publie les clés.
@@ -64,6 +68,13 @@ Un jeton d'accès déjà émis n'est pas révoqué : il reste valide jusqu'à so
 Le cas d'usage journalise `auth.password_reset_completed` avec l'attribut `sessions_revoked` (nombre de jetons de rafraîchissement supprimés, jamais leur valeur).
 
 Le futur changement de mot de passe depuis « mon compte » réutilisera le même port.
+
+### Administration des comptes (rôle `operator`)
+- **Création du rôle** : seule la commande d'exploitation `create-operator` crée un compte `operator` (aucune route HTTP). L'inscription publique ne produit jamais que `customer` : un champ `role` dans le corps est refusé (422, `extra="forbid"`). Commande : `docker compose exec -e OPERATOR_PASSWORD=... auth python -m app.admin.create_operator --email ops@example.com`. Le mot de passe est lu dans `OPERATOR_PASSWORD` ou saisi deux fois sans écho; il n'est jamais passé en argument, affiché ni journalisé. Il suit la politique de l'inscription (12 caractères minimum, mots courants refusés), est haché en argon2id, et l'adresse est tenue pour vérifiée. Adresse invalide, mot de passe faible ou adresse déjà prise : code de sortie 1 et message fixe.
+- **Garde réutilisable `require_role`** (`app/login/presentation/require_role.py`) : `Depends(require_role("operator"))` sur n'importe quelle route d'administration ou de back-office (un ou plusieurs rôles acceptés). Les rôles sont ceux des **claims du jeton signé**, jamais d'un paramètre ou d'un en-tête du client. En plus, le compte doit exister, être actif et avoir toujours ce rôle en base : un opérateur désactivé ou rétrogradé perd l'accès aussitôt. Sans jeton valide : 401 générique « Authentification requise. »; jeton valide sans le rôle : 403 générique « Accès refusé. » (événement `auth.access_denied`). Le rôle reste une simple valeur de `roles` : aucun modèle de permissions n'est figé.
+- **Règles** : un opérateur ne peut pas se désactiver lui-même; le dernier opérateur actif ne peut pas l'être (les opérateurs actifs sont verrouillés en lecture `FOR UPDATE` dans la transaction : deux désactivations simultanées se serialisent). Désactiver supprime les jetons de rafraîchissement; le jeton d'accès déjà émis est refusé tout de suite par `/me` et les routes d'administration, mais reste valide chez `shop` et `payment` jusqu'à son expiration (15 minutes au plus).
+- **Journal d'audit** : chaque action produit une ligne (qui = acteur `operator` + id, quoi = nom de l'événement, cible = `resource_id`, quand = horodatage de la ligne), sans adresse en clair ni mot de passe : `auth.accounts_listed`, `auth.account_disabled`, `auth.account_enabled`, `auth.admin_action_refused` (motifs `cannot_disable_self`, `cannot_disable_last_operator`, `account_not_found`) et `auth.operator_created` (acteur `cli`).
+- Hors périmètre : interface complète d'administration, permissions fines; ce ticket ne livre pas de page front.
 
 ### Connexion (`POST /login`)
 - Corps strict (`extra="forbid"`, mot de passe de 256 caractères au plus avant tout hachage). Email normalisé (minuscules, sans espace).
@@ -204,7 +215,7 @@ Les émissions, refus et limitations sont journalisés via le port `BusinessEven
 - Mots de passe hachés avec un algorithme dédié, jamais journalisés.
 - Cookie de rafraîchissement `HttpOnly`, `Secure`, `SameSite=Strict`, limité à `/api/auth`; le jeton d'accès n'est jamais un cookie, et le front ne le garde qu'en mémoire.
 - Limitation de débit contre le brute-force (par client pour les jetons de service).
-- Séparation des rôles : un client n'accède jamais aux routes opérateur.
+- Séparation des rôles : un client n'accède jamais aux routes opérateur (`require_role`, rôle lu dans le jeton signé).
 
 ## Configuration
 | Variable | Rôle |
@@ -284,6 +295,17 @@ La tranche `login` émet (mêmes règles : email seulement en `email_hash`, jama
 
 `client_ip` vient de `X-Forwarded-For` posé par la passerelle, accepté seulement s'il s'agit d'une adresse IP valide (sinon l'adresse de la connexion).
 
+La tranche `admin` et la garde `require_role` émettent :
+
+| Événement | Outcome | Reason | Ressource et attributs |
+|---|---|---|---|
+| `auth.accounts_listed` | success | | acteur `operator` + id; `limit`, `offset`, `returned`; `client_ip` |
+| `auth.account_disabled` | success | | cible `account` + id, acteur `operator` + id; `sessions_revoked`, `already_disabled` |
+| `auth.account_enabled` | success | | cible `account` + id, acteur `operator` + id; `already_enabled` |
+| `auth.admin_action_refused` | denied | `cannot_disable_self`, `cannot_disable_last_operator`, `account_not_found` | cible `account` + id, acteur `operator` + id |
+| `auth.operator_created` | success ou denied | `weak_password` (attribut `rule`), `operator_exists` | cible `account` + id (succès), acteur `cli` |
+| `auth.access_denied` | denied | `role_required` | acteur `user` + id; `required` (rôles exigés) |
+
 Catalogue cible des prochains tickets d'auth (même règles) :
 
 | Événement | Outcome | Reason |
@@ -297,4 +319,4 @@ Catalogue cible des prochains tickets d'auth (même règles) :
 Avant l'authentification, l'acteur est inconnu : seul `email_hash` identifie la tentative.
 
 ## Tests
-`uv run poe test` (unit et integ, couverture ≥ 80 %); `uv run poe test:e2e` sur la pile lancée (`E2E_BASE_URL`, `http://127.0.0.1:8080` par défaut); les scénarios de jetons de service appellent `auth` depuis le conteneur `shop` (réseau `app`, `docker compose exec`) et lisent le secret du client `shop` dans `AUTH_SERVICE_CLIENT_SECRET_SHOP` ou `.env`. Les scénarios d'inscription et de réinitialisation lisent les emails dans Mailpit via `E2E_MAILPIT_URL` (ignorés sans cette variable); `E2E_CHECK_LOGS=1` ajoute le contrôle des journaux des conteneurs (`docker compose logs`, lancé depuis la racine du dépôt) : ni mot de passe, ni jeton, ni adresse. Les scénarios de connexion (`test_login.e2e.py`) créent leur compte par `/register`, vérifient la signature des jetons avec le JWKS publié par la passerelle, les 401 génériques et un temps de réponse comparable; avec `E2E_CHECK_LOGS=1`, ils désactivent un compte par `docker compose exec postgres-auth psql` et contrôlent aussi les journaux (ni jeton d'accès, ni cookie de rafraîchissement, ni clé privée). Les scénarios de rafraîchissement (`test_refresh.e2e.py`) passent le cookie `Secure` à la main (pile en http) et couvrent la rotation, le rejeu, l'en-tête anti-CSRF, la déconnexion idempotente et huit rafraîchissements simultanés avec le même jeton (un seul réussit).
+`uv run poe test` (unit et integ, couverture ≥ 80 %); `uv run poe test:e2e` sur la pile lancée (`E2E_BASE_URL`, `http://127.0.0.1:8080` par défaut); les scénarios de jetons de service appellent `auth` depuis le conteneur `shop` (réseau `app`, `docker compose exec`) et lisent le secret du client `shop` dans `AUTH_SERVICE_CLIENT_SECRET_SHOP` ou `.env`. Les scénarios d'inscription et de réinitialisation lisent les emails dans Mailpit via `E2E_MAILPIT_URL` (ignorés sans cette variable); `E2E_CHECK_LOGS=1` ajoute le contrôle des journaux des conteneurs (`docker compose logs`, lancé depuis la racine du dépôt) : ni mot de passe, ni jeton, ni adresse. Les scénarios de connexion (`test_login.e2e.py`) créent leur compte par `/register`, vérifient la signature des jetons avec le JWKS publié par la passerelle, les 401 génériques et un temps de réponse comparable; avec `E2E_CHECK_LOGS=1`, ils désactivent un compte par `docker compose exec postgres-auth psql` et contrôlent aussi les journaux (ni jeton d'accès, ni cookie de rafraîchissement, ni clé privée). Les scénarios de rafraîchissement (`test_refresh.e2e.py`) passent le cookie `Secure` à la main (pile en http) et couvrent la rotation, le rejeu, l'en-tête anti-CSRF, la déconnexion idempotente et huit rafraîchissements simultanés avec le même jeton (un seul réussit). Les scénarios d'administration (`test_admin.e2e.py`, `E2E_CHECK_LOGS=1`) créent l'opérateur par `docker compose exec auth python -m app.admin.create_operator` puis vérifient 401, 403, la liste, la désactivation (le compte ne peut plus se connecter) et le refus de l'auto-désactivation.

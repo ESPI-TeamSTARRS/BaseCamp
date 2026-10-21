@@ -3,6 +3,9 @@ import sys
 from fastapi import FastAPI
 from sqlalchemy import create_engine
 
+from app.admin.composition import wire_admin
+from app.admin.presentation.error_handlers import register_admin_error_handlers
+from app.admin.presentation.router import router as admin_router
 from app.core.config import Settings
 from app.core.errors import register_error_handlers
 from app.core.logging.correlation_id_middleware import CorrelationIdMiddleware
@@ -49,17 +52,20 @@ def create_app() -> FastAPI:
     wire_registration(application, settings, engine, events)
     wire_password_reset(application, settings, engine, events)
     wire_login(application, settings, engine, events)
+    wire_admin(application, engine, events)
     application.include_router(health_router)
     application.include_router(service_token_router)
     application.include_router(registration_router)
     application.include_router(password_reset_router)
     application.include_router(login_router)
     application.include_router(well_known_router)
+    application.include_router(admin_router)
     register_error_handlers(application, events)
     register_service_token_error_handlers(application)
     register_registration_error_handlers(application)
     register_password_reset_error_handlers(application)
     register_login_error_handlers(application)
+    register_admin_error_handlers(application)
     return application
 
 

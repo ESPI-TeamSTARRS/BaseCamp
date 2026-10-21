@@ -6,6 +6,7 @@ from sqlalchemy import Engine
 from app.core.config import Settings
 from app.core.events.business_event_logger import BusinessEventLogger
 from app.core.logging.email_pseudonymizer import build_pseudonymizer
+from app.login.application.authorize_request import AuthorizeRequestUseCase
 from app.login.application.get_current_account import GetCurrentAccountUseCase
 from app.login.application.get_public_keys import GetPublicKeysUseCase
 from app.login.application.login_account import LoginAccountUseCase
@@ -70,6 +71,12 @@ def wire_login(
     )
     application.state.logout_session_use_case = LogoutSessionUseCase(
         unit_of_work, refresh_tokens, events
+    )
+    application.state.authorize_request_use_case = AuthorizeRequestUseCase(
+        unit_of_work,
+        JwtAccessTokenVerifier(keys, settings.jwt_issuer, settings.jwt_audience),
+        clock,
+        events,
     )
     application.state.get_current_account_use_case = GetCurrentAccountUseCase(
         unit_of_work,
