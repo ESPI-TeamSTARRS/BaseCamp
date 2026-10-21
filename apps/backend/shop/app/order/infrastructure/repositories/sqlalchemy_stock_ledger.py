@@ -20,7 +20,10 @@ class SqlAlchemyStockLedger(StockLedger):
     def lock_items(self, product_ids: Sequence[str]) -> list[StockItem]:
         statement = (
             select(OrderProductModel)
-            .where(OrderProductModel.id.in_(list(product_ids)))
+            .where(
+                OrderProductModel.id.in_(list(product_ids)),
+                OrderProductModel.archived_at.is_(None),  # un produit archivé ne se commande plus
+            )
             .order_by(OrderProductModel.id)  # meme ordre partout : pas d'interblocage
             .with_for_update()
         )
@@ -33,7 +36,10 @@ class SqlAlchemyStockLedger(StockLedger):
         self._session.execute(
             update(OrderProductModel)
             .where(OrderProductModel.id == product_id)
-            .values(stock=OrderProductModel.stock - quantity)
+            .values(
+                stock=OrderProductModel.stock - quantity,
+                version=OrderProductModel.version + 1,  # une édition d'admin périmée sera refusée
+            )
         )
         self._session.add(
             StockReservationModel(

@@ -9,11 +9,13 @@ import jwt
 from jwt import PyJWK
 
 from app.customer_identity.domain.entities.customer import Customer
+from app.customer_identity.domain.entities.operator import Operator
 from app.customer_identity.domain.exceptions.client_token_rejected_error import (
     ClientTokenRejectedError,
     TokenRejection,
 )
 from app.customer_identity.domain.interfaces.client_token_verifier import ClientTokenVerifier
+from app.customer_identity.domain.interfaces.operator_token_verifier import OperatorTokenVerifier
 from app.customer_identity.infrastructure.clients.jwks_key_cache import JwksKeyCache
 
 ALGORITHM = "EdDSA"  # jamais `none`, jamais HS* : seul l'algorithme d'`auth` est accepte
@@ -23,7 +25,14 @@ JWT_SEGMENTS = 3
 REQUIRED_CLAIMS = ["exp", "iat", "iss", "aud", "sub", "jti"]
 
 
-class JwksClientTokenVerifier(ClientTokenVerifier):
+def _texts(value: object) -> tuple[str, ...]:
+    """Une liste de textes, sinon rien : un `roles` ou `amr` mal formé ne donne jamais de droit."""
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        return ()
+    return tuple(value)
+
+
+class JwksClientTokenVerifier(ClientTokenVerifier, OperatorTokenVerifier):
     """Verifie localement un jeton client d'`auth` : signature EdDSA par `kid`, `iss`, `aud`, `exp`.
 
     Contrat de verification d'`auth` : en-tete `kid` obligatoire, `token_use` = `client`, claims
@@ -36,6 +45,12 @@ class JwksClientTokenVerifier(ClientTokenVerifier):
         self._audience = audience
 
     def verify(self, token: str, now: datetime) -> Customer:
+        return self._customer(self._verified_claims(token, now), token)
+
+    def verify_operator(self, token: str, now: datetime) -> Operator:
+        return self._operator(self._verified_claims(token, now))
+
+    def _verified_claims(self, token: str, now: datetime) -> dict[str, Any]:
         header = self._header(token)
         kid = header.get("kid")
         if not isinstance(kid, str) or not kid:
@@ -47,7 +62,7 @@ class JwksClientTokenVerifier(ClientTokenVerifier):
             raise ClientTokenRejectedError(TokenRejection.UNKNOWN_KEY)
         claims = self._decode(token, jwk)
         self._check_expiry(claims, now)
-        return self._customer(claims, token)
+        return claims
 
     @staticmethod
     def _header(token: str) -> dict[str, Any]:
@@ -97,6 +112,17 @@ class JwksClientTokenVerifier(ClientTokenVerifier):
             raise ClientTokenRejectedError(TokenRejection.INVALID)
         if now.timestamp() > expires + CLOCK_TOLERANCE_SECONDS:
             raise ClientTokenRejectedError(TokenRejection.EXPIRED)
+
+    @staticmethod
+    def _operator(claims: dict[str, Any]) -> Operator:
+        """`roles` et `amr` ne sont lus que s'ils sont de vraies listes de textes : sinon vides."""
+        if claims.get("token_use") != CLIENT_TOKEN_USE:
+            raise ClientTokenRejectedError(TokenRejection.NOT_A_CLIENT_TOKEN)
+        try:
+            account = UUID(str(claims["sub"]))
+        except ValueError:
+            raise ClientTokenRejectedError(TokenRejection.INVALID) from None
+        return Operator(account, _texts(claims.get("roles")), _texts(claims.get("amr")))
 
     @staticmethod
     def _customer(claims: dict[str, Any], token: str) -> Customer:

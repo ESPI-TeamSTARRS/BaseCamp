@@ -1,6 +1,7 @@
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, Integer, Numeric, String, Text
+from sqlalchemy import JSON, DateTime, Integer, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -25,3 +26,5 @@ class ProductModel(CatalogBase):
     stock: Mapped[int] = mapped_column(Integer, nullable=False)
     rating_value: Mapped[float] = mapped_column(Numeric(2, 1, asdecimal=False), nullable=False)
     rating_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")

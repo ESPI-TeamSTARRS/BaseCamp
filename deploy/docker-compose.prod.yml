@@ -49,14 +49,14 @@ services:
       traefik.enable: ${GATEWAY_EXPOSE:-true}
       traefik.docker.network: ${WEB_NETWORK:-web}
       # Routeur HTTPS du Traefik du serveur vers la passerelle de la pile.
-      traefik.http.routers.basecamp-gw.rule: Host(`${BASECAMP_DOMAIN:?voir deploy/prod.env.example}`)
+      traefik.http.routers.basecamp-gw.rule: Host(`${BASECAMP_DOMAIN:?voir deploy/prod.env.example}`) || Host(`admin.${BASECAMP_DOMAIN}`)
       traefik.http.routers.basecamp-gw.entrypoints: ${TRAEFIK_ENTRYPOINT_HTTPS:-websecure}
       traefik.http.routers.basecamp-gw.tls: "true"
       traefik.http.routers.basecamp-gw.tls.certresolver: ${TRAEFIK_CERTRESOLVER:-letsencrypt}
       traefik.http.routers.basecamp-gw.service: basecamp-gw
       traefik.http.services.basecamp-gw.loadbalancer.server.port: "9080"
       # Redirection HTTP -> HTTPS.
-      traefik.http.routers.basecamp-gw-http.rule: Host(`${BASECAMP_DOMAIN}`)
+      traefik.http.routers.basecamp-gw-http.rule: Host(`${BASECAMP_DOMAIN}`) || Host(`admin.${BASECAMP_DOMAIN}`)
       traefik.http.routers.basecamp-gw-http.entrypoints: ${TRAEFIK_ENTRYPOINT_HTTP:-web}
       traefik.http.routers.basecamp-gw-http.middlewares: basecamp-gw-https-redirect
       traefik.http.middlewares.basecamp-gw-https-redirect.redirectscheme.scheme: https
@@ -126,6 +126,11 @@ services:
       APP_SMTP_HOST: ${SHOP_SMTP_HOST:-localhost}
       APP_SMTP_PORT: ${SHOP_SMTP_PORT:-25}
       APP_SMTP_FROM: ${SHOP_SMTP_FROM:-commandes@basecamp.local}
+      # Televersement des images produit (API d'administration) : API S3 de SeaweedFS.
+      APP_S3_ENDPOINT: http://seaweedfs:8333
+      APP_S3_BUCKET: ${S3_BUCKET:-product-images}
+      APP_S3_ACCESS_KEY: ${S3_ACCESS_KEY:?voir deploy/prod.env.example}
+      APP_S3_SECRET_KEY: ${S3_SECRET_KEY:?voir deploy/prod.env.example}
     networks: [app, data, payment-net]
     read_only: true
     depends_on:

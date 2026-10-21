@@ -35,6 +35,8 @@ L'ancienne pile (projet compose `basecamp-outdoor`, dossier `/home/anto/basecamp
 2. **Arrêter** (pas supprimer) l'ancienne pile : `cd /home/anto/basecamp-outdoor && docker compose stop`. Ses conteneurs et ses volumes sont conservés.
 3. Exposer la nouvelle pile : retirer `GATEWAY_EXPOSE` de `/opt/basecamp/.env` (`sudo sed -i '/^GATEWAY_EXPOSE=/d' /opt/basecamp/.env`) puis relancer le déploiement avec `--force` (les labels changent, le manifeste non).
 4. Vérifier depuis l'extérieur : `https://basecamp.tempulse.fr` (page d'accueil, une fiche produit avec ses images, `/api/shop/health`).
+
+**Origine d'administration.** L'API d'administration du catalogue (/api/shop/admin) ne répond que sur dmin.<domaine> (par exemple dmin.basecamp.tempulse.fr) : créer l'enregistrement DNS de cet hôte vers le même serveur. Les étiquettes du Traefik de la pile le déclarent à côté du domaine principal, et le Traefik du serveur y émet son certificat. Sur le domaine principal, /api/shop/admin reste un 404. Les clés S3 (S3_ACCESS_KEY, S3_SECRET_KEY) sont aussi lues par shop pour les images.
 5. Activer le minuteur seulement après ce déploiement manuel réussi : `sudo bash /opt/basecamp/repo/infra/install-vm.sh --enable-timer`. Suivre : `journalctl -u basecamp-deploy -f`.
 
 **Revenir à l'ancienne pile** (une commande) : `sudo systemctl disable --now basecamp-deploy.timer; docker compose -p basecamp-prod -f /opt/basecamp/repo/deploy/docker-compose.prod.yml --env-file /opt/basecamp/state/compose.env stop && (cd /home/anto/basecamp-outdoor && docker compose start)`. Rien n'est supprimé : la nouvelle pile est seulement arrêtée.
