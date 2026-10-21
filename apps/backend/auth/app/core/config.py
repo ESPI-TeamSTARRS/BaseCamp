@@ -1,4 +1,4 @@
-from pydantic import Field, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
@@ -31,6 +31,17 @@ class Settings(BaseSettings):
     # Clients de service a amorcer : {"shop": ["payments:write"]} (JSON, non secret). Les secrets
     # se lisent a part (APP_SERVICE_CLIENT_SECRET_<CLIENT>) par la commande d'amorcage uniquement.
     service_clients: dict[str, list[str]] = Field(default_factory=dict)
+
+    # Envoi d'emails (Mailpit en local, relais SMTP reel ailleurs).
+    smtp_host: str = "localhost"
+    smtp_port: int = 1025
+    smtp_from: str = "comptes@basecamp.local"
+    smtp_username: str = ""
+    smtp_password: SecretStr = SecretStr("")  # APP_SMTP_PASSWORD, jamais versionne
+    smtp_starttls: bool = False
+    smtp_timeout_seconds: float = 5.0
+    # Origine publique du site : base des liens envoyes par email.
+    public_base_url: str = "http://localhost:8080"
 
     @model_validator(mode="after")
     def _require_pseudonym_key_outside_development(self) -> "Settings":
