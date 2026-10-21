@@ -27,13 +27,17 @@ Après installation : relire `/opt/basecamp/.env` (domaine, et les valeurs facul
 
 L'ancienne pile (projet compose `basecamp-outdoor`, dossier `/home/anto/basecamp-outdoor`) et la nouvelle routent le même domaine : **ne jamais les laisser tourner ensemble**. Tant que l'ancienne tourne, le déploiement de la nouvelle est suspendu (le script le détecte et le journal le dit).
 
-1. Noter l'état de départ : `docker ps --filter label=com.docker.compose.project=basecamp-outdoor`.
-2. Arrêter l'ancienne pile : `cd /home/anto/basecamp-outdoor && docker compose down` (sans `-v`).
-3. Activer les déploiements : `sudo bash /opt/basecamp/repo/infra/install-vm.sh --enable-timer`.
-4. Suivre : `journalctl -u basecamp-deploy -f`. Le premier déploiement tire les images, migre, amorce le bucket d'images et joue le test de fumée.
-5. Vérifier depuis l'extérieur : `https://basecamp.tempulse.fr` (page d'accueil, une fiche produit avec ses images, `/api/shop/health`).
+**Tester avant de basculer.** Dans `/opt/basecamp/.env`, ajouter `GATEWAY_EXPOSE=false`, puis lancer un premier déploiement manuel (`scripts/deploy.sh deploy/manifest.json`, avec `BASECAMP_STATE_DIR` et `BASECAMP_ENV_FILE`) : la pile démarre, migre et joue son test de fumée **sans** que le Traefik du serveur la route (pas de routeur `basecamp-gw`, donc aucun conflit avec l'ancienne pile ni demande de certificat). Pour la voir dans un navigateur depuis son poste : `docker run --rm -d --name bc-preview -p 127.0.0.1:18080:9080 --network web alpine/socat tcp-listen:9080,fork,reuseaddr tcp-connect:basecamp-prod-traefik-1:9080`, puis un tunnel SSH `-L 8081:127.0.0.1:18080` ; supprimer l'aperçu avec `docker rm -f bc-preview`.
 
-**Revenir à l'ancienne pile** si besoin : `sudo systemctl disable --now basecamp-deploy.timer`, `docker compose -p basecamp-prod -f /opt/basecamp/repo/deploy/docker-compose.prod.yml --env-file /opt/basecamp/state/compose.env down`, puis `docker compose up -d` dans `/home/anto/basecamp-outdoor`.
+**Bascule** (prévenir Antony : la VM est partagée) :
+
+1. Noter l'état de départ : `docker ps --filter label=com.docker.compose.project=basecamp-outdoor`.
+2. **Arrêter** (pas supprimer) l'ancienne pile : `cd /home/anto/basecamp-outdoor && docker compose stop`. Ses conteneurs et ses volumes sont conservés.
+3. Exposer la nouvelle pile : retirer `GATEWAY_EXPOSE` de `/opt/basecamp/.env` (`sudo sed -i '/^GATEWAY_EXPOSE=/d' /opt/basecamp/.env`) puis relancer le déploiement avec `--force` (les labels changent, le manifeste non).
+4. Vérifier depuis l'extérieur : `https://basecamp.tempulse.fr` (page d'accueil, une fiche produit avec ses images, `/api/shop/health`).
+5. Activer le minuteur seulement après ce déploiement manuel réussi : `sudo bash /opt/basecamp/repo/infra/install-vm.sh --enable-timer`. Suivre : `journalctl -u basecamp-deploy -f`.
+
+**Revenir à l'ancienne pile** (une commande) : `sudo systemctl disable --now basecamp-deploy.timer; docker compose -p basecamp-prod -f /opt/basecamp/repo/deploy/docker-compose.prod.yml --env-file /opt/basecamp/state/compose.env stop && (cd /home/anto/basecamp-outdoor && docker compose start)`. Rien n'est supprimé : la nouvelle pile est seulement arrêtée.
 
 ## Au quotidien
 
