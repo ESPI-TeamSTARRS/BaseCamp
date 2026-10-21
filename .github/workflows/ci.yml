@@ -6,9 +6,8 @@ name: CI
 # `ci-ok` est le seul check a rendre obligatoire dans la protection de branche.
 
 on:
-  push:
-    # Sur main, la CI est jouee par release.yml (appel de ce workflow) avant le calcul des versions.
-    branches-ignore: [main]
+  # Pas de declencheur push : les branches de travail sont couvertes par la PR (evite la CI en double),
+  # et sur main la CI est jouee par release.yml (appel de ce workflow) avant le calcul des versions.
   pull_request:
     branches: [main]
   workflow_call:
