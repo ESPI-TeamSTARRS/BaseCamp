@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { confirmPayment, isOrderId, requestPayment } from '../order-payment';
+import {
+  confirmPayment,
+  isOrderId,
+  loadPaymentView,
+  requestPayment,
+  type RequestPaymentResult,
+} from '../order-payment';
 
 const ORDER_ID = '0b6b1f2e-6c52-4d3b-8a52-1d6f7a9b2c10';
 
@@ -128,5 +134,50 @@ describe('confirmPayment', () => {
     const result = await confirmPayment(ORDER_ID, 'pm_test_success', reply(409, {}));
     expect(result).toMatchObject({ ok: false, reason: 'not_payable' });
     expect((result as { message: string }).message).toMatch(/\S/);
+  });
+});
+
+describe('loadPaymentView', () => {
+  const payment = {
+    intentId: 'pi-1',
+    orderNumber: 'BC-ABCDEFGHJK',
+    amountEur: 44.9,
+    methods: ['pm_test_success'],
+  };
+  const viewFor = (result: RequestPaymentResult) =>
+    loadPaymentView(ORDER_ID, vi.fn().mockResolvedValue(result));
+
+  it("présente l'intention reçue, sans refus", async () => {
+    expect(await viewFor({ ok: true, payment })).toEqual({ step: 'ready', payment, declined: false });
+  });
+
+  it('explique une commande qui ne peut plus être payée, sans nouvel essai', async () => {
+    expect(await viewFor({ ok: false, reason: 'not_payable', message: 'Commande deja payee.' })).toEqual({
+      step: 'error',
+      message: 'Commande deja payee.',
+      retry: false,
+    });
+  });
+
+  it('signale une commande introuvable, sans nouvel essai', async () => {
+    expect(await viewFor({ ok: false, reason: 'not_found' })).toEqual({
+      step: 'error',
+      message: 'Commande introuvable.',
+      retry: false,
+    });
+  });
+
+  it('propose un nouvel essai quand le paiement est indisponible', async () => {
+    const view = await viewFor({ ok: false, reason: 'unavailable' });
+
+    expect(view).toMatchObject({ step: 'error', retry: true });
+  });
+
+  it('ne rejette jamais : une exception inattendue devient « indisponible » avec nouvel essai', async () => {
+    const request = vi.fn().mockRejectedValue(new Error('boom'));
+
+    const view = await loadPaymentView(ORDER_ID, request);
+
+    expect(view).toMatchObject({ step: 'error', retry: true });
   });
 });

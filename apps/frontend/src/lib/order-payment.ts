@@ -121,3 +121,31 @@ export async function confirmPayment(
     return { ok: false, reason: 'unavailable' };
   }
 }
+
+export const PAYMENT_UNAVAILABLE_MESSAGE =
+  'Le paiement est momentanément indisponible. Réessayez dans un instant.';
+const ORDER_NOT_FOUND_MESSAGE = 'Commande introuvable.';
+
+export type PaymentLoadView =
+  | { step: 'ready'; payment: PaymentRequest; declined: false }
+  | { step: 'error'; message: string; retry: boolean };
+
+/**
+ * Vue à afficher pour une première demande de paiement. Ne rejette jamais : une exception
+ * inattendue devient « indisponible » avec possibilité de réessayer.
+ */
+export async function loadPaymentView(
+  orderId: string,
+  request: (orderId: string) => Promise<RequestPaymentResult> = requestPayment
+): Promise<PaymentLoadView> {
+  let result: RequestPaymentResult;
+  try {
+    result = await request(orderId);
+  } catch {
+    return { step: 'error', message: PAYMENT_UNAVAILABLE_MESSAGE, retry: true };
+  }
+  if (result.ok) return { step: 'ready', payment: result.payment, declined: false };
+  if (result.reason === 'not_payable') return { step: 'error', message: result.message, retry: false };
+  if (result.reason === 'not_found') return { step: 'error', message: ORDER_NOT_FOUND_MESSAGE, retry: false };
+  return { step: 'error', message: PAYMENT_UNAVAILABLE_MESSAGE, retry: true };
+}

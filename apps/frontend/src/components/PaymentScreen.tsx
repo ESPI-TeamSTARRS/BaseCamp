@@ -7,6 +7,8 @@ import { ShieldCheck } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import {
   confirmPayment,
+  loadPaymentView,
+  PAYMENT_UNAVAILABLE_MESSAGE as UNAVAILABLE,
   requestPayment,
   type PaymentRequest,
   type TestPaymentMethod,
@@ -18,9 +20,6 @@ type View =
   | { step: 'paying'; payment: PaymentRequest }
   | { step: 'error'; message: string; retry: boolean };
 
-const UNAVAILABLE = 'Le paiement est momentanément indisponible. Réessayez dans un instant.';
-const NOT_FOUND = 'Commande introuvable.';
-
 /** Écran de paiement simulé : aucun champ de carte, seulement un résultat de test à choisir. */
 export function PaymentScreen({ orderId }: { orderId: string }) {
   const router = useRouter();
@@ -30,13 +29,8 @@ export function PaymentScreen({ orderId }: { orderId: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    requestPayment(orderId).then((result) => {
-      if (cancelled) return;
-      if (result.ok) setView({ step: 'ready', payment: result.payment, declined: false });
-      else if (result.reason === 'not_payable')
-        setView({ step: 'error', message: result.message, retry: false });
-      else if (result.reason === 'not_found') setView({ step: 'error', message: NOT_FOUND, retry: false });
-      else setView({ step: 'error', message: UNAVAILABLE, retry: true });
+    void loadPaymentView(orderId).then((next) => {
+      if (!cancelled) setView(next);
     });
     return () => {
       cancelled = true;
