@@ -83,3 +83,36 @@ class TestSettingsServiceTokens:
 
         with pytest.raises(ValueError, match="greater than 0"):
             Settings()
+
+
+class TestSettingsMail:
+    def test_smtp_has_local_mailpit_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for name in ("HOST", "PORT", "FROM", "USERNAME", "PASSWORD", "STARTTLS", "TIMEOUT_SECONDS"):
+            monkeypatch.delenv(f"APP_SMTP_{name}", raising=False)
+        monkeypatch.delenv("APP_PUBLIC_BASE_URL", raising=False)
+
+        settings = Settings()
+
+        assert (settings.smtp_host, settings.smtp_port) == ("localhost", 1025)
+        assert settings.smtp_starttls is False
+        assert settings.smtp_username == ""
+        assert settings.public_base_url == "http://localhost:8080"
+
+    def test_smtp_is_read_from_the_environment_and_the_password_stays_secret(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("APP_SMTP_HOST", "mailpit")
+        monkeypatch.setenv("APP_SMTP_PORT", "2525")
+        monkeypatch.setenv("APP_SMTP_STARTTLS", "true")
+        monkeypatch.setenv("APP_SMTP_USERNAME", "relay")
+        monkeypatch.setenv("APP_SMTP_PASSWORD", "tres-secret")
+
+        settings = Settings()
+
+        assert (settings.smtp_host, settings.smtp_port, settings.smtp_starttls) == (
+            "mailpit",
+            2525,
+            True,
+        )
+        assert settings.smtp_password.get_secret_value() == "tres-secret"
+        assert "tres-secret" not in repr(settings)

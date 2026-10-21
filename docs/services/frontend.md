@@ -8,6 +8,9 @@ Next.js 16 (App Router, React 19, Turbopack), TypeScript strict, Tailwind CSS, F
 
 Les paramètres de route (`params`) sont asynchrones (`await params`). Les visuels du catalogue sont servis par la passerelle sous `/media` (même origine) : `images.remotePatterns` reste vide, sans domaine générique, et l'optimiseur d'images est désactivé. L'audit `npm audit --omit=dev --audit-level=high` est bloquant en CI (job `frontend`).
 
+## Comptes
+Pages `/compte/inscription` (formulaire, états d'erreur sans détail technique) et `/compte/verification` (jeton lu dans le fragment d'URL `#token=`, retiré de la barre d'adresse avant l'appel). Les appels vont à `/api/auth/register` et `/api/auth/verify-email` par la passerelle (même origine). La logique testée est dans `src/lib/account-api.ts` et `src/lib/registration-flow.ts`; les composants `RegistrationForm` et `EmailVerification` ne font que l'affichage.
+
 ## Organisation
 `src/app` (routes), `src/components`, `src/context` (panier), `src/lib` (utilitaires métier), `src/types`.
 
