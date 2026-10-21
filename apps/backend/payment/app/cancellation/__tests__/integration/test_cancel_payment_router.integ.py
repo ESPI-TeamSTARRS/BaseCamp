@@ -99,7 +99,7 @@ def _lines(env: Env) -> list[dict[str, Any]]:
     for record in records:
         errors = [error.message for error in VALIDATOR.iter_errors(record)]
         assert not errors, errors
-    return records
+    return [r for r in records if r["event"] != "service.request_completed"]
 
 
 class TestCancellation:

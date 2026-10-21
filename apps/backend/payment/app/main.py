@@ -26,8 +26,14 @@ from app.health.presentation.router import router as health_router
 from app.intent.error_handlers import register_error_handlers
 from app.intent.presentation.router import router as intent_router
 from app.intent.wiring import build_intent_services
+from app.observability.presentation.request_observer_middleware import RequestObserverMiddleware
+from app.observability.presentation.router import router as observability_router
+from app.observability.wiring import build_observability_services
 from app.ratelimit.error_handlers import register_rate_limit_error_handlers
 from app.ratelimit.wiring import build_rate_limiter
+from app.refund.error_handlers import register_refund_error_handlers
+from app.refund.presentation.router import router as refund_router
+from app.refund.wiring import build_refund_services
 
 
 def create_app(
@@ -48,18 +54,25 @@ def create_app(
     application.state.intent_services = build_intent_services(engine, settings, events)
     application.state.confirmation_services = build_confirmation_services(engine, settings, events)
     application.state.cancellation_services = build_cancellation_services(engine, events)
+    application.state.refund_services = build_refund_services(engine, events)
     application.state.rate_limiter = build_rate_limiter(engine, settings, events)
+    observability = build_observability_services(engine, settings, events)
+    application.state.observability_services = observability
     application.include_router(health_router)
+    application.include_router(observability_router)
     application.include_router(intent_router)
     application.include_router(confirmation_router)
     application.include_router(cancellation_router)
+    application.include_router(refund_router)
     register_error_handlers(application, events)
     register_confirmation_error_handlers(application)
     register_cancellation_error_handlers(application)
+    register_refund_error_handlers(application)
     register_rate_limit_error_handlers(application)
     register_database_unavailable_handler(application, events)
     register_unhandled_error_handler(application, events)
-    # Le dernier ajouté est le plus externe : corrélation, concurrence, délais, taille du corps.
+    # Le dernier ajouté est le plus externe : corrélation, observation (voit aussi les 503 et 504),
+    # concurrence, délais, taille du corps.
     application.add_middleware(
         BodySizeLimitMiddleware, max_bytes=settings.max_body_bytes, events=events
     )
@@ -73,6 +86,7 @@ def create_app(
     application.add_middleware(
         ConcurrencyLimitMiddleware, max_concurrent=settings.max_concurrent_requests, events=events
     )
+    application.add_middleware(RequestObserverMiddleware, record=observability.record_request)
     application.add_middleware(CorrelationIdMiddleware)
     return application
 

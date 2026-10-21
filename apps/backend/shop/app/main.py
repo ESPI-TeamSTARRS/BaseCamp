@@ -28,10 +28,25 @@ from app.order.infrastructure.repositories.sqlalchemy_order_unit_of_work import 
     SqlAlchemyOrderUnitOfWork,
 )
 from app.order.presentation.router import router as order_router
+from app.order_tracking.application.lookup_order import LookupOrderUseCase
+from app.order_tracking.infrastructure.repositories.sqlalchemy_tracked_order_reader import (
+    SqlAlchemyTrackedOrderReader,
+)
+from app.order_tracking.presentation.router import router as order_tracking_router
 from app.pay.application.start_payment import StartPaymentUseCase
+from app.pay.domain.interfaces.payment_gateway import PaymentGateway
 from app.pay.error_handlers import register_pay_error_handlers
 from app.pay.infrastructure.clients.http_payment_gateway import HttpPaymentGateway
 from app.pay.presentation.router import router as pay_router
+from app.payment_request.application.confirm_order_payment import ConfirmOrderPaymentUseCase
+from app.payment_request.application.request_order_payment import RequestOrderPaymentUseCase
+from app.payment_request.infrastructure.gateways.simulated_payment_gateway import (
+    SimulatedPaymentGateway,
+)
+from app.payment_request.infrastructure.repositories.sqlalchemy_payment_unit_of_work import (
+    SqlAlchemyPaymentUnitOfWork,
+)
+from app.payment_request.presentation.router import router as payment_request_router
 
 DB_CONNECT_TIMEOUT_SECONDS = 2
 
@@ -64,6 +79,11 @@ def create_app() -> FastAPI:
         events,
         build_pseudonymizer(settings.log_pseudonym_key),
     )
+    application.state.lookup_order_use_case = LookupOrderUseCase(
+        SqlAlchemyTrackedOrderReader(engine),
+        events,
+        build_pseudonymizer(settings.log_pseudonym_key),
+    )
     payment_client = httpx.Client(
         base_url=settings.payment_url,
         timeout=httpx.Timeout(
@@ -74,10 +94,19 @@ def create_app() -> FastAPI:
         ),
         limits=httpx.Limits(max_connections=20, max_keepalive_connections=5),
     )
+    gateway: PaymentGateway = (
+        SimulatedPaymentGateway(engine)
+        if settings.payment_provider == "simulated"
+        else HttpPaymentGateway(payment_client, settings.payment_service_token)
+    )
     application.state.start_payment_use_case = StartPaymentUseCase(
-        application.state.quote_cart_use_case,
-        HttpPaymentGateway(payment_client, settings.payment_service_token),
-        events,
+        application.state.quote_cart_use_case, gateway, events
+    )
+    application.state.request_order_payment_use_case = RequestOrderPaymentUseCase(
+        lambda: SqlAlchemyPaymentUnitOfWork(engine), gateway, events
+    )
+    application.state.confirm_order_payment_use_case = ConfirmOrderPaymentUseCase(
+        lambda: SqlAlchemyPaymentUnitOfWork(engine), gateway, events
     )
     register_error_handlers(application, events)
     register_pay_error_handlers(application)
@@ -85,7 +114,9 @@ def create_app() -> FastAPI:
     application.include_router(health_router)
     application.include_router(catalog_router)
     application.include_router(cart_router)
+    application.include_router(order_tracking_router)
     application.include_router(order_router)
+    application.include_router(payment_request_router)
     return application
 
 

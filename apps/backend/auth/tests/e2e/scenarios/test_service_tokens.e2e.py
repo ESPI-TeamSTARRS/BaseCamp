@@ -33,7 +33,7 @@ BASE_URL = os.environ.get("E2E_BASE_URL", "http://127.0.0.1:8080")
 SHOP_ENV_VARIABLE = "AUTH_SERVICE_CLIENT_" + "SECRET_SHOP"  # nom de variable, pas une valeur
 AUTH_URL = "http://auth:8000"
 TOKEN_URL = f"{AUTH_URL}/internal/token"
-JWKS_URL = f"{AUTH_URL}/internal/jwks"
+JWKS_URL = f"{AUTH_URL}/.well-known/jwks.json"
 # Exécuté dans le conteneur shop : N appels séquentiels, résultats en JSON (jamais le secret).
 SCRIPT = """
 import json, sys, urllib.request, urllib.error

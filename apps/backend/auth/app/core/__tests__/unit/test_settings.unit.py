@@ -116,3 +116,28 @@ class TestSettingsMail:
         )
         assert settings.smtp_password.get_secret_value() == "tres-secret"
         assert "tres-secret" not in repr(settings)
+
+
+class TestSettingsClientTokens:
+    def test_client_tokens_have_safe_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for name in (
+            "JWT_PREVIOUS_PUBLIC_KEYS_DIR",
+            "JWT_AUDIENCE",
+            "ACCESS_TOKEN_TTL_SECONDS",
+            "REFRESH_TOKEN_TTL_SECONDS",
+        ):
+            monkeypatch.delenv(f"APP_{name}", raising=False)
+
+        settings = Settings()
+
+        assert settings.jwt_previous_public_keys_dir == ""
+        assert settings.jwt_audience == "basecamp-client-api"
+        assert settings.access_token_ttl_seconds == 900
+        assert settings.refresh_token_ttl_seconds == 604800
+
+    @pytest.mark.parametrize("name", ["ACCESS_TOKEN_TTL_SECONDS", "REFRESH_TOKEN_TTL_SECONDS"])
+    def test_lifetimes_must_be_positive(self, monkeypatch: pytest.MonkeyPatch, name: str) -> None:
+        monkeypatch.setenv(f"APP_{name}", "0")
+
+        with pytest.raises(ValueError, match="greater than 0"):
+            Settings()

@@ -242,6 +242,33 @@ class TestSignedDelivery:
         assert json.loads(delivery["body"])["type"] == "payment.failed"
         assert _signature_is_valid(delivery)
 
+    def test_a_refund_emits_a_signed_refund_succeeded_event(self, receiver: None) -> None:
+        intent_id = _confirmed_payment()
+        status, refund = _call(
+            "POST",
+            f"/payments/intents/{intent_id}/refunds",
+            key=f"e2e-{uuid.uuid4().hex}",
+            body={"amount": 4000},
+        )
+        assert status == 201
+
+        _wait_for(lambda: len(_deliveries(intent_id)) == 2, 30, "le webhook n'est pas livré")
+
+        by_type = {json.loads(item["body"])["type"]: item for item in _deliveries(intent_id)}
+        delivery = by_type["refund.succeeded"]
+        body = json.loads(delivery["body"])
+        assert body["data"] == {
+            "refund_id": refund["id"],
+            "payment_intent_id": intent_id,
+            "order_reference": body["data"]["order_reference"],
+            "amount": 4000,
+            "amount_refunded": 4000,
+            "currency": "EUR",
+            "status": "succeeded",
+        }
+        assert delivery["event_id"] == body["id"]
+        assert _signature_is_valid(delivery)
+
     def test_a_replayed_confirmation_does_not_emit_a_second_event(self, receiver: None) -> None:
         order = {
             "order_reference": f"E2E-{uuid.uuid4().hex[:12]}",

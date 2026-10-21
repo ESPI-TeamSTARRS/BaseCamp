@@ -33,6 +33,30 @@ http:
       middlewares: [auth-signup-rate-limit, body-limit, security-headers, strip-api-auth]
       service: auth
       priority: 200
+    auth-password:
+      # Reinitialisation du mot de passe : envoi d'email (forgot) et hachage argon2id (reset).
+      # Limite par IP (20/min, rafale de 10) en plus de la limite par adresse faite par le service.
+      rule: "Path(`/api/auth/password/forgot`) || Path(`/api/auth/password/reset`)"
+      entryPoints: [web]
+      middlewares: [auth-password-rate-limit, body-limit, security-headers, strip-api-auth]
+      service: auth
+      priority: 200
+    auth-login:
+      # Connexion : meme cout argon2id que l'inscription, donc meme limite par IP (60/min, rafale 30).
+      # Le verrouillage de compte (A6) viendra en plus : la passerelle ne remplace pas la defense du service.
+      rule: "Path(`/api/auth/login`)"
+      entryPoints: [web]
+      middlewares: [auth-signup-rate-limit, body-limit, security-headers, strip-api-auth]
+      service: auth
+      priority: 200
+    auth-jwks:
+      # Cles publiques de verification des jetons (JWKS), lecture seule, sans prefixe retire :
+      # le service les sert a /.well-known/jwks.json.
+      rule: "Path(`/.well-known/jwks.json`) && (Method(`GET`) || Method(`HEAD`))"
+      entryPoints: [web]
+      middlewares: [security-headers]
+      service: auth
+      priority: 200
     auth:
       # Les routes /internal/* ne sont jamais exposees : elles sortent du routeur.
       rule: "PathPrefix(`/api/auth`) && !PathPrefix(`/api/auth/internal`)"
@@ -106,6 +130,43 @@ http:
         average: 60
         period: 1m
         burst: 30
+        sourceCriterion:
+          ipStrategy:
+            excludedIPs:
+              - 172.16.0.0/12
+              - 173.245.48.0/20
+              - 103.21.244.0/22
+              - 103.22.200.0/22
+              - 103.31.4.0/22
+              - 141.101.64.0/18
+              - 108.162.192.0/18
+              - 190.93.240.0/20
+              - 188.114.96.0/20
+              - 197.234.240.0/22
+              - 198.41.128.0/17
+              - 162.158.0.0/15
+              - 104.16.0.0/13
+              - 104.24.0.0/14
+              - 172.64.0.0/13
+              - 131.0.72.0/22
+              - 2400:cb00::/32
+              - 2606:4700::/32
+              - 2803:f800::/32
+              - 2405:b500::/32
+              - 2405:8100::/32
+              - 2a06:98c0::/29
+              - 2c0f:f248::/32
+
+    auth-password-rate-limit:
+      # PRODUCTION : la requete arrive via Cloudflare puis le Traefik du serveur, donc X-Forwarded-For
+      # vaut "client, <Cloudflare>, <proxy Docker>". La cle du limiteur est la premiere adresse
+      # (en partant de la droite) qui n'est ni un reseau Docker ni une plage Cloudflare : le vrai
+      # client. Sans cela, tous les clients partageraient la limite du proxy.
+      # Les plages Cloudflare sont publiques (https://www.cloudflare.com/ips/) : a tenir a jour.
+      rateLimit:
+        average: 20
+        period: 1m
+        burst: 10
         sourceCriterion:
           ipStrategy:
             excludedIPs:

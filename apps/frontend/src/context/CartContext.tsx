@@ -23,6 +23,8 @@ interface CartContextValue {
   /** Ajoute un produit ; sans effet si le produit est en rupture de stock. */
   addItem: (product: Product | CartProduct, quantity?: number) => void;
   removeItem: (productId: string) => void;
+  /** Vide le panier (après un paiement réussi). */
+  clearCart: () => void;
   setQuantity: (productId: string, quantity: number) => void;
   itemCount: number;
   items: Array<{ product: CartProduct; quantity: number }>;
@@ -98,6 +100,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
     setLines((prev) => removeLine(prev, productId));
   }, []);
 
+  const clearCart = useCallback(() => {
+    setLines([]);
+  }, []);
+
   const setQuantity = useCallback((productId: string, quantity: number) => {
     setLines((prev) => setLineQuantity(prev, productId, quantity));
   }, []);
@@ -111,6 +117,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     closeCart: () => setIsOpen(false),
     addItem,
     removeItem,
+    clearCart,
     setQuantity,
     itemCount,
     items: lines,

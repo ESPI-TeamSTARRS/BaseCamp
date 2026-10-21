@@ -21,7 +21,11 @@ DYNAMIC_DEV = ROOT / "infra" / "traefik" / "dynamic.yml"
 FIRST_PARTY_IMAGE_VARS = {"FRONT_IMAGE", "SHOP_IMAGE", "PAYMENT_IMAGE", "AUTH_IMAGE"}
 # Noms de routeurs deja pris par l'ancienne pile de la VM : ne jamais les reutiliser.
 RESERVED_ROUTERS = {"basecamp", "basecamp-http"}
-RATE_LIMITERS = {"orders-rate-limit", "auth-signup-rate-limit"}  # cle IP differente en prod
+RATE_LIMITERS = {
+    "orders-rate-limit",
+    "auth-signup-rate-limit",
+    "auth-password-rate-limit",
+}  # cle IP differente en prod
 
 SAMPLE_ENV = {
     "FRONT_IMAGE": "ghcr.io/o/basecamp-frontend@sha256:" + "a" * 64,
