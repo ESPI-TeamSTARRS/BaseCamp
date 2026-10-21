@@ -30,6 +30,8 @@ from app.payment_confirmation.domain.services.webhook_signature_verifier import 
 from app.payment_request.application import payment_events
 
 SOURCE = "webhook"
+EXPIRED_REASON = "order_expired"
+PAYMENT_SUCCEEDED = "payment.succeeded"
 
 
 class ReceivePaymentWebhookUseCase:
@@ -55,7 +57,7 @@ class ReceivePaymentWebhookUseCase:
             return self._process(event)
         except DuplicateWebhookEventError:
             self._events.log(names.replayed(event))
-            return WebhookReceipt(WebhookOutcome.REPLAYED, None, None)
+            return self._replay_receipt(event)
 
     def _authenticate(
         self, raw_body: bytes, signature_header: str | None, event_id_header: str | None
@@ -74,7 +76,7 @@ class ReceivePaymentWebhookUseCase:
         with self._uow_factory() as uow:
             if uow.events.exists(event.event_id):
                 self._events.log(names.replayed(event))
-                return WebhookReceipt(WebhookOutcome.REPLAYED, None, None)
+                return self._receipt_of_replay(uow.events.reason_of(event.event_id))
             applied = self._applier.apply(uow, event)
             uow.events.record(
                 event.event_id,
@@ -85,7 +87,25 @@ class ReceivePaymentWebhookUseCase:
             )
             uow.commit()
         self._emit(event, applied)
+        if self._is_late_payment(event, applied.reason):
+            return WebhookReceipt(WebhookOutcome.REJECTED, applied.reason, None)
         return WebhookReceipt(applied.outcome, applied.reason, applied.mail)
+
+    def _replay_receipt(self, event: PaymentEvent) -> WebhookReceipt:
+        """Doublon perdu au commit : le motif de l'événement gagnant est lu dans une nouvelle transaction."""
+        with self._uow_factory() as uow:
+            return self._receipt_of_replay(uow.events.reason_of(event.event_id))
+
+    @staticmethod
+    def _receipt_of_replay(recorded_reason: str | None) -> WebhookReceipt:
+        """Un paiement tardif rejeté l'est à chaque rejeu : payment ne doit jamais le croire livré."""
+        if recorded_reason == EXPIRED_REASON:
+            return WebhookReceipt(WebhookOutcome.REJECTED, EXPIRED_REASON, None)
+        return WebhookReceipt(WebhookOutcome.REPLAYED, None, None)
+
+    @staticmethod
+    def _is_late_payment(event: PaymentEvent, reason: str | None) -> bool:
+        return event.event_type == PAYMENT_SUCCEEDED and reason == EXPIRED_REASON
 
     def _emit(self, event: PaymentEvent, applied: AppliedEvent) -> None:
         self._events.log(names.received(event))

@@ -11,3 +11,7 @@ class WebhookReceipt:
     outcome: WebhookOutcome
     reason: str | None
     mail: ConfirmationMail | None
+
+    @property
+    def is_rejected(self) -> bool:
+        return self.outcome is WebhookOutcome.REJECTED

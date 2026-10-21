@@ -10,6 +10,10 @@ class WebhookEvents(ABC):
     def exists(self, event_id: str) -> bool: ...
 
     @abstractmethod
+    def reason_of(self, event_id: str) -> str | None:
+        """Motif enregistré de l'événement (« order_expired »…), None s'il n'en a pas ou est inconnu."""
+
+    @abstractmethod
     def is_order_confirmed(self, order_id: str) -> bool:
         """Vrai si un événement a déjà confirmé le paiement de cette commande."""
 
