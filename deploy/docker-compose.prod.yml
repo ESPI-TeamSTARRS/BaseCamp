@@ -44,7 +44,9 @@ services:
     networks: [web, app]
     read_only: true
     labels:
-      traefik.enable: "true"
+      # false = la pile tourne mais le Traefik du serveur ne la route pas (test avant bascule, sans conflit
+      # de domaine avec l'ancienne pile). Retirer la variable pour l'exposer.
+      traefik.enable: ${GATEWAY_EXPOSE:-true}
       traefik.docker.network: ${WEB_NETWORK:-web}
       # Routeur HTTPS du Traefik du serveur vers la passerelle de la pile.
       traefik.http.routers.basecamp-gw.rule: Host(`${BASECAMP_DOMAIN:?voir deploy/prod.env.example}`)

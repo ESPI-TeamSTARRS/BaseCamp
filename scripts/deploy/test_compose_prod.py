@@ -4,6 +4,7 @@ Ces tests ne lancent aucun conteneur : ils verifient les invariants du fichier, 
 modification ne puisse pas rouvrir un port, reintroduire un build ou une image par tag flottant.
 """
 
+import json
 import os
 import shutil
 import subprocess
@@ -129,3 +130,22 @@ def test_compose_refuse_une_image_sans_reference() -> None:
     )
     assert result.returncode != 0
     assert "SHOP_IMAGE" in result.stderr or "reference par digest" in result.stderr
+
+
+def test_exposition_de_la_passerelle_pilotable(compose: dict) -> None:
+    """GATEWAY_EXPOSE=false permet de tester la pile avant la bascule sans la router."""
+    assert "GATEWAY_EXPOSE" in compose["services"]["traefik"]["labels"]["traefik.enable"]
+
+
+@pytest.mark.skipif(shutil.which("docker") is None, reason="docker absent")
+def test_compose_rend_traefik_enable_false() -> None:
+    result = subprocess.run(
+        ["docker", "compose", "-f", str(COMPOSE), "config", "--format", "json"],
+        env=_env(**SAMPLE_ENV, GATEWAY_EXPOSE="false"),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    labels = json.loads(result.stdout)["services"]["traefik"]["labels"]
+    assert labels["traefik.enable"] == "false"
