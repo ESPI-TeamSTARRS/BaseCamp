@@ -261,6 +261,15 @@ jobs:
           git checkout -B "$BRANCH" origin/main
           cp "$RUNNER_TEMP/new.json" deploy/manifest.json
           git add deploy/manifest.json
+          if git diff --cached --quiet; then
+            # Course : une PR de manifeste a ete fusionnee entre le calcul et ce point, main est deja a jour.
+            echo "Manifeste de main deja a jour."
+            if [[ -n "$open_pr" ]]; then
+              gh api --method POST "repos/$REPO/issues/$open_pr/comments" -f body="Le manifeste de main est déjà à jour : PR fermée." --jq .html_url
+              gh api --method PATCH "repos/$REPO/pulls/$open_pr" -f state=closed --jq .html_url
+            fi
+            exit 0
+          fi
           git commit --quiet -m "$title"
           # Branche du bot uniquement : on n'ecrase que ce qu'on vient de lire.
           git push --force-with-lease="$BRANCH" --quiet origin "$BRANCH"
