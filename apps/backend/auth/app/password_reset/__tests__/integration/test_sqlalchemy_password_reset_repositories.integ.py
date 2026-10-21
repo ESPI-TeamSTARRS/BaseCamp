@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.pool import StaticPool
 
+from app.password_reset.__tests__.fakes import add_refresh_token, create_refresh_tokens
 from app.password_reset.domain.entities.password_reset_token import PasswordResetToken
 from app.password_reset.infrastructure.repositories.sqlalchemy_password_reset_unit_of_work import (
     SqlAlchemyPasswordResetUnitOfWork,
@@ -141,21 +142,37 @@ class TestThrottle:
 
 
 class TestSessionRevoker:
-    def test_records_then_moves_the_revocation_threshold(self, engine: Engine, user: User) -> None:
-        with SqlAlchemyPasswordResetUnitOfWork(engine) as work:
-            work.sessions.revoke_all(user.id, NOW)
+    def test_revokes_every_refresh_token_of_the_account_and_only_that_account(
+        self, engine: Engine, user: User
+    ) -> None:
+        other = User.register(EmailAddress.of("autre@example.com"), "old-hash", NOW)
+        with SqlAlchemyUnitOfWork(engine) as work:
+            work.users.add(other)
             work.commit()
+        create_refresh_tokens(engine)
+        for digest in ("a1", "a2", "a3"):
+            add_refresh_token(engine, user.id, digest)
+        add_refresh_token(engine, other.id, "b1")
+
         with SqlAlchemyPasswordResetUnitOfWork(engine) as work:
-            work.sessions.revoke_all(user.id, NOW + timedelta(hours=2))
+            revoked = work.sessions.revoke_all(user.id, NOW)
             work.commit()
 
-        assert scalar(engine, "SELECT COUNT(*) FROM session_revocations") == 1
-        assert str(scalar(engine, "SELECT revoked_at FROM session_revocations")).startswith(
-            "2026-01-01 14:00"
-        )
+        assert revoked == 3
+        assert scalar(engine, "SELECT COUNT(*) FROM refresh_tokens") == 1
+        assert scalar(engine, "SELECT token_hash FROM refresh_tokens") == "b1"
+
+    def test_an_account_without_session_revokes_nothing(self, engine: Engine, user: User) -> None:
+        create_refresh_tokens(engine)
+
+        with SqlAlchemyPasswordResetUnitOfWork(engine) as work:
+            assert work.sessions.revoke_all(user.id, NOW) == 0
 
     def test_revocation_is_part_of_the_transaction(self, engine: Engine, user: User) -> None:
+        create_refresh_tokens(engine)
+        add_refresh_token(engine, user.id, "a1")
+
         with SqlAlchemyPasswordResetUnitOfWork(engine) as work:
             work.sessions.revoke_all(user.id, NOW)
 
-        assert scalar(engine, "SELECT COUNT(*) FROM session_revocations") == 0
+        assert scalar(engine, "SELECT COUNT(*) FROM refresh_tokens") == 1

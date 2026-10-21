@@ -2,7 +2,6 @@ from sqlalchemy import Engine
 
 from app.core.config import Settings
 from app.core.events.business_event_logger import BusinessEventLogger
-from app.service_token.application.get_jwks import GetJwksUseCase
 from app.service_token.application.issue_service_token import IssueServiceTokenUseCase
 from app.service_token.application.service_token_services import ServiceTokenServices
 from app.service_token.infrastructure.clients.ed25519_key_store import Ed25519KeyStore
@@ -36,5 +35,4 @@ def build_service_token_services(
             settings.jwt_issuer,
             events,
         ),
-        jwks=GetJwksUseCase(key_store),
     )

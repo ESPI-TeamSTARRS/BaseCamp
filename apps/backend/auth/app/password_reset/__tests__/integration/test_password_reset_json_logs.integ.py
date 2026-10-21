@@ -14,7 +14,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.logging.structlog_business_event_logger import StructlogBusinessEventLogger
 from app.main import create_app
-from app.password_reset.__tests__.fakes import FakeResetMailer
+from app.password_reset.__tests__.fakes import FakeResetMailer, create_refresh_tokens
 from app.password_reset.application.request_password_reset import RequestPasswordResetUseCase
 from app.password_reset.application.reset_password import ResetPasswordUseCase
 from app.password_reset.infrastructure.repositories.sqlalchemy_password_reset_unit_of_work import (
@@ -45,6 +45,7 @@ class Stack:
             "sqlite+pysqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False}
         )
         AuthBase.metadata.create_all(self.engine)
+        create_refresh_tokens(self.engine)
         self.stream = io.StringIO()
         self.mailer = FakeResetMailer(fail=mail_fails)
         events = StructlogBusinessEventLogger("basecamp-auth", self.stream)

@@ -8,8 +8,6 @@ from app.service_token.application.commands.issue_service_token_command import (
 from app.service_token.application.service_token_services import ServiceTokenServices
 from app.service_token.presentation.dependencies import get_service_token_services
 from app.service_token.presentation.schemas.error_response import ErrorResponse
-from app.service_token.presentation.schemas.jwk_response import JwkResponse
-from app.service_token.presentation.schemas.jwks_response import JwksResponse
 from app.service_token.presentation.schemas.token_request import TokenRequest
 from app.service_token.presentation.schemas.token_response import TokenResponse
 
@@ -40,12 +38,3 @@ def issue_token(body: TokenRequest, response: Response, services: Services) -> T
         expires_in=issued.expires_in,
         scope=issued.scope,
     )
-
-
-@router.get("/jwks", response_model=JwksResponse)
-def get_jwks(services: Services) -> JwksResponse:
-    keys = [
-        JwkResponse(kty="OKP", crv="Ed25519", alg="EdDSA", use="sig", kid=jwk.key_id, x=jwk.x)
-        for jwk in services.jwks.execute()
-    ]
-    return JwksResponse(keys=keys)

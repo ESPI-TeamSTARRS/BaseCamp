@@ -5,6 +5,8 @@ from types import TracebackType
 from typing import Self
 from uuid import UUID, uuid4
 
+from sqlalchemy import Engine, text
+
 from app.password_reset.domain.entities.password_reset_token import PasswordResetToken
 from app.password_reset.domain.entities.resettable_account import ResettableAccount
 from app.password_reset.domain.interfaces.account_repository import AccountRepository
@@ -26,6 +28,7 @@ class ResetStore:
         self.tokens: dict[str, PasswordResetToken] = {}
         self.attempts: dict[str, int] = {}
         self.revocations: list[tuple[UUID, datetime]] = []
+        self.live_sessions = 2
         self.commits = 0
         self.max_attempts = 3
 
@@ -84,8 +87,9 @@ class FakeSessionRevoker(SessionRevoker):
     def __init__(self, store: ResetStore) -> None:
         self._store = store
 
-    def revoke_all(self, user_id: UUID, now: datetime) -> None:
+    def revoke_all(self, user_id: UUID, now: datetime) -> int:
         self._store.revocations.append((user_id, now))
+        return self._store.live_sessions
 
 
 class FakeResetUnitOfWork(PasswordResetUnitOfWork):
@@ -128,3 +132,27 @@ class FakeResetMailer(PasswordResetMailer):
         if self.fail:
             raise MailDeliveryError
         self.changes.append(to.value)
+
+
+REFRESH_TOKENS_DDL = (
+    "CREATE TABLE refresh_tokens (id CHAR(32) PRIMARY KEY, user_id CHAR(32) NOT NULL, "
+    "token_hash VARCHAR(64) NOT NULL UNIQUE, created_at DATETIME NOT NULL, "
+    "expires_at DATETIME NOT NULL)"
+)
+
+
+def create_refresh_tokens(engine: Engine) -> None:
+    """Table de la connexion (migration 0007), creee a la main : cette tranche ne l'importe pas."""
+    with engine.begin() as connection:
+        connection.execute(text(REFRESH_TOKENS_DDL))
+
+
+def add_refresh_token(engine: Engine, user_id: UUID, digest: str) -> None:
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO refresh_tokens VALUES (:id, :user_id, :digest, "
+                "'2026-01-01 12:00:00', '2026-01-08 12:00:00')"
+            ),
+            {"id": uuid4().hex, "user_id": user_id.hex, "digest": digest},
+        )

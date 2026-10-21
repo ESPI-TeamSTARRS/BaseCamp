@@ -43,6 +43,13 @@ class Settings(BaseSettings):
     # Origine publique du site : base des liens envoyes par email.
     public_base_url: str = "http://localhost:8080"
 
+    # Jetons d'acces des clients (WORK-34), signes avec la meme cle que les jetons de service.
+    # Dossier facultatif de cles publiques PEM precedentes, gardees pendant une rotation.
+    jwt_previous_public_keys_dir: str = ""
+    jwt_audience: str = "basecamp-client-api"
+    access_token_ttl_seconds: int = Field(default=900, gt=0)
+    refresh_token_ttl_seconds: int = Field(default=604800, gt=0)
+
     @model_validator(mode="after")
     def _require_pseudonym_key_outside_development(self) -> "Settings":
         if self.environment not in DEVELOPMENT_ENVIRONMENTS and not self.log_pseudonym_key:

@@ -20,6 +20,9 @@ from app.registration.infrastructure.models.auth_base import AuthBase
 
 MIGRATIONS = Path(__file__).resolve().parents[4] / "alembic" / "versions"
 OWNED_TABLES = {"password_reset_tokens", "password_reset_attempts", "session_revocations"}
+# `session_revocations` n'a plus de modele : plus rien ne l'ecrit, une migration contract ulterieure
+# la supprimera une fois l'ancienne version du service retiree (expand/contract).
+MODELED_TABLES = OWNED_TABLES - {"session_revocations"}
 
 
 def load(name: str) -> ModuleType:
@@ -91,7 +94,7 @@ class TestMigration0006:
 def _owned(object_: Any, name: str | None, type_: str, reflected: bool, compare_to: Any) -> bool:
     """Ne compare que les tables de cette migration (les autres ont leur propre test)."""
     table = object_ if type_ == "table" else getattr(object_, "table", None)
-    return table is None or table.name in OWNED_TABLES
+    return table is None or table.name in MODELED_TABLES
 
 
 def test_the_migration_chain_has_a_single_head() -> None:

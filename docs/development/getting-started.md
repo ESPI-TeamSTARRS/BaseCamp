@@ -54,7 +54,7 @@ Le front est servi sur <http://127.0.0.1:8080/>. Arrêt : `docker compose down` 
 |---|---|
 | Port | `127.0.0.1:8180` (`--port` à la création du `.env`; ensuite modifier `GATEWAY_PORT` dans le `.env` du clone), pour ne pas entrer en conflit avec le 8080 des piles de développement. |
 | Réseaux | `edge` (Traefik, hôte), `app` (Traefik, front, `shop`, `auth`, SeaweedFS, Mailpit; interne), `data` (`shop`, Postgres, SeaweedFS; interne), `auth-data` (`auth`, Postgres dédié; interne, inaccessible à `shop` et `payment`). |
-| Routage | `/api/shop/*` vers `shop`, `/api/auth/*` vers `auth` (préfixe retiré), tout le reste vers le front. `/api/auth/internal/*` n'est jamais routé : réservé aux appels entre services. |
+| Routage | `/api/shop/*` vers `shop`, `/api/auth/*` vers `auth` (préfixe retiré), `/.well-known/jwks.json` vers `auth` (JWKS), tout le reste vers le front. `/api/auth/internal/*` n'est jamais routé : réservé aux appels entre services. |
 | Base | Postgres crée au premier démarrage un rôle et une base propres à `shop`; le compte administrateur n'est pas utilisé par les services. |
 | Clés de signature | `scripts/init-auth-keys.sh` génère une paire Ed25519 dans `.secrets/auth/`, montée en secret Docker dans `auth`. Jamais versionnée; `--force` pour la renouveler. |
 | Migrations | Les services one-shot `shop-migrate` et `auth-migrate` exécutent `alembic upgrade head` avant leur service; rejouables sans erreur. `auth-bootstrap` amorce ensuite les clients de service (secrets lus dans `.env`, hachés en base). |
