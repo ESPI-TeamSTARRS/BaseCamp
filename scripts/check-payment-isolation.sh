@@ -26,6 +26,8 @@ case "$published" in *"->"*) fail "payment ou sa base est publie sur l'hote : $p
 # 3. les autres services ne l'atteignent pas (front, traefik, mailpit : reseau app seulement)
 docker compose exec -T front wget -q -T 3 -O /dev/null http://payment:8000/health \
   && fail "front atteint payment"
+docker compose exec -T front wget -q -T 3 -O /dev/null http://payment:8000/metrics \
+  && fail "front atteint /metrics de payment"
 
 # 4. etancheite des bases : shop ne voit pas payment-db, payment ne voit pas postgres
 docker compose exec -T shop python -c "$RESOLVES" payment-db && fail "shop voit payment-db"

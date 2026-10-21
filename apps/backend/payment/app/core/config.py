@@ -1,8 +1,9 @@
-from pydantic import Field, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
 DEVELOPMENT_ENVIRONMENTS = frozenset({"dev", "local"})
+MIN_WEBHOOK_SECRET_LENGTH = 32
 
 
 class Settings(BaseSettings):
@@ -21,6 +22,8 @@ class Settings(BaseSettings):
     service_tokens: dict[str, str] = {}
     intent_ttl_minutes: int = 30
     max_amount_cents: int = 500_000  # plafond par intention : 5 000 EUR
+    # Expiration des intentions non confirmées : nombre d'intentions traitées par transaction.
+    expiration_batch_size: int = Field(default=100, gt=0, le=1000)
     # Délai simulé du fournisseur interne pour pm_test_timeout : toujours borné (10 s au plus).
     provider_timeout_seconds: float = Field(default=2.0, gt=0, le=10)
 
@@ -45,9 +48,45 @@ class Settings(BaseSettings):
     rate_limit_create_per_window: int = 60
     rate_limit_read_per_window: int = 120
 
+    # Fenêtre de contrôle du grand livre pour /metrics (intentions créées dans les N dernières heures).
+    metrics_ledger_lookback_hours: int = Field(default=24, ge=1, le=720)
+
     log_pseudonym_key: str = (
         ""  # cle HMAC des empreintes d'email dans les logs (APP_LOG_PSEUDONYM_KEY)
     )
+
+    # Webhook sortant vers la boutique (worker `python -m app.webhook.presentation.worker_main`).
+    # Secrets fournis par l'environnement seulement. Rotation : APP_WEBHOOK_SECRET (courant) et
+    # APP_WEBHOOK_SECRET_PREVIOUS (ancien) signent ensemble le temps que la boutique bascule.
+    webhook_url: str = ""
+    webhook_secret: SecretStr = SecretStr("")
+    webhook_secret_previous: SecretStr = SecretStr("")
+    webhook_max_attempts: int = Field(default=6, ge=1, le=20)
+    webhook_backoff_base_seconds: float = Field(default=5.0, gt=0, le=3600)
+    webhook_backoff_max_seconds: float = Field(default=300.0, gt=0, le=86_400)
+    webhook_timeout_seconds: float = Field(default=3.0, gt=0, le=10)
+    webhook_poll_interval_seconds: float = Field(default=1.0, gt=0, le=60)
+
+    @model_validator(mode="after")
+    def _validate_webhook(self) -> "Settings":
+        if self.webhook_url and not self.webhook_url.startswith(("http://", "https://")):
+            raise ValueError("APP_WEBHOOK_URL must be an http(s) URL")
+        if (
+            self.webhook_secret_previous.get_secret_value()
+            and not self.webhook_secret.get_secret_value()
+        ):
+            raise ValueError("APP_WEBHOOK_SECRET_PREVIOUS requires APP_WEBHOOK_SECRET")
+        if any(len(secret) < MIN_WEBHOOK_SECRET_LENGTH for secret in self.webhook_secrets):
+            raise ValueError("webhook secrets must be at least 32 characters")
+        if self.webhook_backoff_base_seconds > self.webhook_backoff_max_seconds:
+            raise ValueError("APP_WEBHOOK_BACKOFF_BASE_SECONDS exceeds the maximum")
+        return self
+
+    @property
+    def webhook_secrets(self) -> list[str]:
+        """Secrets de signature, le courant d'abord, sans valeur vide."""
+        candidates = (self.webhook_secret, self.webhook_secret_previous)
+        return [value for secret in candidates if (value := secret.get_secret_value())]
 
     @model_validator(mode="after")
     def _require_pseudonym_key_outside_development(self) -> "Settings":

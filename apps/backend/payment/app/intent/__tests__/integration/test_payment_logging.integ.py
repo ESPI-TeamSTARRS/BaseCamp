@@ -31,8 +31,14 @@ def client() -> Iterator[TestClient]:
         yield test_client
 
 
+def _parse(out: str) -> list[dict[str, object]]:
+    """Événements métier seulement : la ligne de requête (service.request_completed) a ses tests."""
+    records = [json.loads(line) for line in out.strip().splitlines()]
+    return [r for r in records if r["event"] != "service.request_completed"]
+
+
 def _records(capsys: pytest.CaptureFixture[str]) -> list[dict[str, object]]:
-    return [json.loads(line) for line in capsys.readouterr().out.strip().splitlines()]
+    return _parse(capsys.readouterr().out)
 
 
 class TestPaymentLogging:
@@ -73,7 +79,7 @@ class TestPaymentLogging:
         )
 
         out = capsys.readouterr().out
-        (record,) = [json.loads(line) for line in out.strip().splitlines()]
+        (record,) = _parse(out)
         assert response.status_code == 401
         assert (record["event"], record["reason"], record["client_ip"]) == (
             "payment.service_authenticated",

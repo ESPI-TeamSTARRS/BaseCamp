@@ -37,10 +37,13 @@ def get_calling_service(
         else None
     )
     try:
-        return services.authenticate.execute(token, _client_ip(request))
+        caller = services.authenticate.execute(token, _client_ip(request))
     except UnauthorizedServiceError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Unauthorized",
             headers={"WWW-Authenticate": "Bearer"},
         ) from None
+    # Nom de l'appelant pour la ligne de journal de requête (jamais le jeton).
+    request.state.caller = caller
+    return caller

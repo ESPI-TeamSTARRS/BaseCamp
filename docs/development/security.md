@@ -21,7 +21,7 @@ Utilisateur non-root, image minimale en plusieurs étapes, healthcheck, `no-new-
 | Règles de sécurité ruff (`S`) | lint de chaque service |
 | `pip-audit` | `poe security` de chaque service |
 | `npm audit` | `npm run security` du front |
-| gitleaks | hook `pre-commit` et job `secrets-scan` |
+| gitleaks | hooks `pre-commit` et `pre-push`, job `secrets-scan`, workflow `secrets-history` |
 
 ## En-têtes HTTP
 

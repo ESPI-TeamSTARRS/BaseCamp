@@ -56,3 +56,31 @@ class LedgerTransaction:
                 ),
             ),
         )
+
+    @classmethod
+    def refund_issued(cls, intent_id: UUID, amount: Amount, now: datetime) -> "LedgerTransaction":
+        """Remboursement émis : inverse du paiement, débit du marchand et crédit remboursements."""
+        transaction_id = uuid4()
+        return cls(
+            transaction_id,
+            (
+                LedgerEntry(
+                    uuid4(),
+                    transaction_id,
+                    intent_id,
+                    LedgerAccount.MARCHAND,
+                    EntryDirection.DEBIT,
+                    amount,
+                    now,
+                ),
+                LedgerEntry(
+                    uuid4(),
+                    transaction_id,
+                    intent_id,
+                    LedgerAccount.REMBOURSEMENTS,
+                    EntryDirection.CREDIT,
+                    amount,
+                    now,
+                ),
+            ),
+        )

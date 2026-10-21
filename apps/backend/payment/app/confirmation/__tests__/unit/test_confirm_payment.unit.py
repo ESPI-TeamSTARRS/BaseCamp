@@ -2,7 +2,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -31,6 +31,11 @@ from app.intent.domain.value_objects.amount import Amount
 from app.ledger.domain.entities.ledger_transaction import LedgerTransaction
 from app.ledger.domain.enums.entry_direction import EntryDirection
 from app.ledger.domain.enums.ledger_account import LedgerAccount
+from app.webhook.application import webhook_event_names as webhook_names
+from app.webhook.domain.entities.outbox_event import OutboxEvent
+from app.webhook.domain.enums.outbox_status import OutboxStatus
+from app.webhook.domain.enums.webhook_event_type import WebhookEventType
+from app.webhook.domain.services.payment_event_factory import PaymentEventFactory
 
 NOW = datetime(2026, 10, 20, 9, 0, tzinfo=UTC)
 
@@ -40,6 +45,7 @@ class InMemoryStore:
         self.intents: dict[UUID, PaymentIntent] = {}
         self.records: dict[tuple[str, str], ConfirmationRecord] = {}
         self.ledger: list[LedgerTransaction] = []
+        self.outbox: list[OutboxEvent] = []
 
 
 class InMemorySession(ConfirmationSession):
@@ -53,8 +59,13 @@ class InMemorySession(ConfirmationSession):
         return self._store.records.get((caller, key))
 
     def save(
-        self, intent: PaymentIntent, record: ConfirmationRecord, ledger: LedgerTransaction | None
+        self,
+        intent: PaymentIntent,
+        record: ConfirmationRecord,
+        ledger: LedgerTransaction | None,
+        outbox_event: OutboxEvent,
     ) -> None:
+        self._store.outbox.append(outbox_event)
         self._store.intents[intent.id] = intent
         self._store.records[(record.caller, record.key)] = record
         if ledger:
@@ -89,7 +100,11 @@ class Fixture:
         self.provider = FakeProvider()
         self.logger = InMemoryBusinessEventLogger()
         self.use_case = ConfirmPaymentUseCase(
-            InMemoryUnitOfWork(self.store), self.provider, lambda: NOW, self.logger
+            InMemoryUnitOfWork(self.store),
+            self.provider,
+            lambda: NOW,
+            self.logger,
+            PaymentEventFactory(uuid4),
         )
         self.intent = PaymentIntent.create(
             "CMD-1", Amount(4990), Currency.EUR, NOW - timedelta(minutes=1), timedelta(minutes=30)
@@ -235,8 +250,9 @@ class TestBusinessEvents:
         assert self._summary(fx) == [
             (names.PAYMENT_CONFIRMED, Outcome.SUCCESS, None),
             (names.LEDGER_ENTRIES_WRITTEN, Outcome.SUCCESS, None),
+            (webhook_names.WEBHOOK_EVENT_QUEUED, Outcome.SUCCESS, None),
         ]
-        confirmed, ledger = fx.logger.events
+        confirmed, ledger, _queued = fx.logger.events
         assert (confirmed.resource_type, confirmed.resource_id) == (
             "payment_intent",
             str(fx.intent.id),
@@ -256,20 +272,31 @@ class TestBusinessEvents:
     def test_a_decline_is_a_denied_event(self, fx: Fixture) -> None:
         fx.use_case.execute(fx.command(payment_method="pm_test_declined"))
 
-        assert self._summary(fx) == [(names.PAYMENT_DECLINED, Outcome.DENIED, "provider_declined")]
+        assert self._summary(fx) == [
+            (names.PAYMENT_DECLINED, Outcome.DENIED, "provider_declined"),
+            (webhook_names.WEBHOOK_EVENT_QUEUED, Outcome.SUCCESS, None),
+        ]
 
     def test_a_timeout_is_an_error_event(self, fx: Fixture) -> None:
         fx.use_case.execute(fx.command(payment_method="pm_test_timeout"))
 
-        assert self._summary(fx) == [(names.PAYMENT_TIMEOUT, Outcome.ERROR, "provider_timeout")]
+        assert self._summary(fx) == [
+            (names.PAYMENT_TIMEOUT, Outcome.ERROR, "provider_timeout"),
+            (webhook_names.WEBHOOK_EVENT_QUEUED, Outcome.SUCCESS, None),
+        ]
 
-    def test_a_replay_logs_nothing_new(self, fx: Fixture) -> None:
+    def test_a_replay_logs_only_a_replayed_event(self, fx: Fixture) -> None:
         fx.use_case.execute(fx.command())
         fx.logger.events.clear()
 
         fx.use_case.execute(fx.command())
 
-        assert fx.logger.events == []
+        assert self._summary(fx) == [(names.PAYMENT_CONFIRMATION_REPLAYED, Outcome.SUCCESS, None)]
+        replayed = fx.logger.events[0]
+        assert replayed.resource_type == "payment_intent"
+        assert replayed.resource_id == str(fx.intent.id)
+        assert replayed.actor_id == "shop"
+        assert "idempotency_key" not in replayed.attributes
 
     def test_a_conflict_on_a_succeeded_intent_is_rejected_with_its_status(
         self, fx: Fixture
@@ -323,3 +350,50 @@ class TestBusinessEvents:
         fx.use_case.execute(fx.command())
 
         assert "key-0001" not in repr(fx.logger.events)
+
+
+class TestOutboxEvent:
+    def test_a_success_queues_a_payment_succeeded_event_in_the_same_save(self, fx: Fixture) -> None:
+        fx.use_case.execute(fx.command())
+
+        (queued,) = fx.store.outbox
+        assert queued.event_type is WebhookEventType.PAYMENT_SUCCEEDED
+        assert queued.status is OutboxStatus.PENDING
+        assert queued.intent_id == fx.intent.id
+        assert '"status":"succeeded"' in queued.body
+
+    @pytest.mark.parametrize("method", ["pm_test_declined", "pm_test_timeout"])
+    def test_a_refusal_queues_a_payment_failed_event(self, fx: Fixture, method: str) -> None:
+        fx.use_case.execute(fx.command(payment_method=method))
+
+        (queued,) = fx.store.outbox
+        assert queued.event_type is WebhookEventType.PAYMENT_FAILED
+        assert '"status":"failed"' in queued.body
+
+    def test_a_replay_queues_no_second_event(self, fx: Fixture) -> None:
+        fx.use_case.execute(fx.command())
+        fx.use_case.execute(fx.command())
+
+        assert len(fx.store.outbox) == 1
+
+    def test_a_refused_confirmation_queues_nothing(self, fx: Fixture) -> None:
+        fx.use_case.execute(fx.command())
+        with pytest.raises(IntentNotConfirmableError):
+            fx.use_case.execute(fx.command(idempotency_key="key-0002"))
+
+        assert len(fx.store.outbox) == 1
+
+    def test_the_queued_event_is_logged_after_the_commit_without_the_body(
+        self, fx: Fixture
+    ) -> None:
+        fx.use_case.execute(fx.command())
+
+        queued = fx.store.outbox[0]
+        (event,) = [e for e in fx.logger.events if e.event == webhook_names.WEBHOOK_EVENT_QUEUED]
+        assert event.outcome is Outcome.SUCCESS
+        assert (event.resource_type, event.resource_id) == ("webhook_event", str(queued.id))
+        assert event.attributes == {
+            "event_type": "payment.succeeded",
+            "payment_intent_id": str(fx.intent.id),
+        }
+        assert queued.body not in repr(event)

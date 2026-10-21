@@ -23,6 +23,9 @@ from app.intent.domain.entities.payment_intent import PaymentIntent
 from app.intent.domain.enums.intent_status import IntentStatus
 from app.intent.domain.exceptions.payment_intent_not_found_error import PaymentIntentNotFoundError
 from app.ledger.domain.entities.ledger_transaction import LedgerTransaction
+from app.webhook.application import webhook_event_names as webhook_names
+from app.webhook.domain.entities.outbox_event import OutboxEvent
+from app.webhook.domain.services.payment_event_factory import PaymentEventFactory
 
 
 class ConfirmPaymentUseCase:
@@ -39,7 +42,9 @@ class ConfirmPaymentUseCase:
         provider: PaymentProvider,
         clock: Callable[[], datetime],
         events: BusinessEventLogger,
+        event_factory: PaymentEventFactory | None = None,
     ) -> None:
+        self._event_factory = event_factory or PaymentEventFactory()
         self._unit_of_work = unit_of_work
         self._provider = provider
         self._clock = clock
@@ -66,8 +71,10 @@ class ConfirmPaymentUseCase:
             record = ConfirmationRecord(
                 command.caller, command.idempotency_key, fingerprint, intent.id
             )
-            session.save(settled, record, ledger)
+            outbox_event = self._event_factory.build(settled, now)
+            session.save(settled, record, ledger, outbox_event)
         self._log_settlement(command, settled, outcome, ledger)
+        self._log_queued(outbox_event)
         return PaymentIntentView.from_entity(settled)
 
     def _parse(self, command: ConfirmPaymentCommand) -> UUID:
@@ -97,6 +104,12 @@ class ConfirmPaymentUseCase:
         if record.request_hash != fingerprint:
             self._reject(command, "idempotency_key_reused", str(intent.id), intent)
             raise ConfirmationKeyReusedError
+        self._events.log(
+            BusinessEvent.success(
+                names.PAYMENT_CONFIRMATION_REPLAYED,
+                **self._fields(command, str(intent.id), self._attributes(intent)),
+            )
+        )
         return PaymentIntentView.from_entity(intent)
 
     def _log_settlement(
@@ -129,6 +142,19 @@ class ConfirmPaymentUseCase:
                     **self._fields(command, str(settled.id), written),
                 )
             )
+
+    def _log_queued(self, outbox_event: OutboxEvent) -> None:
+        self._events.log(
+            BusinessEvent.success(
+                webhook_names.WEBHOOK_EVENT_QUEUED,
+                resource_type="webhook_event",
+                resource_id=str(outbox_event.id),
+                attributes={
+                    "event_type": outbox_event.event_type.value,
+                    "payment_intent_id": str(outbox_event.intent_id),
+                },
+            )
+        )
 
     def _reject(
         self,

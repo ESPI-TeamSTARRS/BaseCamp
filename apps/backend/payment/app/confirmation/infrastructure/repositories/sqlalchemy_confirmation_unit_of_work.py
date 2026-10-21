@@ -12,10 +12,13 @@ from app.confirmation.infrastructure.repositories.sqlalchemy_confirmation_sessio
 from app.ledger.infrastructure.repositories.sqlalchemy_ledger_repository import (
     SqlAlchemyLedgerRepository,
 )
+from app.webhook.infrastructure.repositories.sqlalchemy_outbox_repository import (
+    SqlAlchemyOutboxRepository,
+)
 
 
 class SqlAlchemyConfirmationUnitOfWork(ConfirmationUnitOfWork):
-    """Une seule transaction : verrou de l'intention, nouvel état, clé et grand livre."""
+    """Une seule transaction : verrou de l'intention, nouvel état, clé, grand livre et outbox."""
 
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
@@ -24,7 +27,11 @@ class SqlAlchemyConfirmationUnitOfWork(ConfirmationUnitOfWork):
     def begin(self) -> Iterator[ConfirmationSession]:
         with Session(self._engine) as session:
             try:
-                yield SqlAlchemyConfirmationSession(session, SqlAlchemyLedgerRepository(session))
+                yield SqlAlchemyConfirmationSession(
+                    session,
+                    SqlAlchemyLedgerRepository(session),
+                    SqlAlchemyOutboxRepository(session),
+                )
                 session.commit()
             except BaseException:
                 session.rollback()

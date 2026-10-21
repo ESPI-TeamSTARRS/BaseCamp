@@ -60,3 +60,23 @@ class TestBalance:
 
         with pytest.raises(UnbalancedTransactionError):
             LedgerTransaction(uuid4(), valid.entries)
+
+
+class TestRefundIssued:
+    def test_writes_a_debit_on_the_merchant_and_a_credit_on_the_refunds_account(self) -> None:
+        intent_id = uuid4()
+
+        transaction = LedgerTransaction.refund_issued(intent_id, Amount(4000), NOW)
+
+        debit, credit = transaction.entries
+        assert (debit.account, debit.direction) == (LedgerAccount.MARCHAND, EntryDirection.DEBIT)
+        assert (credit.account, credit.direction) == (
+            LedgerAccount.REMBOURSEMENTS,
+            EntryDirection.CREDIT,
+        )
+        assert debit.amount.cents == credit.amount.cents == 4000
+        assert {entry.intent_id for entry in transaction.entries} == {intent_id}
+        assert {entry.transaction_id for entry in transaction.entries} == {transaction.id}
+
+    def test_the_account_name_is_the_published_one(self) -> None:
+        assert LedgerAccount.REMBOURSEMENTS.value == "remboursements"

@@ -1,7 +1,16 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, String, UniqueConstraint, Uuid
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    Index,
+    String,
+    UniqueConstraint,
+    Uuid,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.intent.infrastructure.models.base import Base
@@ -15,6 +24,12 @@ class PaymentIntentModel(Base):
         CheckConstraint(
             "refunded_amount >= 0 AND refunded_amount <= amount",
             name="ck_payment_intents_refunded_within_amount",
+        ),
+        # Parcours d'expiration (migration 0005) : seules les intentions en attente sont indexées.
+        Index(
+            "ix_payment_intents_pending_expiry",
+            "expires_at",
+            postgresql_where=text("status = 'requires_confirmation'"),
         ),
     )
 
