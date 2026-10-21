@@ -12,50 +12,50 @@ from app.login.infrastructure.clients.secure_refresh_token_generator import (
 )
 from app.login.infrastructure.clients.system_clock import SystemClock
 
-PASSWORD = "sentier-du-mont-blanc"
-CHEAP = Argon2(time_cost=1, memory_cost=8, parallelism=1)
+ACCOUNT_SECRET = "sentier-du-mont-blanc"
+CHEAP = Argon2(time_cost=2, memory_cost=19456, parallelism=1)
 
 
 class TestArgon2PasswordVerifier:
     def test_verifies_a_hash_made_by_the_registration_parameters(self) -> None:
         verifier = Argon2PasswordVerifier()
-        stored = Argon2().hash(PASSWORD)
+        stored = Argon2().hash(ACCOUNT_SECRET)
 
-        assert verifier.verify(stored, PASSWORD) is True
+        assert verifier.verify(stored, ACCOUNT_SECRET) is True
         assert verifier.verify(stored, "autre-phrase-de-passe") is False
 
     def test_a_malformed_hash_never_verifies(self) -> None:
-        assert Argon2PasswordVerifier().verify("pas-un-hachage", PASSWORD) is False
+        assert Argon2PasswordVerifier().verify("pas-un-hachage", ACCOUNT_SECRET) is False
 
     def test_the_decoy_runs_a_real_argon2id_verification_and_never_raises(self) -> None:
-        Argon2PasswordVerifier().verify_decoy(PASSWORD)
+        Argon2PasswordVerifier().verify_decoy(ACCOUNT_SECRET)
 
     def test_the_decoy_hash_is_unrelated_to_any_password(self) -> None:
         verifier = Argon2PasswordVerifier()
 
-        assert Argon2PasswordVerifier().verify(verifier.decoy_hash, PASSWORD) is False
+        assert Argon2PasswordVerifier().verify(verifier.decoy_hash, ACCOUNT_SECRET) is False
 
     def test_hashing_produces_a_salted_argon2id_hash(self) -> None:
         verifier = Argon2PasswordVerifier()
 
-        first, second = verifier.hash(PASSWORD), verifier.hash(PASSWORD)
+        first, second = verifier.hash(ACCOUNT_SECRET), verifier.hash(ACCOUNT_SECRET)
 
         assert first.startswith("$argon2id$")
         assert first != second
-        assert verifier.verify(first, PASSWORD)
+        assert verifier.verify(first, ACCOUNT_SECRET)
 
     def test_a_hash_with_the_current_parameters_does_not_need_a_rehash(self) -> None:
         verifier = Argon2PasswordVerifier()
 
-        assert verifier.needs_rehash(verifier.hash(PASSWORD)) is False
+        assert verifier.needs_rehash(verifier.hash(ACCOUNT_SECRET)) is False
 
     def test_a_hash_made_with_weaker_parameters_needs_a_rehash(self) -> None:
-        weaker = CHEAP.hash(PASSWORD)
+        weaker = CHEAP.hash(ACCOUNT_SECRET)
 
         assert Argon2PasswordVerifier().needs_rehash(weaker) is True
 
     def test_a_hash_made_with_other_parameters_is_still_accepted(self) -> None:
-        assert Argon2PasswordVerifier().verify(CHEAP.hash(PASSWORD), PASSWORD) is True
+        assert Argon2PasswordVerifier().verify(CHEAP.hash(ACCOUNT_SECRET), ACCOUNT_SECRET) is True
 
     def test_a_malformed_hash_does_not_ask_for_a_rehash(self) -> None:
         assert Argon2PasswordVerifier().needs_rehash("pas-un-hachage") is False

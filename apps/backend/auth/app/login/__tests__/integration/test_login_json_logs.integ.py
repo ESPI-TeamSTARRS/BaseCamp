@@ -13,7 +13,7 @@ from httpx import ASGITransport, AsyncClient
 from jsonschema import Draft202012Validator
 
 from app.core.logging.structlog_business_event_logger import StructlogBusinessEventLogger
-from app.login.__tests__.stack import EMAIL, PASSWORD, LoginStack
+from app.login.__tests__.stack import ACCOUNT_SECRET, EMAIL, LoginStack
 
 SCHEMA = Path(__file__).resolve().parents[7] / "docs/development/log-event.schema.json"
 CORRELATION = "7c1f0e52-3a0b-4f1e-9a52-1d6f7a9b2c10"
@@ -45,14 +45,14 @@ class TestLoginJsonLines:
             transport=ASGITransport(app=harness.stack.application), base_url="http://t"
         ) as client:
             ok = await client.post(
-                "/login", json={"email": EMAIL, "password": PASSWORD}, headers=headers
+                "/login", json={"email": EMAIL, "password": ACCOUNT_SECRET}, headers=headers
             )
             await client.post(
                 "/login", json={"email": EMAIL, "password": "mauvais-mot-de-passe"}, headers=headers
             )
             await client.post(
                 "/login",
-                json={"email": "inconnu@example.com", "password": PASSWORD},
+                json={"email": "inconnu@example.com", "password": ACCOUNT_SECRET},
                 headers=headers,
             )
             await client.get("/me", headers={**headers, "Authorization": "Bearer pas.un.jeton"})
@@ -89,7 +89,14 @@ class TestLoginJsonLines:
         private_raw = base64.urlsafe_b64encode(
             harness.stack.keys.signing_key.private_bytes_raw()
         ).decode()
-        for secret in (PASSWORD, "mauvais-mot-de-passe", token, refresh, "camille", "inconnu"):
+        for secret in (
+            ACCOUNT_SECRET,
+            "mauvais-mot-de-passe",
+            token,
+            refresh,
+            "camille",
+            "inconnu",
+        ):
             assert secret not in raw
         assert private.splitlines()[1] not in raw
         assert private_raw.rstrip("=") not in raw

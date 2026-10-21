@@ -9,7 +9,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient, Response
 
 from app.core.__tests__.in_memory_business_event_logger import InMemoryBusinessEventLogger
-from app.login.__tests__.stack import EMAIL, ISSUER, PASSWORD, LoginStack
+from app.login.__tests__.stack import ACCOUNT_SECRET, EMAIL, ISSUER, LoginStack
 from app.login.domain.entities.access_token_claims import AccessTokenClaims
 from app.login.infrastructure.clients.ed25519_key_ring import Ed25519KeyRing
 from app.login.infrastructure.clients.jwt_access_token_signer import JwtAccessTokenSigner
@@ -38,7 +38,9 @@ async def client(stack: LoginStack) -> AsyncIterator[AsyncClient]:
         yield http
 
 
-async def login(client: AsyncClient, email: str = EMAIL, password: str = PASSWORD) -> Response:
+async def login(
+    client: AsyncClient, email: str = EMAIL, password: str = ACCOUNT_SECRET
+) -> Response:
     return await client.post("/login", json={"email": email, "password": password})
 
 
@@ -116,8 +118,8 @@ class TestLogin:
 
         responses = [
             await login(client, "actif@example.com", "mauvais-mot-de-passe"),
-            await login(client, "inconnu@example.com", PASSWORD),
-            await login(client, "ferme@example.com", PASSWORD),
+            await login(client, "inconnu@example.com", ACCOUNT_SECRET),
+            await login(client, "ferme@example.com", ACCOUNT_SECRET),
         ]
 
         for response in responses:
@@ -132,9 +134,9 @@ class TestLogin:
         "body",
         [
             {"email": EMAIL},
-            {"password": PASSWORD},
-            {"email": EMAIL, "password": PASSWORD, "role": "operator"},
-            {"email": 12, "password": PASSWORD},
+            {"password": ACCOUNT_SECRET},
+            {"email": EMAIL, "password": ACCOUNT_SECRET, "role": "operator"},
+            {"email": 12, "password": ACCOUNT_SECRET},
             {"email": EMAIL, "password": "x" * 300},
             {},
         ],
@@ -148,7 +150,7 @@ class TestLogin:
         assert response.json()["detail"] == "Requete invalide."
         assert "x" * 300 not in response.text
         assert "operator" not in response.text
-        assert PASSWORD not in response.text
+        assert ACCOUNT_SECRET not in response.text
 
     async def test_a_known_account_login_is_logged_with_the_forwarded_client_ip(
         self, client: AsyncClient, stack: LoginStack, events: InMemoryBusinessEventLogger
@@ -173,7 +175,7 @@ class TestLogin:
     ) -> None:
         await client.post(
             "/login",
-            json={"email": EMAIL, "password": PASSWORD},
+            json={"email": EMAIL, "password": ACCOUNT_SECRET},
             headers={"X-Forwarded-For": forwarded},
         )
 

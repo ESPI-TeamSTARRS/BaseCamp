@@ -44,6 +44,7 @@ class TestMigration0007:
             with Operations.context(context):
                 load_migration("0004_users_et_verification").upgrade()
                 load_migration(NAME).upgrade()
+                load_migration("0008_refresh_rotation").upgrade()
             differences = compare_metadata(context, LoginBase.metadata)
 
         assert differences == []

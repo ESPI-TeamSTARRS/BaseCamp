@@ -1,19 +1,36 @@
 import ipaddress
 from typing import cast
 
-from fastapi import Request
+from fastapi import HTTPException, Request, status
 
 from app.login.application.get_current_account import GetCurrentAccountUseCase
 from app.login.application.get_public_keys import GetPublicKeysUseCase
 from app.login.application.login_account import LoginAccountUseCase
+from app.login.application.logout_session import LogoutSessionUseCase
+from app.login.application.refresh_session import RefreshSessionUseCase
 
 BEARER_SCHEME = "bearer"
 FORWARDED_HEADER = "x-forwarded-for"
+CSRF_HEADER = "x-requested-with"
 
 
 def get_login_account_use_case(request: Request) -> LoginAccountUseCase:
     """Les cas d'usage sont cables dans composition.py (la presentation n'importe pas l'infrastructure)."""
     return cast(LoginAccountUseCase, request.app.state.login_account_use_case)
+
+
+def get_refresh_session_use_case(request: Request) -> RefreshSessionUseCase:
+    return cast(RefreshSessionUseCase, request.app.state.refresh_session_use_case)
+
+
+def get_logout_session_use_case(request: Request) -> LogoutSessionUseCase:
+    return cast(LogoutSessionUseCase, request.app.state.logout_session_use_case)
+
+
+def require_csrf_header(request: Request) -> None:
+    """En-tete qu'une page d'un autre site ne peut pas poser sans pre-verification CORS refusee."""
+    if not request.headers.get(CSRF_HEADER):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Requête refusée.")
 
 
 def get_current_account_use_case(request: Request) -> GetCurrentAccountUseCase:

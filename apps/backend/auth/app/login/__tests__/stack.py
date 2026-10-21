@@ -12,6 +12,8 @@ from app.login.__tests__.schema import insert_user, migrated_engine
 from app.login.application.get_current_account import GetCurrentAccountUseCase
 from app.login.application.get_public_keys import GetPublicKeysUseCase
 from app.login.application.login_account import LoginAccountUseCase
+from app.login.application.logout_session import LogoutSessionUseCase
+from app.login.application.refresh_session import RefreshSessionUseCase
 from app.login.infrastructure.clients.argon2_password_verifier import Argon2PasswordVerifier
 from app.login.infrastructure.clients.ed25519_key_ring import Ed25519KeyRing
 from app.login.infrastructure.clients.jwt_access_token_signer import JwtAccessTokenSigner
@@ -24,9 +26,9 @@ from app.main import create_app
 
 ISSUER = "basecamp-auth"
 AUDIENCE = "basecamp-client-api"
-PASSWORD = "sentier-du-mont-blanc"
+ACCOUNT_SECRET = "sentier-du-mont-blanc"
 EMAIL = "camille@example.com"
-CHEAP_ARGON2 = Argon2(time_cost=1, memory_cost=8, parallelism=1)
+OWASP_ARGON2 = Argon2(time_cost=2, memory_cost=19456, parallelism=1)
 
 
 class LoginStack:
@@ -34,7 +36,7 @@ class LoginStack:
         self.engine: Engine = migrated_engine()
         self.clock = FakeClock()
         self.keys = keys or Ed25519KeyRing.generate()
-        self.verifier = Argon2PasswordVerifier(CHEAP_ARGON2)
+        self.verifier = Argon2PasswordVerifier(OWASP_ARGON2)
         self.application: FastAPI = create_app()
         factory = lambda: SqlAlchemyUnitOfWork(self.engine)  # noqa: E731
         access_verifier = JwtAccessTokenVerifier(self.keys, ISSUER, AUDIENCE)
@@ -49,6 +51,19 @@ class LoginStack:
             900,
             604800,
         )
+        refresh_tokens = SecureRefreshTokenGenerator()
+        self.application.state.refresh_session_use_case = RefreshSessionUseCase(
+            factory,
+            JwtAccessTokenSigner(self.keys, ISSUER, AUDIENCE),
+            refresh_tokens,
+            self.clock,
+            events,
+            900,
+            604800,
+        )
+        self.application.state.logout_session_use_case = LogoutSessionUseCase(
+            factory, refresh_tokens, events
+        )
         self.application.state.get_current_account_use_case = GetCurrentAccountUseCase(
             factory, access_verifier, self.clock, events
         )
@@ -57,7 +72,7 @@ class LoginStack:
     def add_account(
         self,
         email: str = EMAIL,
-        password: str = PASSWORD,
+        password: str = ACCOUNT_SECRET,
         role: str = "customer",
         verified: bool = True,
         disabled: bool = False,
@@ -72,3 +87,7 @@ class LoginStack:
     def scalar(self, sql: str) -> object:
         with self.engine.connect() as connection:
             return connection.execute(text(sql)).scalar_one()
+
+    def column(self, sql: str) -> list[object]:
+        with self.engine.connect() as connection:
+            return list(connection.execute(text(sql)).scalars())
