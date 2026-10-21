@@ -1,4 +1,5 @@
 # Pile complete locale : `cp .env.example .env && docker compose up --build`
+# Les images applicatives sont taguees ${COMPOSE_PROJECT_NAME:-basecamp}-<service> : deux piles (projets) ne se partagent pas leurs tags.
 # Seul Traefik est publie (127.0.0.1:${GATEWAY_PORT}). Reseaux :
 #   edge : traefik <-> hote        app  : traefik, front, shop, auth, mailpit (interne)
 #   data : shop, postgres, seaweedfs   (interne, jamais publie)
@@ -199,6 +200,11 @@ services:
       APP_DB_NAME: ${AUTH_DB_NAME:-auth}
       APP_DB_USER: ${AUTH_DB_USER:-auth}
       APP_DB_PASSWORD: ${AUTH_DB_PASSWORD:?voir .env.example}
+      # Emails (verification d'adresse) : Mailpit sur le reseau interne `app`, aucun relais externe.
+      APP_SMTP_HOST: mailpit
+      APP_SMTP_PORT: "1025"
+      APP_SMTP_FROM: ${AUTH_SMTP_FROM:-comptes@basecamp.local}
+      APP_PUBLIC_BASE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:8080}
     networks: [auth-data]
     depends_on:
       postgres-auth: { condition: service_healthy }
@@ -231,6 +237,7 @@ services:
     depends_on:
       auth-migrate: { condition: service_completed_successfully }
       auth-bootstrap: { condition: service_completed_successfully }
+      mailpit: { condition: service_healthy }
     healthcheck:
       test:
         - CMD
@@ -297,10 +304,14 @@ services:
     depends_on:
       seaweedfs: { condition: service_healthy }
 
+  # Boite mail de developpement : SMTP 1025 (auth) et interface/API 8025, sur le reseau interne
+  # uniquement. Jamais routee par la passerelle ; docker-compose.e2e.yml la publie sur 127.0.0.1.
   mailpit:
     <<: *hardening
     image: axllent/mailpit:latest
     user: "1000:1000"
+    read_only: true
+    tmpfs: ["/tmp:uid=1000,gid=1000"]
     networks: [app]
     healthcheck:
       test: ["CMD", "/mailpit", "readyz"]

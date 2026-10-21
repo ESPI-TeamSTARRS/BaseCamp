@@ -1,0 +1,13 @@
+# Surcharge de test : `docker compose -f docker-compose.yml -f docker-compose.e2e.yml up`.
+# Publie l'API de Mailpit sur 127.0.0.1 pour que les scenarios e2e lisent les emails recus.
+# Reservee au developpement et a la CI : jamais utilisee en production, jamais routee par Traefik.
+# Un reseau interne (`app`) ne peut pas publier de port : Mailpit rejoint donc un reseau dedie.
+
+services:
+  mailpit:
+    ports:
+      - "127.0.0.1:${MAILPIT_PORT:-8025}:8025"
+    networks: [app, mail-debug]
+
+networks:
+  mail-debug: {}
