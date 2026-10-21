@@ -15,7 +15,7 @@ def client() -> httpx.Client:
 
 
 class TestPaymentIsolation:
-    @pytest.mark.parametrize("path", ["/health", "/health/ready"])
+    @pytest.mark.parametrize("path", ["/health", "/health/ready", "/metrics"])
     def test_payment_is_not_routed_by_the_gateway(self, client: httpx.Client, path: str) -> None:
         response = client.get(f"/api/payment{path}")
 

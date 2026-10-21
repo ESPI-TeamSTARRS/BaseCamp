@@ -8,3 +8,5 @@ REQUEST_TIMEOUT = "service.request_timeout"  # 408 / 504
 OVERLOADED = "service.overloaded"  # 503, plafond de requetes simultanees
 RATE_LIMITED = "service.rate_limited"  # 429
 DATABASE_UNAVAILABLE = "service.database_unavailable"  # 503
+REQUEST_COMPLETED = "service.request_completed"  # une ligne par requete traitee (hors sondes)
+METRICS_REFUSED = "service.metrics_refused"  # /metrics demande a travers un proxy (404)

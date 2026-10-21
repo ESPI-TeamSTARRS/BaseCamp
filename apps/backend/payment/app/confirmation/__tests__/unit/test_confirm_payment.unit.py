@@ -285,13 +285,18 @@ class TestBusinessEvents:
             (webhook_names.WEBHOOK_EVENT_QUEUED, Outcome.SUCCESS, None),
         ]
 
-    def test_a_replay_logs_nothing_new(self, fx: Fixture) -> None:
+    def test_a_replay_logs_only_a_replayed_event(self, fx: Fixture) -> None:
         fx.use_case.execute(fx.command())
         fx.logger.events.clear()
 
         fx.use_case.execute(fx.command())
 
-        assert fx.logger.events == []
+        assert self._summary(fx) == [(names.PAYMENT_CONFIRMATION_REPLAYED, Outcome.SUCCESS, None)]
+        replayed = fx.logger.events[0]
+        assert replayed.resource_type == "payment_intent"
+        assert replayed.resource_id == str(fx.intent.id)
+        assert replayed.actor_id == "shop"
+        assert "idempotency_key" not in replayed.attributes
 
     def test_a_conflict_on_a_succeeded_intent_is_rejected_with_its_status(
         self, fx: Fixture

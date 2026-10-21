@@ -15,6 +15,7 @@ Paiement interne, sans donnée bancaire réelle : intention de paiement, confirm
 | GET | `/payments/intents?order_reference=…` | lit l'intention d'une commande |
 | POST | `/payments/intents/{id}/confirm` | confirme l'intention avec une méthode de test et l'inscrit au grand livre |
 | POST | `/payments/intents/{id}/cancel` | annule une intention non confirmée (la boutique libère son stock) |
+| GET | `/metrics` | métriques au format texte Prometheus, **réseau interne seulement** : voir [Signaux de détection](#signaux-de-détection) |
 | POST | `/payments/intents/{id}/refunds` | rembourse tout ou partie d'une intention `succeeded`, sans jamais dépasser le montant capturé |
 
 L'expiration n'est pas une route : c'est un traitement en ligne de commande (voir [Expiration](#expiration)). Le webhook est un envoi sortant, sans route HTTP : voir [Webhook sortant](#webhook-sortant-vers-la-boutique). Les prochaines routes s'ajoutent par tranche et se documentent ici.
@@ -278,6 +279,7 @@ La migration `0007` suit la même règle : elle **ajoute seulement** la table `r
 - Tests Postgres : le verrou de ligne, l'équilibre différé et l'ajout seul n'existent que sur Postgres. `test_confirmation_postgres.integ.py`, `test_cancellation_postgres.integ.py` (annulation contre confirmation, y compris en course) et `test_expiration_postgres.integ.py` (verrous sautés, passages concurrents, migration `0005`) s'exécutent si `PAYMENT_TEST_DATABASE_URL` désigne une base jetable (le schéma est créé par `alembic upgrade head`, puis supprimé) : le job CI `backend-payment` fournit ce Postgres; en local, sans la variable, ces tests sont ignorés.
 - Annulation et expiration sur la pile : `tests/e2e/scenarios/test_payment_intents.e2e.py` (même job `stack-e2e`, rien de dupliqué) annule, confirme et annule en course, puis force l'échéance en base et lance le traitement `python -m app.expiration.presentation.cli` dans le conteneur `payment` (deux passages : le second n'a aucun effet).
 - Tests : `app/core/__tests__` (garde-fous HTTP, pool, filtre de journaux, charge de 200 requêtes parallèles en processus, erreurs et journaux capturés), `app/ratelimit/__tests__` et `app/webhook/__tests__` (vecteurs de signature, horodatage, altération du corps, relances, outbox transactionnelle, envoi HTTP contre un récepteur factice local, journal validé contre le schéma commun). `test_webhook_postgres.integ.py` (même variable `PAYMENT_TEST_DATABASE_URL`) vérifie sur Postgres la migration additive et l'exclusion entre workers.
+- Signaux : `app/observability/__tests__` (compteurs, histogramme et format Prometheus, journal de requête validé contre le schéma commun, absence de donnée sensible dans les libellés, refus derrière un proxy, état lu en base sur SQLite et sur Postgres via `PAYMENT_TEST_DATABASE_URL`, écarts du grand livre, isolation statique de la configuration Traefik et compose). Sur la pile, `tests/e2e/scenarios/test_payment_signals.e2e.py` lit `/metrics` depuis `shop`, vérifie que la passerelle ne le sert pas, que les gauges suivent une confirmation et que les lignes de requête respectent le schéma (job `stack-e2e`, étape payment).
 - Webhook sur la pile : `tests/e2e/scenarios/test_payment_webhook.e2e.py` lance un récepteur factice dans le conteneur `shop` (port 9100; le job `stack-e2e` pointe le worker dessus par `PAYMENT_WEBHOOK_URL` et fixe `PAYMENT_WEBHOOK_BACKOFF_BASE_SECONDS=2`). Il vérifie la livraison signée (signature recalculée indépendamment) pour une confirmation réussie et un refus, l'absence d'événement sur un rejeu, la reprise automatique après arrêt et redémarrage du conteneur `shop` (même identifiant d'événement), la relance d'un événement `dead` par la commande d'exploitation, et que ni secret ni signature n'apparaissent dans les journaux, dont les lignes respectent le schéma commun.
 - Remboursement sur Postgres : `app/refund/__tests__/integration/test_refund_postgres.integ.py` (même variable `PAYMENT_TEST_DATABASE_URL`) vérifie la concurrence (deux remboursements de 6000 après 4000 sur 10 000 : un seul réussit; huit de 3000 : trois réussissent; même clé simultanée : une écriture), le plafond **en base** par insertion SQL directe, l'ajout seul de `refunds` et la migration `0007` additive (aucune table existante modifiée, données antérieures conservées).
 - Remboursement sur la pile : `tests/e2e/scenarios/test_payment_refund.e2e.py` (job `stack-e2e`, deux instances de `payment`) couvre le scénario 4000 / 6001 / 6000, le rejeu, la clé réutilisée (422), l'intention non encaissée (409), les montants invalides (422), huit remboursements parallèles répartis sur les deux instances (au plus trois de 3000 sur 10 000), le refus du dépassement par la base elle-même, l'événement de l'outbox et un journal conforme au schéma commun sans clé ni jeton; `test_payment_webhook.e2e.py` vérifie la livraison signée de `refund.succeeded`.
@@ -312,6 +314,8 @@ Format et règles communes : [journalisation métier](../development/logging.md)
 | `service.overloaded` | denied | `concurrency_limit` | `method` (503, plafond de requêtes simultanées) |
 | `service.rate_limited` | denied | `rate_limit_exceeded` | ressource `route` (`intents.create`, `intents.read`), acteur `service` = appelant, `retry_after_seconds` (429) |
 | `service.database_unavailable` | error | `database_unavailable` | base injoignable ou pool épuisé (503) |
+| `service.request_completed` | success / denied / error | `http_<statut>` (`http_401`, `http_429`, `http_503`…) hors succès | une ligne par requête terminée : `attributes.route` (gabarit), `attributes.method`, `attributes.status`, `duration_ms`, acteur `service` = appelant authentifié; voir [Signaux de détection](#signaux-de-détection) |
+| `service.metrics_refused` | denied | `proxied_request` | `/metrics` demandé avec un en-tête de proxy (404) |
 
 Confirmation (acteur `service` = appelant, ressource `payment_intent`, jamais la clé d'idempotence ni la valeur reçue; les noms sont des constantes dans `app/confirmation/application/confirmation_event_names.py`) :
 
@@ -325,7 +329,9 @@ Confirmation (acteur `service` = appelant, ressource `payment_intent`, jamais la
 | `payment.confirmation_rejected` | denied | `status_succeeded`, `status_failed`, `status_canceled`, `status_expired`, `expired` | conflit 409; `order_reference`, `amount_cents`, `currency` |
 | `payment.confirmation_rejected` | denied | `idempotency_key_reused`, `intent_not_found` | clé réutilisée pour une autre demande (422), intention inconnue (404) |
 
-Un rejeu d'une confirmation déjà traitée n'émet rien de nouveau. Une validation refusée émet aussi le `service.request_rejected` générique.
+| `payment.confirmation_replayed` | success | | rejeu d'une confirmation déjà traitée (même clé, même demande); `order_reference`, `amount_cents`, `currency`; aucune écriture, aucun événement webhook |
+
+Un rejeu d'une confirmation déjà traitée n'émet que `payment.confirmation_replayed`. Une validation refusée émet aussi le `service.request_rejected` générique.
 
 Annulation (acteur `service` = appelant, ressource `payment_intent`; les noms sont des constantes dans `app/cancellation/application/cancellation_event_names.py`) :
 
@@ -371,18 +377,101 @@ Webhook sortant (ressource `webhook_event`, identifiant = identifiant d'événem
 
 Les événements des tranches à venir (expiration) s'ajoutent ici avec leur ticket.
 
+## Signaux de détection
+Ce que `payment` expose pour que la détection et la remédiation (autres équipes) travaillent dès la première version. **Hors périmètre de ce service** : la collecte, l'agrégation, les tableaux de bord et les règles d'alerte elles-mêmes; les seuils ci-dessous sont des valeurs conseillées, à régler selon le trafic réel.
+
+### Journal : un événement typé par fait marquant
+Le journal est du JSON, une ligne par événement, au [contrat commun](../development/logging.md) (pas de second mécanisme : tout passe par `BusinessEventLogger`). L'**identifiant de requête** (`request_id` du ticket) est le champ `correlation_id` : repris de `X-Correlation-ID` ou généré, renvoyé dans la réponse et présent sur chaque ligne de la requête.
+
+| Fait | Événement | Où |
+|---|---|---|
+| Requête terminée (route, statut, latence, appelant) | `service.request_completed` | une ligne par requête, hors sondes réussies (`/health`, `/health/ready`, `/metrics`) |
+| Confirmation | `payment.confirmed` (réussie), `payment.declined`, `payment.timeout` | [Confirmation](#événements-métier) |
+| Rejeu | `payment.intent_replayed` (création), `payment.confirmation_replayed` (confirmation) | idempotence |
+| Rejet d'un appelant (jeton) | `payment.service_authenticated` (denied, `invalid_token`) + `service.request_completed` en `http_401` | l'IP du client y figure, jamais le jeton |
+| Rejet de requête | `service.request_rejected`, `payment.confirmation_rejected`, `payment.intent_rejected`, `service.rate_limited`, `service.payload_too_large`, `service.overloaded` | refus |
+| Webhook | `webhook.event_queued`, `webhook.delivered`, `webhook.delivery_failed`, `webhook.event_dead`, `webhook.event_requeued` | livraison sortante |
+| Collecte détournée | `service.metrics_refused` | `/metrics` demandé à travers un proxy |
+
+Exemple de ligne de requête (`attributes.route` est le gabarit, jamais le chemin réel) :
+
+```json
+{"timestamp":"2026-10-21T09:00:00.123Z","service":"basecamp-payment","level":"info","event":"service.request_completed","correlation_id":"7c1f0e52-3a0b-4f1e-9a52-1d6f7a9b2c10","outcome":"success","duration_ms":14,"actor_type":"service","actor_id":"shop","attributes":{"route":"/payments/intents/{intent_id}/confirm","method":"POST","status":200}}
+```
+
+Points d'attention honnêtes :
+- **Remboursement** : l'événement typé `payment.refunded` (et son refus) arrive avec la tranche de remboursement (WORK-24) et s'ajoutera à ce tableau; en attendant, la route de remboursement sera visible dans `service.request_completed` et `payment_http_requests_total` dès qu'elle existe, sans changement ici.
+- **Rejet de signature** : `payment` *émet* des webhooks signés, il n'en *vérifie* aucun. Le rejet d'une signature (HMAC faux ou horodatage hors fenêtre) se produit chez le **récepteur** (la route de réception de la boutique, WORK-13) et doit y émettre son propre événement typé. Côté `payment`, le signal équivalent est le rejet du jeton d'appelant ci-dessus, et `webhook.delivery_failed` (`http_401`, `http_403`) quand la boutique refuse la signature d'un envoi.
+
+### `GET /metrics`
+Format texte Prometheus 0.0.4 (`text/plain; version=0.0.4`), pour un collecteur placé sur le réseau interne `payment-net` (`http://payment:8000/metrics`). **Aucune authentification, aucune exposition publique** :
+- `payment` n'est routé par aucun routeur Traefik (`infra/traefik/dynamic.yml`), n'est ni sur le réseau `app` ni publié sur l'hôte : `/metrics`, comme tout le service, est injoignable par la passerelle. Le test `test_metrics_isolation.unit.py` fige la configuration et les scénarios e2e (`test_payment_isolation`, `test_payment_signals`) le prouvent par des requêtes réelles via Traefik (`/api/payment/metrics` donne 404) et depuis `front`.
+- Défense en profondeur : une demande qui porte un en-tête de proxy (`X-Forwarded-For`, `X-Forwarded-Host`, `X-Forwarded-Proto`, `Forwarded`, `X-Real-Ip`) reçoit `404` et journalise `service.metrics_refused`. Si quelqu'un routait un jour `payment` par la passerelle par erreur, `/metrics` resterait fermé.
+- La route n'apparaît pas dans la documentation OpenAPI.
+
+**Séries** (préfixe `payment_`; les libellés sont une liste fermée `route`, `method`, `status`, `le`, `kind`) :
+
+| Série | Type | Libellés | Origine |
+|---|---|---|---|
+| `payment_http_requests_total` | counter | `route`, `method`, `status` | processus (compteur en mémoire de l'instance) |
+| `payment_http_request_duration_seconds` | histogram | `route`, `method` (+ `le`) | processus; seaux 5 ms à 10 s |
+| `payment_intents` | gauge | `status` (`requires_confirmation`, `succeeded`, `failed`, `canceled`, `expired`) | base |
+| `payment_captured_amount_cents` | gauge | | base : somme des intentions `succeeded` |
+| `payment_refunded_amount_cents` | gauge | | base : somme remboursée des intentions `succeeded` |
+| `payment_refunded_intents` | gauge | | base : intentions `succeeded` ayant un remboursement |
+| `payment_webhook_events` | gauge | `status` (`pending`, `delivered`, `dead`) | base (outbox) |
+| `payment_webhook_oldest_pending_age_seconds` | gauge | | base : âge du plus ancien `pending`, 0 si aucun |
+| `payment_ledger_discrepancies` | gauge | `kind` | base, voir ci-dessous |
+| `payment_state_up` | gauge | | 1 si l'état a pu être lu en base pendant cette collecte, 0 sinon (les séries d'état sont alors **absentes**, pas à zéro) |
+
+Écarts du grand livre (`kind`, 0 attendu pour chacun, contrôlés sur les intentions créées dans la fenêtre `APP_METRICS_LEDGER_LOOKBACK_HOURS`, 24 h par défaut) :
+- `unbalanced_transaction` : une transaction dont débits et crédits diffèrent (la base l'interdit; une valeur non nulle signale une altération);
+- `succeeded_without_entries` : intention `succeeded` sans aucune écriture;
+- `amount_mismatch` : débits d'une intention `succeeded` différents de son montant;
+- `entries_without_success` : transactions inscrites pour une intention qui n'est pas `succeeded`.
+
+**Règles de lecture pour la collecte** :
+- Les **compteurs et histogrammes** sont par processus (le service tourne en 2 instances) : à **additionner** entre instances (`sum`), un compteur qui repart de zéro à un redémarrage est géré par la collecte (`rate`, `increase`).
+- Les **gauges d'état** sont lues en base à chaque collecte : toutes les instances rendent la même valeur, à prendre en `max` (ou d'une seule instance), jamais à additionner.
+- **Coût borné** : une connexion, huit requêtes d'agrégat (`GROUP BY`, `COUNT`, `SUM`, aucune ligne ramenée), le `statement_timeout` de 5 s du moteur, et un contrôle du grand livre limité à la fenêtre. Pas de cache ni d'état en mémoire. Intervalle de collecte conseillé : 15 s ou plus. Limite assumée : sans index sur `created_at`, le contrôle de fenêtre parcourt les intentions; un index (migration additive) est la première optimisation si les volumes grossissent.
+- **Remboursements** : `payment_refunded_*` lisent la colonne `payment_intents.refunded_amount` (déjà présente), donc **sans dépendre de la table des remboursements** de WORK-24; une série par statut de remboursement s'ajoutera avec cette table quand elle existera.
+
+Les `503` du plafond de requêtes simultanées et les `408`/`413` refusés avant le routage sont comptés sous `route="unmatched"` : le routeur n'a pas encore choisi de route.
+
+**Aucune donnée personnelle ni secret dans un libellé** : `route` est le gabarit du routeur (`/payments/intents/{intent_id}`), ou `unmatched` pour tout chemin inconnu (le chemin réel n'est jamais repris); `method` est une liste fermée (`OTHER` sinon); jamais d'identifiant d'intention, de référence de commande, d'adresse IP, de nom de client, de jeton, de clé d'idempotence ni de secret de webhook. Le nombre de séries reste borné. Des tests d'intégration et un scénario e2e vérifient l'absence de ces valeurs.
+
+### Seuils conseillés pour la détection
+Valeurs de départ pour un trafic faible (PromQL indicatif); les règles réelles appartiennent à l'équipe de détection.
+
+| Signal | Condition conseillée | Gravité | Lecture |
+|---|---|---|---|
+| `payment_ledger_discrepancies{kind=…}` | `> 0` (n'importe quel `kind`) | critique, immédiate | grand livre incohérent : intégrité comptable en cause |
+| `payment_webhook_events{status="dead"}` | `> 0` | critique | événement abandonné après 6 tentatives, la boutique ne sait pas qu'un paiement a abouti : relancer (voir exploitation) |
+| `payment_webhook_oldest_pending_age_seconds` | `> 300` pendant 2 min, `> 900` critique | avertissement / critique | le worker est arrêté ou bloqué (le budget nominal de relances tient en 155 s) |
+| `payment_state_up` | `== 0` pendant 1 min | critique | base injoignable (le service répond mais l'état n'est plus lisible) |
+| `rate(payment_http_requests_total{status=~"5.."}[5m]) / rate(payment_http_requests_total[5m])` | `> 1 %` pendant 5 min, `> 5 %` critique | avertissement / critique | erreurs serveur |
+| `payment_http_requests_total{status="503"}` | `increase[2m] > 0` | avertissement | saturation (plafond de requêtes simultanées, pool) ou base indisponible |
+| `payment_http_requests_total{status="401"}` | `rate > 10/min` pendant 5 min | avertissement | essais de jetons (voir aussi `payment.service_authenticated` et l'IP) |
+| `payment_http_requests_total{status="429"}` | `increase[10m] > 0` | avertissement | un appelant épuise son budget : abus ou boucle de relance |
+| `histogram_quantile(0.95, sum by (le, route) (rate(payment_http_request_duration_seconds_bucket[5m])))` | `> 1 s` pendant 5 min, `> 3 s` critique | avertissement / critique | lenteur (le délai total d'une requête est 10 s) |
+| `delta(payment_intents{status="failed"}[15m]) / (delta(succeeded[15m]) + delta(failed[15m]))` | `> 30 %` | avertissement | pic de refus : attaque par test de cartes ou fournisseur en panne |
+| `payment_refunded_amount_cents / payment_captured_amount_cents` | `> 20 %` avertissement, `> 50 %` critique | à surveiller | remboursements anormaux; `increase(payment_refunded_intents[10m]) > 5` signale une rafale |
+| `payment_http_requests_total{status="404", route="/metrics"}` | `increase[5m] > 0` | avertissement | `/metrics` demandé à travers un proxy (aussi `service.metrics_refused`) |
+
+Remarque : les intentions `requires_confirmation` abandonnées ne sont pas encore expirées (l'expiration arrive avec sa tranche) : leur stock croît et n'est pas, en soi, un signal.
+
 ## Intégration boutique
 Le service `shop` utilise l'interface `PaymentProvider`. L'adaptateur interne est celui par défaut; un fournisseur externe reste branchable.
 
 ## Structure
-Tranches verticales `app/<feature>/{domain,application,infrastructure,presentation}` (aujourd'hui `health`, `intent`, `ratelimit`, `confirmation`, `cancellation`, `expiration`, `ledger`, `refund` et `webhook`), configuration dans `app/core`. Migrations Alembic dans `alembic/` (`0001` vide, `0002` : tables `payment_intents` et `idempotency_keys`; montants en `BIGINT` de centimes, aucune colonne flottante; `0003` : table `rate_limit_windows`, ajout seul; `0004` : tables `confirmation_keys` et `ledger_entries` avec ses déclencheurs, ajout seul; `0005` : index partiel d'expiration, ajout seul; `0006` : table `outbox`, ajout seul; `0007` : table `refunds` avec ses déclencheurs, ajout seul). `confirmation` orchestre la confirmation (unité de travail transactionnelle, fournisseur, journal) et réutilise l'entité d'intention et le grand livre; elle ne partage que des modèles et des mappers avec `intent`. `webhook` fournit à `confirmation` l'événement à écrire dans l'outbox (fabrique de domaine et dépôt) et porte seule la livraison (cas d'usage, signature, envoi HTTP, worker, commande de relance). `refund` suit le même schéma que `confirmation` (unité de travail transactionnelle, verrou de l'intention, grand livre, outbox) et réutilise l'entité d'intention. `webhook` fournit à `confirmation` et à `refund` l'événement à écrire dans l'outbox (fabriques de domaine et dépôt). Règle de dépendance vérifiée par `app/__tests__/unit/test_architecture.unit.py`.
+Tranches verticales `app/<feature>/{domain,application,infrastructure,presentation}` (aujourd'hui `health`, `intent`, `ratelimit`, `confirmation`, `cancellation`, `expiration`, `ledger`, `refund`, `webhook` et `observability`), configuration dans `app/core`. Migrations Alembic dans `alembic/` (`0001` vide, `0002` : tables `payment_intents` et `idempotency_keys`; montants en `BIGINT` de centimes, aucune colonne flottante; `0003` : table `rate_limit_windows`, ajout seul; `0004` : tables `confirmation_keys` et `ledger_entries` avec ses déclencheurs, ajout seul; `0005` : index partiel d'expiration, ajout seul; `0006` : table `outbox`, ajout seul; `0007` : table `refunds` avec ses déclencheurs, ajout seul). `confirmation` orchestre la confirmation (unité de travail transactionnelle, fournisseur, journal) et réutilise l'entité d'intention et le grand livre; elle ne partage que des modèles et des mappers avec `intent`. `webhook` fournit à `confirmation` l'événement à écrire dans l'outbox (fabrique de domaine et dépôt) et porte seule la livraison (cas d'usage, signature, envoi HTTP, worker, commande de relance). `refund` suit le même schéma que `confirmation` (unité de travail transactionnelle, verrou de l'intention, grand livre, outbox) et réutilise l'entité d'intention. `webhook` fournit à `confirmation` et à `refund` l'événement à écrire dans l'outbox (fabriques de domaine et dépôt). Règle de dépendance vérifiée par `app/__tests__/unit/test_architecture.unit.py`.
 
 ## Isolation sur la pile
 - **Base dédiée** : conteneur `payment-db` (Postgres) avec son seul rôle applicatif, sur le réseau interne `payment-data` où seul `payment` se trouve. `shop` ne voit pas cette base et `payment` ne voit pas la base du shop.
 - **Réseau** : `payment` n'est que sur `payment-net` (partagé avec `shop`) et `payment-data`. Il n'est ni sur `app`, ni routé par Traefik, ni publié sur l'hôte : seul `shop` l'appelle (`http://payment:8000`).
 - **Migrations** : le service one-shot `payment-migrate` exécute `alembic upgrade head` avant le démarrage (idempotent).
 - **Worker** : `payment-worker` est sur `payment-net` et `payment-data` comme `payment`, sans port; il n'atteint que la boutique (`APP_WEBHOOK_URL`) et la base de payment.
-- **Vérification** : `sh scripts/check-payment-isolation.sh` (pile lancée) et les scénarios e2e `tests/e2e/scenarios/` (`test_payment_isolation`, et `test_payment_intents` qui appelle l'API depuis le conteneur `shop`).
+- **Vérification** : `sh scripts/check-payment-isolation.sh` (pile lancée) et les scénarios e2e `tests/e2e/scenarios/` (`test_payment_isolation`, et `test_payment_intents` qui appelle l'API depuis le conteneur `shop`). `/metrics` y est vérifié aussi : 404 par la passerelle (`/api/payment/metrics`, `/metrics`), injoignable depuis `front`, lisible depuis `shop` seulement.
 
 ## Configuration
-`APP_SERVICE_NAME`, `APP_ENVIRONMENT`, `APP_LOG_PSEUDONYM_KEY` (clé HMAC des empreintes d'email dans les logs, obligatoire hors `dev` et `local`), `APP_DB_HOST`, `APP_DB_PORT`, `APP_DB_NAME`, `APP_DB_USER`, `APP_DB_PASSWORD`, `APP_SERVICE_TOKENS`, `APP_INTENT_TTL_MINUTES`, `APP_MAX_AMOUNT_CENTS`, `APP_PROVIDER_TIMEOUT_SECONDS` (délai simulé de `pm_test_timeout`, 2 par défaut, 10 maximum), `APP_EXPIRATION_BATCH_SIZE` (intentions expirées par transaction, 100 par défaut, 1000 maximum), puis les bornes de [Tenue en charge et sous attaque](#tenue-en-charge-et-sous-attaque) : `APP_DB_POOL_SIZE` (5), `APP_DB_MAX_OVERFLOW` (5), `APP_DB_POOL_TIMEOUT_SECONDS` (3), `APP_DB_CONNECT_TIMEOUT_SECONDS` (2), `APP_DB_STATEMENT_TIMEOUT_MS` (5000), `APP_MAX_BODY_BYTES` (16384), `APP_READ_TIMEOUT_SECONDS` (5), `APP_WRITE_TIMEOUT_SECONDS` (5), `APP_REQUEST_TIMEOUT_SECONDS` (10), `APP_MAX_CONCURRENT_REQUESTS` (64), `APP_RATE_LIMIT_WINDOW_SECONDS` (60), `APP_RATE_LIMIT_CREATE_PER_WINDOW` (60), `APP_RATE_LIMIT_READ_PER_WINDOW` (120). Sur la pile, les valeurs viennent de `PAYMENT_DB_NAME`, `PAYMENT_DB_USER` `PAYMENT_DB_PASSWORD` et `PAYMENT_SERVICE_TOKEN_SHOP` (`.env`, modèle dans `.env.example`). Webhook : `APP_WEBHOOK_URL` (http ou https), `APP_WEBHOOK_SECRET` et `APP_WEBHOOK_SECRET_PREVIOUS` (secrets, 32 caractères au moins, jamais versionnés), `APP_WEBHOOK_MAX_ATTEMPTS` (6, de 1 à 20), `APP_WEBHOOK_BACKOFF_BASE_SECONDS` (5), `APP_WEBHOOK_BACKOFF_MAX_SECONDS` (300), `APP_WEBHOOK_TIMEOUT_SECONDS` (3, 10 maximum), `APP_WEBHOOK_POLL_INTERVAL_SECONDS` (1). Sur la pile, ils viennent de `PAYMENT_WEBHOOK_SECRET`, `PAYMENT_WEBHOOK_SECRET_PREVIOUS`, `PAYMENT_WEBHOOK_URL`, `PAYMENT_WEBHOOK_MAX_ATTEMPTS` et `PAYMENT_WEBHOOK_BACKOFF_BASE_SECONDS` (`.env`, modèle dans `.env.example`) et ne sont lus que par `payment-worker`.
+`APP_SERVICE_NAME`, `APP_ENVIRONMENT`, `APP_LOG_PSEUDONYM_KEY` (clé HMAC des empreintes d'email dans les logs, obligatoire hors `dev` et `local`), `APP_DB_HOST`, `APP_DB_PORT`, `APP_DB_NAME`, `APP_DB_USER`, `APP_DB_PASSWORD`, `APP_SERVICE_TOKENS`, `APP_INTENT_TTL_MINUTES`, `APP_MAX_AMOUNT_CENTS`, `APP_PROVIDER_TIMEOUT_SECONDS` (délai simulé de `pm_test_timeout`, 2 par défaut, 10 maximum), `APP_EXPIRATION_BATCH_SIZE` (intentions expirées par transaction, 100 par défaut, 1000 maximum), puis les bornes de [Tenue en charge et sous attaque](#tenue-en-charge-et-sous-attaque) : `APP_DB_POOL_SIZE` (5), `APP_DB_MAX_OVERFLOW` (5), `APP_DB_POOL_TIMEOUT_SECONDS` (3), `APP_DB_CONNECT_TIMEOUT_SECONDS` (2), `APP_DB_STATEMENT_TIMEOUT_MS` (5000), `APP_MAX_BODY_BYTES` (16384), `APP_READ_TIMEOUT_SECONDS` (5), `APP_WRITE_TIMEOUT_SECONDS` (5), `APP_REQUEST_TIMEOUT_SECONDS` (10), `APP_MAX_CONCURRENT_REQUESTS` (64), `APP_RATE_LIMIT_WINDOW_SECONDS` (60), `APP_RATE_LIMIT_CREATE_PER_WINDOW` (60), `APP_RATE_LIMIT_READ_PER_WINDOW` (120). Sur la pile, les valeurs viennent de `PAYMENT_DB_NAME`, `PAYMENT_DB_USER` `PAYMENT_DB_PASSWORD` et `PAYMENT_SERVICE_TOKEN_SHOP` (`.env`, modèle dans `.env.example`). Webhook : `APP_WEBHOOK_URL` (http ou https), `APP_WEBHOOK_SECRET` et `APP_WEBHOOK_SECRET_PREVIOUS` (secrets, 32 caractères au moins, jamais versionnés), `APP_WEBHOOK_MAX_ATTEMPTS` (6, de 1 à 20), `APP_WEBHOOK_BACKOFF_BASE_SECONDS` (5), `APP_WEBHOOK_BACKOFF_MAX_SECONDS` (300), `APP_WEBHOOK_TIMEOUT_SECONDS` (3, 10 maximum), `APP_WEBHOOK_POLL_INTERVAL_SECONDS` (1). Sur la pile, ils viennent de `PAYMENT_WEBHOOK_SECRET`, `PAYMENT_WEBHOOK_SECRET_PREVIOUS`, `PAYMENT_WEBHOOK_URL`, `PAYMENT_WEBHOOK_MAX_ATTEMPTS` et `PAYMENT_WEBHOOK_BACKOFF_BASE_SECONDS` (`.env`, modèle dans `.env.example`) et ne sont lus que par `payment-worker`. Signaux : `APP_METRICS_LEDGER_LOOKBACK_HOURS` (24, de 1 à 720 : fenêtre de contrôle du grand livre de `/metrics`).

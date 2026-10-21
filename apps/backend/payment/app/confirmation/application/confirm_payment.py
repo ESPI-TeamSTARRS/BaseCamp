@@ -104,6 +104,12 @@ class ConfirmPaymentUseCase:
         if record.request_hash != fingerprint:
             self._reject(command, "idempotency_key_reused", str(intent.id), intent)
             raise ConfirmationKeyReusedError
+        self._events.log(
+            BusinessEvent.success(
+                names.PAYMENT_CONFIRMATION_REPLAYED,
+                **self._fields(command, str(intent.id), self._attributes(intent)),
+            )
+        )
         return PaymentIntentView.from_entity(intent)
 
     def _log_settlement(
