@@ -8,6 +8,7 @@ import json
 import os
 import subprocess
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -265,3 +266,121 @@ class TestConfirmation:
         assert unbalanced.returncode != 0
         assert "desequilibree" in unbalanced.stderr
         assert _ledger_rows(intent_id) == ["marchand|credit|4990", "client_attente|debit|4990"]
+
+
+# --- Annulation et expiration ----------------------------------------------------------------
+
+
+def _cancel(token: str | None, intent_id: object) -> tuple[int, dict[str, object]]:
+    return _call("POST", f"/payments/intents/{intent_id}/cancel", token=token)
+
+
+def _intent_status(token: str, intent_id: object) -> object:
+    return _call("GET", f"/payments/intents/{intent_id}", token=token)[1]["status"]
+
+
+def _run_expiration() -> list[dict[str, object]]:
+    """Un passage du traitement d'expiration dans un conteneur payment; renvoie ses lignes JSON."""
+    output = subprocess.run(
+        [  # noqa: S607
+            "docker",
+            "compose",
+            "exec",
+            "-T",
+            "payment",
+            "python",
+            "-m",
+            "app.expiration.presentation.cli",
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=60,
+    ).stdout
+    return [json.loads(line) for line in output.splitlines() if line.startswith("{")]
+
+
+class TestCancellation:
+    def test_cancel_is_idempotent_and_blocks_a_later_confirmation(self, token: str) -> None:
+        intent_id = _new_intent(token)
+
+        status, canceled = _cancel(token, intent_id)
+        replay_status, replay = _cancel(token, intent_id)
+        confirm_status, _ = _confirm(token, intent_id, "pm_test_success", f"e2e-{uuid.uuid4().hex}")
+
+        assert (status, canceled["status"]) == (200, "canceled")
+        assert (replay_status, replay) == (200, canceled)
+        assert confirm_status == 409
+        assert _intent_status(token, intent_id) == "canceled"
+        assert _ledger_rows(intent_id) == []
+
+    def test_aconfirmed_id_intent_cannot_be_canceled(self, token: str) -> None:
+        intent_id = _new_intent(token)
+        _confirm(token, intent_id, "pm_test_success", f"e2e-{uuid.uuid4().hex}")
+
+        status, body = _cancel(token, intent_id)
+
+        assert (status, body) == (409, {"detail": "Payment intent cannot be canceled"})
+        assert _intent_status(token, intent_id) == "succeeded"
+        assert len(_ledger_rows(intent_id)) == 2
+
+    def test_unknown_intent_and_bad_token(self, token: str) -> None:
+        unknown = _cancel(token, uuid.uuid4())
+        unauthorized, _ = _cancel(None, uuid.uuid4())
+
+        assert unknown == (404, {"detail": "Not found"})
+        assert unauthorized == 401
+
+    def test_a_simultaneous_cancel_and_confirm_never_both_win(self, token: str) -> None:
+        intent_id = _new_intent(token)
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            confirm = pool.submit(
+                _confirm, token, intent_id, "pm_test_success", f"e2e-{uuid.uuid4().hex}"
+            )
+            cancel = pool.submit(_cancel, token, intent_id)
+            statuses = sorted([confirm.result()[0], cancel.result()[0]])
+
+        final = _intent_status(token, intent_id)
+        assert statuses == [200, 409]
+        assert final in {"succeeded", "canceled"}
+        assert len(_ledger_rows(intent_id)) == (2 if final == "succeeded" else 0)
+
+
+class TestExpiration:
+    def test_an_overdue_intent_expires_once_without_ledger_entries(self, token: str) -> None:
+        intent_id = _new_intent(token)
+        confirmed_id = _new_intent(token)
+        _confirm(token, confirmed_id, "pm_test_success", f"e2e-{uuid.uuid4().hex}")
+        update = _psql(
+            "UPDATE payment_intents SET expires_at = now() - interval '1 minute' "
+            f"WHERE id IN ('{intent_id}', '{confirmed_id}')"
+        )
+        assert update.returncode == 0, update.stderr
+
+        first = _run_expiration()
+        second = _run_expiration()
+
+        expired = [r for r in first if r["event"] == "payment.expired"]
+        assert [r["resource_id"] for r in expired] == [intent_id]
+        assert expired[0]["outcome"] == "success"
+        assert len({r["correlation_id"] for r in first}) == 1
+        assert second == []
+        assert _intent_status(token, intent_id) == "expired"
+        assert _intent_status(token, confirmed_id) == "succeeded"
+        assert _ledger_rows(intent_id) == []
+
+    def test_an_expired_intent_can_neither_beconfirmed_id_nor_canceled(self, token: str) -> None:
+        intent_id = _new_intent(token)
+        _psql(
+            "UPDATE payment_intents SET expires_at = now() - interval '1 minute' "
+            f"WHERE id = '{intent_id}'"
+        )
+        _run_expiration()
+
+        confirm, _ = _confirm(token, intent_id, "pm_test_success", f"e2e-{uuid.uuid4().hex}")
+        cancel, _ = _cancel(token, intent_id)
+
+        assert (confirm, cancel) == (409, 409)
+        assert _ledger_rows(intent_id) == []

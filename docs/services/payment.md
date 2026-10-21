@@ -14,8 +14,9 @@ Paiement interne, sans donnée bancaire réelle : intention de paiement, confirm
 | GET | `/payments/intents/{id}` | lit une intention par identifiant |
 | GET | `/payments/intents?order_reference=…` | lit l'intention d'une commande |
 | POST | `/payments/intents/{id}/confirm` | confirme l'intention avec une méthode de test et l'inscrit au grand livre |
+| POST | `/payments/intents/{id}/cancel` | annule une intention non confirmée (la boutique libère son stock) |
 
-Les autres routes s'ajoutent par tranche (`refund`, `webhook`, expiration) et se documentent ici.
+L'expiration n'est pas une route : c'est un traitement en ligne de commande (voir [Expiration](#expiration)). Les autres routes s'ajoutent par tranche (`refund`, `webhook`) et se documentent ici.
 
 ### Authentification
 Les routes `/payments/*` exigent `Authorization: Bearer <jeton de service>`. Un jeton statique par appelant est lu dans `APP_SERVICE_TOKENS` (JSON `{"shop": "…"}`, alimenté par `PAYMENT_SERVICE_TOKEN_SHOP`). La comparaison est en temps constant. Jeton absent, mal formé ou invalide : même réponse `401 {"detail": "Unauthorized"}`, sans détail. `auth` remplacera ce mécanisme plus tard.
@@ -50,7 +51,13 @@ Les clés d'idempotence sont propres à l'appelant. Les 422 de validation ne ren
 `GET /payments/intents/{id}` et `GET /payments/intents?order_reference=…` renvoient `id`, `order_reference`, `amount`, `currency`, `status`, `refunded_amount`, `expires_at`, `created_at`. Identifiant ou référence inconnus (ou identifiant mal formé) : `404 {"detail": "Not found"}`.
 
 ### États d'une intention
-`requires_confirmation` (état initial) devient `succeeded` ou `failed` à la confirmation. `canceled` et `expired` sont des états terminaux réservés (l'annulation et l'expiration arrivent avec leurs tranches); une intention dont `expires_at` est dépassé n'est plus confirmable même si son statut n'a pas encore basculé. **`succeeded` et `failed` sont terminaux** : une intention refusée ne se rejoue pas, la boutique en crée une autre.
+`requires_confirmation` (état initial) devient `succeeded` ou `failed` à la confirmation, `canceled` à l'annulation, `expired` au traitement d'expiration. **Tous les autres états sont terminaux** : une intention refusée ne se rejoue pas, la boutique en crée une autre. Une intention dont `expires_at` est dépassé n'est plus confirmable ni annulable, même si le traitement d'expiration n'a pas encore fait basculer son statut.
+
+```
+requires_confirmation ──confirmation──▶ succeeded | failed
+        │──annulation (avant l'échéance)──▶ canceled
+        └──échéance atteinte (traitement)──▶ expired
+```
 
 ### `POST /payments/intents/{id}/confirm`
 En-têtes : `Authorization`, `Idempotency-Key` (obligatoire, 8 à 255 caractères, propre à l'appelant). Corps (champs en trop refusés) :
@@ -81,6 +88,31 @@ Réponse `200` avec le corps de lecture de l'intention : un refus est un résult
 | Jeton absent ou invalide | 401 |
 
 Concurrence : le traitement lit l'intention avec un verrou de ligne (`SELECT … FOR UPDATE`) pendant toute la transaction, appel au fournisseur compris. La seconde demande attend, relit l'état validé, puis rejoue (même clé) ou reçoit 409. Deux instances de `payment` sont donc départagées par la base.
+
+### `POST /payments/intents/{id}/cancel`
+En-tête : `Authorization`. Aucun corps, aucune `Idempotency-Key` : l'opération est idempotente par nature (annuler deux fois rend le même résultat). Réponse `200` avec le corps de lecture de l'intention (`status: "canceled"`).
+
+| Cas | Statut |
+|---|---|
+| Intention `requires_confirmation` dans son délai | 200, passe `canceled` |
+| Déjà `canceled` (rejeu) | 200, même résultat, aucun nouvel événement |
+| `succeeded`, `failed`, `expired`, ou échéance dépassée | 409 `{"detail": "Payment intent cannot be canceled"}` |
+| Intention inconnue ou identifiant mal formé | 404 `{"detail": "Not found"}` |
+| Jeton absent ou invalide | 401 |
+
+Concurrence avec la confirmation : l'annulation lit l'intention avec le même verrou de ligne (`SELECT … FOR UPDATE`) que la confirmation. Une intention confirmée ne peut donc plus être annulée (409) et une intention annulée ne peut plus être confirmée (409), y compris entre deux instances; la base départage. Annuler ne touche jamais au grand livre (une intention non confirmée n'a rien écrit).
+
+### Expiration
+Une intention non confirmée à son échéance (`expires_at`, `APP_INTENT_TTL_MINUTES`, 30 minutes par défaut, alignées sur les commandes du shop) passe `expired`, sans écriture au grand livre. Le traitement est un **passage unique en ligne de commande**, à lancer périodiquement (planificateur, tâche cron, `docker compose exec`) :
+
+```
+python -m app.expiration.presentation.cli
+```
+
+- **Piloté par la base, sans état en mémoire** : la requête retient les lignes `requires_confirmation` dont `expires_at <= maintenant` (index partiel `ix_payment_intents_pending_expiry`, migration `0005`), par lots de `APP_EXPIRATION_BATCH_SIZE` (100) et une transaction par lot. L'horloge est injectée dans le cas d'usage (testé avec une horloge fixe).
+- **Rejouable** : un second passage ne trouve plus rien, ne modifie rien et n'émet rien.
+- **Concurrence** : les lignes sont prises avec `FOR UPDATE SKIP LOCKED`. Une intention qu'une confirmation ou une annulation tient déjà n'est pas écrasée (elle est sautée); une confirmation qui arrive pendant l'expiration attend le verrou, relit `expired` et reçoit 409. Plusieurs passages en parallèle expirent chaque intention une seule fois.
+- Tant qu'aucun passage n'a eu lieu, `GET` renvoie encore `requires_confirmation` pour une intention échue, mais confirmation et annulation la refusent déjà (409). La boutique ne doit pas se fier au statut seul pour libérer le stock : elle utilise l'échéance (`expires_at`) ou l'état `expired`/`canceled`.
 
 ### Fournisseur de paiement
 Le cas d'usage ne connaît que l'interface `PaymentProvider` (`authorize(méthode, montant)` : approuvé, refusé ou délai dépassé). L'adaptateur `InternalPaymentProvider` simule le résultat d'après la méthode de test; un fournisseur externe se branche en le remplaçant dans `app/confirmation/wiring.py`.
@@ -121,6 +153,8 @@ Les compteurs sont **en base** (table `rate_limit_windows`, clé `(caller, route
 
 ### Migrations compatibles avec la version précédente
 Un retour arrière en production ne restaure pas les bases : toute migration doit rester exécutable avec l'ancien code. La migration `0003` de ce ticket **ajoute seulement** la table `rate_limit_windows` : aucun renommage, aucune suppression, aucune colonne ni contrainte ajoutée à une table existante. L'ancienne version du service ignore cette table et continue de fonctionner, la nouvelle l'utilise. Règle pour les tickets suivants : ajouter (tables, colonnes nullables ou avec défaut), ne jamais renommer ni supprimer dans la même livraison que le code qui en dépend; un renommage ou une suppression se fait en plusieurs livraisons (ajout, bascule du code, puis nettoyage une fois l'ancienne version retirée).
+
+La migration `0005` **ajoute seulement** un index partiel sur `payment_intents (expires_at) WHERE status = 'requires_confirmation'` : aucune colonne, contrainte ou table n'est ajoutée, modifiée ou supprimée. L'ancienne version l'ignore (seul le plan de requête change); retour arrière : `DROP INDEX`, sans toucher aux données. Les statuts `canceled` et `expired` existaient déjà dans l'énumération et la colonne (texte libre) : la nouvelle version les écrit, l'ancienne ne sait pas les relire (même limite que `succeeded` et `failed`), donc traiter les intentions déjà annulées ou expirées avant un retour arrière ou redéployer la nouvelle version.
 
 La migration `0004` suit cette règle : elle **ajoute seulement** les tables `confirmation_keys` et `ledger_entries`, sans toucher à une table existante. Les déclencheurs (ajout seul, équilibre) et les contraintes ne portent que sur ces nouvelles tables; la clé étrangère part de la nouvelle table vers `payment_intents`, jamais l'inverse. L'ancienne version ignore ces tables. Limite assumée : les statuts `succeeded` et `failed` (colonne `payment_intents.status`, texte libre) sont écrits par la nouvelle version seulement; l'ancienne ne sait pas les relire. Un retour arrière de l'image n'exige donc aucune opération sur le schéma, mais les intentions déjà confirmées doivent être traitées avant de revenir en arrière (ou la nouvelle version redéployée).
 
@@ -180,13 +214,32 @@ Confirmation (acteur `service` = appelant, ressource `payment_intent`, jamais la
 
 Un rejeu d'une confirmation déjà traitée n'émet rien de nouveau. Une validation refusée émet aussi le `service.request_rejected` générique.
 
+Annulation (acteur `service` = appelant, ressource `payment_intent`; les noms sont des constantes dans `app/cancellation/application/cancellation_event_names.py`) :
+
+| Événement | Outcome | Reason | Détails |
+|---|---|---|---|
+| `payment.canceled` | success | | `order_reference`, `amount_cents`, `currency`; émis après la validation de la transaction |
+| `payment.cancellation_rejected` | denied | `status_succeeded`, `status_failed`, `status_expired`, `expired` | conflit 409; `order_reference`, `amount_cents`, `currency` |
+| `payment.cancellation_rejected` | denied | `intent_not_found` | intention inconnue (404); `resource_id` seulement si l'identifiant est un UUID |
+
+Un rejeu d'une annulation déjà faite n'émet rien de nouveau.
+
+Expiration (pas d'acteur : traitement interne; une seule corrélation par passage; noms dans `app/expiration/application/expiration_event_names.py`) :
+
+| Événement | Outcome | Reason | Détails |
+|---|---|---|---|
+| `payment.expired` | success | | ressource `payment_intent`, `order_reference`, `amount_cents`, `currency`; un par intention expirée |
+| `payment.expiration_completed` | success | | `expired_count`; seulement si au moins une intention a expiré |
+
+Un passage qui ne trouve rien n'émet rien.
+
 Les événements des tranches à venir (remboursement, webhook) s'ajoutent ici avec leur ticket.
 
 ## Intégration boutique
 Le service `shop` utilise l'interface `PaymentProvider`. L'adaptateur interne est celui par défaut; un fournisseur externe reste branchable.
 
 ## Structure
-Tranches verticales `app/<feature>/{domain,application,infrastructure,presentation}` (aujourd'hui `health`, `intent`, `ratelimit`, `confirmation` et `ledger`), configuration dans `app/core`. Migrations Alembic dans `alembic/` (`0001` vide, `0002` : tables `payment_intents` et `idempotency_keys`; montants en `BIGINT` de centimes, aucune colonne flottante; `0003` : table `rate_limit_windows`, ajout seul; `0004` : tables `confirmation_keys` et `ledger_entries` avec ses déclencheurs, ajout seul). `confirmation` orchestre la confirmation (unité de travail transactionnelle, fournisseur, journal) et réutilise l'entité d'intention et le grand livre; elle ne partage que des modèles et des mappers avec `intent`. Règle de dépendance vérifiée par `app/__tests__/unit/test_architecture.unit.py`.
+Tranches verticales `app/<feature>/{domain,application,infrastructure,presentation}` (aujourd'hui `health`, `intent`, `ratelimit`, `confirmation`, `cancellation`, `expiration` et `ledger`), configuration dans `app/core`. Migrations Alembic dans `alembic/` (`0001` vide, `0002` : tables `payment_intents` et `idempotency_keys`; montants en `BIGINT` de centimes, aucune colonne flottante; `0003` : table `rate_limit_windows`, ajout seul; `0004` : tables `confirmation_keys` et `ledger_entries` avec ses déclencheurs, ajout seul; `0005` : index partiel d'expiration, ajout seul). `confirmation` orchestre la confirmation (unité de travail transactionnelle, fournisseur, journal) et réutilise l'entité d'intention et le grand livre; elle ne partage que des modèles et des mappers avec `intent`. Règle de dépendance vérifiée par `app/__tests__/unit/test_architecture.unit.py`.
 
 ## Isolation sur la pile
 - **Base dédiée** : conteneur `payment-db` (Postgres) avec son seul rôle applicatif, sur le réseau interne `payment-data` où seul `payment` se trouve. `shop` ne voit pas cette base et `payment` ne voit pas la base du shop.
@@ -195,4 +248,4 @@ Tranches verticales `app/<feature>/{domain,application,infrastructure,presentati
 - **Vérification** : `sh scripts/check-payment-isolation.sh` (pile lancée) et les scénarios e2e `tests/e2e/scenarios/` (`test_payment_isolation`, et `test_payment_intents` qui appelle l'API depuis le conteneur `shop`).
 
 ## Configuration
-`APP_SERVICE_NAME`, `APP_ENVIRONMENT`, `APP_LOG_PSEUDONYM_KEY` (clé HMAC des empreintes d'email dans les logs, obligatoire hors `dev` et `local`), `APP_DB_HOST`, `APP_DB_PORT`, `APP_DB_NAME`, `APP_DB_USER`, `APP_DB_PASSWORD`, `APP_SERVICE_TOKENS`, `APP_INTENT_TTL_MINUTES`, `APP_MAX_AMOUNT_CENTS`, `APP_PROVIDER_TIMEOUT_SECONDS` (délai simulé de `pm_test_timeout`, 2 par défaut, 10 maximum), puis les bornes de [Tenue en charge et sous attaque](#tenue-en-charge-et-sous-attaque) : `APP_DB_POOL_SIZE` (5), `APP_DB_MAX_OVERFLOW` (5), `APP_DB_POOL_TIMEOUT_SECONDS` (3), `APP_DB_CONNECT_TIMEOUT_SECONDS` (2), `APP_DB_STATEMENT_TIMEOUT_MS` (5000), `APP_MAX_BODY_BYTES` (16384), `APP_READ_TIMEOUT_SECONDS` (5), `APP_WRITE_TIMEOUT_SECONDS` (5), `APP_REQUEST_TIMEOUT_SECONDS` (10), `APP_MAX_CONCURRENT_REQUESTS` (64), `APP_RATE_LIMIT_WINDOW_SECONDS` (60), `APP_RATE_LIMIT_CREATE_PER_WINDOW` (60), `APP_RATE_LIMIT_READ_PER_WINDOW` (120). Sur la pile, les valeurs viennent de `PAYMENT_DB_NAME`, `PAYMENT_DB_USER` `PAYMENT_DB_PASSWORD` et `PAYMENT_SERVICE_TOKEN_SHOP` (`.env`, modèle dans `.env.example`). Les secrets de signature arrivent aussi par variables d'environnement.
+`APP_SERVICE_NAME`, `APP_ENVIRONMENT`, `APP_LOG_PSEUDONYM_KEY` (clé HMAC des empreintes d'email dans les logs, obligatoire hors `dev` et `local`), `APP_DB_HOST`, `APP_DB_PORT`, `APP_DB_NAME`, `APP_DB_USER`, `APP_DB_PASSWORD`, `APP_SERVICE_TOKENS`, `APP_INTENT_TTL_MINUTES`, `APP_MAX_AMOUNT_CENTS`, `APP_PROVIDER_TIMEOUT_SECONDS` (délai simulé de `pm_test_timeout`, 2 par défaut, 10 maximum), `APP_EXPIRATION_BATCH_SIZE` (intentions expirées par transaction, 100 par défaut, 1000 maximum), puis les bornes de [Tenue en charge et sous attaque](#tenue-en-charge-et-sous-attaque) : `APP_DB_POOL_SIZE` (5), `APP_DB_MAX_OVERFLOW` (5), `APP_DB_POOL_TIMEOUT_SECONDS` (3), `APP_DB_CONNECT_TIMEOUT_SECONDS` (2), `APP_DB_STATEMENT_TIMEOUT_MS` (5000), `APP_MAX_BODY_BYTES` (16384), `APP_READ_TIMEOUT_SECONDS` (5), `APP_WRITE_TIMEOUT_SECONDS` (5), `APP_REQUEST_TIMEOUT_SECONDS` (10), `APP_MAX_CONCURRENT_REQUESTS` (64), `APP_RATE_LIMIT_WINDOW_SECONDS` (60), `APP_RATE_LIMIT_CREATE_PER_WINDOW` (60), `APP_RATE_LIMIT_READ_PER_WINDOW` (120). Sur la pile, les valeurs viennent de `PAYMENT_DB_NAME`, `PAYMENT_DB_USER` `PAYMENT_DB_PASSWORD` et `PAYMENT_SERVICE_TOKEN_SHOP` (`.env`, modèle dans `.env.example`). Les secrets de signature arrivent aussi par variables d'environnement.
