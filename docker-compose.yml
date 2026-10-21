@@ -103,6 +103,18 @@ services:
       retries: 5
       start_period: 5s
 
+  # Traitement d'expiration des commandes impayees (boucle sans etat, un passage par minute).
+  shop-expiration:
+    <<: *hardening
+    build: ./apps/backend/shop
+    image: ${COMPOSE_PROJECT_NAME:-basecamp}-shop
+    command: ["python", "-m", "app.order_expiration", "--every", "60"]
+    environment: *shop-env
+    networks: [data]
+    read_only: true
+    depends_on:
+      shop-migrate: { condition: service_completed_successfully }
+
   postgres:
     restart: unless-stopped
     security_opt: ["no-new-privileges:true"]
