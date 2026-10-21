@@ -1,0 +1,113 @@
+# Surcouche de SUPERVISION de la pile de production (a ajouter avec -f, seulement quand on supervise) :
+#
+#   docker compose -f deploy/docker-compose.prod.yml -f deploy/docker-compose.supervision.prod.yml \
+#     --env-file /opt/basecamp/.env --env-file /opt/basecamp/release.env up -d --wait
+#
+# Meme principes que docker-compose.supervision.yml (voir ce fichier et docs/deployment/supervision.md) :
+# aucune cle `build:`, image tierce epinglee par tag ET digest, aucun port publie, limites de ressources,
+# aucun secret dans ce fichier (valeurs lues dans /opt/basecamp/.env). Les chemins sont relatifs a
+# deploy/ (premier fichier -f).
+
+x-exporter: &exporter
+  restart: unless-stopped
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: ["ALL"]
+  pids_limit: 64
+  mem_limit: 64m
+  image: quay.io/prometheuscommunity/postgres-exporter:v0.17.1@sha256:38606faa38c54787525fb0ff2fd6b41b4cfb75d455c1df294927c5f611699b17
+  user: "65534:65534"
+  read_only: true
+  healthcheck:
+    test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9187/metrics"]
+    interval: 10s
+    timeout: 3s
+    retries: 5
+    start_period: 5s
+
+services:
+  traefik:
+    networks:
+      supervision:
+        aliases: [basecamp-traefik]
+
+  shop:
+    networks:
+      supervision:
+        aliases: [basecamp-shop]
+
+  auth:
+    networks:
+      supervision:
+        aliases: [basecamp-auth]
+
+  payment:
+    networks:
+      supervision-payment:
+        aliases: [basecamp-payment]
+
+  postgres:
+    environment:
+      MONITORING_DB_PASSWORD: ${MONITORING_DB_PASSWORD_SHOP:?voir deploy/prod.env.example}
+    volumes:
+      - ../infra/postgres/init-monitoring.sh:/docker-entrypoint-initdb.d/20-init-monitoring.sh:ro
+
+  postgres-auth:
+    environment:
+      MONITORING_DB_PASSWORD: ${MONITORING_DB_PASSWORD_AUTH:?voir deploy/prod.env.example}
+    volumes:
+      - ../infra/postgres/init-monitoring-auth.sh:/docker-entrypoint-initdb.d/20-init-monitoring.sh:ro
+
+  payment-db:
+    environment:
+      MONITORING_DB_PASSWORD: ${MONITORING_DB_PASSWORD_PAYMENT:?voir deploy/prod.env.example}
+    volumes:
+      - ../infra/postgres/init-monitoring-payment.sh:/docker-entrypoint-initdb.d/20-init-monitoring.sh:ro
+
+  pg-exporter-shop:
+    <<: *exporter
+    environment:
+      DATA_SOURCE_URI: postgres:5432/postgres?sslmode=disable
+      DATA_SOURCE_USER: monitoring
+      DATA_SOURCE_PASS: ${MONITORING_DB_PASSWORD_SHOP:?voir deploy/prod.env.example}
+    networks:
+      data: {}
+      supervision:
+        aliases: [basecamp-pg-exporter-shop]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  pg-exporter-auth:
+    <<: *exporter
+    environment:
+      DATA_SOURCE_URI: postgres-auth:5432/postgres?sslmode=disable
+      DATA_SOURCE_USER: monitoring
+      DATA_SOURCE_PASS: ${MONITORING_DB_PASSWORD_AUTH:?voir deploy/prod.env.example}
+    networks:
+      auth-data: {}
+      supervision:
+        aliases: [basecamp-pg-exporter-auth]
+    depends_on:
+      postgres-auth: { condition: service_healthy }
+
+  pg-exporter-payment:
+    <<: *exporter
+    environment:
+      DATA_SOURCE_URI: payment-db:5432/postgres?sslmode=disable
+      DATA_SOURCE_USER: monitoring
+      DATA_SOURCE_PASS: ${MONITORING_DB_PASSWORD_PAYMENT:?voir deploy/prod.env.example}
+    networks:
+      payment-data: {}
+      supervision:
+        aliases: [basecamp-pg-exporter-payment]
+    depends_on:
+      payment-db: { condition: service_healthy }
+
+networks:
+  # Cree par le depot Supervision (docker network create --internal supervision).
+  supervision:
+    name: ${SUPERVISION_NETWORK:-supervision}
+    external: true
+  # Cree par cette pile ; la sonde de payment (depot Supervision) le rejoint en reseau externe.
+  supervision-payment:
+    name: ${SUPERVISION_PAYMENT_NETWORK:-supervision-payment}
+    internal: true

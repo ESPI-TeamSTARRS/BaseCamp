@@ -1,0 +1,73 @@
+name: Supervision
+
+# Demarre la pile avec la surcouche de supervision et verifie le raccordement (reseaux, sondes,
+# exporters Postgres en lecture seule, isolation de payment). Workflow distinct de ci.yml.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - docker-compose.supervision.yml
+      - deploy/docker-compose.supervision.prod.yml
+      - docker-compose.yml
+      - deploy/docker-compose.prod.yml
+      - infra/postgres/**
+      - scripts/check-supervision-stack.sh
+      - scripts/check-payment-isolation.sh
+      - .github/workflows/supervision-stack.yml
+  workflow_dispatch:
+
+concurrency:
+  group: supervision-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  supervision-stack:
+    name: supervision-stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    env:
+      COMPOSE_FILE: docker-compose.yml:docker-compose.supervision.yml
+      SUPERVISION_NETWORK: supervision-ci
+      SUPERVISION_PAYMENT_NETWORK: supervision-payment-ci
+      COMPOSE_PROJECT_NAME: basecamp-supv
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fichier .env de CI (valeurs factices) et cles de signature auth (non versionnees)
+        run: |
+          cp .env.example .env
+          sh scripts/init-auth-keys.sh
+      - name: Surcouche de production valide (docker compose config)
+        run: |
+          FRONT_IMAGE=x@sha256:a SHOP_IMAGE=x@sha256:a PAYMENT_IMAGE=x@sha256:a AUTH_IMAGE=x@sha256:a \
+          BASECAMP_DOMAIN=basecamp.example.test \
+          docker compose -f deploy/docker-compose.prod.yml -f deploy/docker-compose.supervision.prod.yml \
+            --env-file deploy/prod.env.example config -q
+      - name: Reseau externe de supervision (interne, comme en production)
+        run: docker network create --internal "$SUPERVISION_NETWORK"
+      - name: Pile minimale avec la surcouche (Traefik, front, shop, auth, payment, exporters) healthy
+        run: |
+          docker compose up -d --build --wait --wait-timeout 300 \
+            traefik payment pg-exporter-shop pg-exporter-auth pg-exporter-payment
+      - name: Raccordement a la supervision
+        run: sh scripts/check-supervision-stack.sh
+      - name: Isolation de payment avec la surcouche
+        run: sh scripts/check-payment-isolation.sh
+      - name: Logs des conteneurs
+        if: failure()
+        run: docker compose logs --no-color > compose-logs.txt
+      - name: Publier les logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: supervision-stack-logs
+          path: compose-logs.txt
+      - name: Nettoyage de la pile
+        if: always()
+        run: |
+          docker compose down -v
+          docker network rm "$SUPERVISION_NETWORK" || true
