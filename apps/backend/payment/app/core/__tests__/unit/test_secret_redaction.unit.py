@@ -1,12 +1,13 @@
 import io
 import logging
 
+from app.caller_identity.__tests__.tokens import SHOP_TOKEN
 from app.core.config import Settings
 from app.core.logging_setup import install_log_redaction
 from app.core.secret_redaction_filter import SecretRedactionFilter
 
 CARD = "4242 4242 4242 4242"
-TOKEN = "tok-shop-super-secret-0001"
+TOKEN = SHOP_TOKEN
 
 
 def _record(message: str, *args: object) -> logging.LogRecord:
@@ -70,7 +71,7 @@ class TestInstallLogRedaction:
         framework = logging.getLogger("uvicorn.error")
         framework.addHandler(handler)
         try:
-            settings = Settings(service_tokens={"shop": TOKEN}, db_password="db-pass-very-secret")
+            settings = Settings(db_password="db-pass-very-secret")
             install_log_redaction(settings)
             install_log_redaction(settings)  # idempotent
 

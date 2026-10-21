@@ -202,7 +202,7 @@ En-tête : `{"alg": "EdDSA", "typ": "JWT", "kid": "<empreinte RFC 7638 de la cl�
 | `jti` | identifiant unique du jeton |
 | `token_use` | `service` (un jeton client porte `client`) |
 
-Scopes connus : `payments:write` (audience `payment`). Ajouter un scope ou une audience se fait dans `app/service_token/domain/enums/`.
+Scopes connus (tous d'audience `payment`) : `payments:write` (créer, lire, confirmer, annuler un paiement) et `refunds:write` (rembourser; **jamais accordé à `shop`**, réservé à un futur appelant de confiance). Ajouter un scope ou une audience se fait dans `app/service_token/domain/enums/`.
 
 ### Côté appelant (contrat pour `payment`, ticket A10)
 1. Demander un jeton avec l'`audience` et le `scope` nécessaires; **le mettre en cache jusqu'à environ 30 s avant `exp`**, puis en redemander un (ne pas en redemander à chaque appel : la limitation de débit s'applique).
@@ -211,7 +211,7 @@ Scopes connus : `payments:write` (audience `payment`). Ajouter un scope ou une a
 4. Clé publique : `GET /.well-known/jwks.json` (JWKS, clés OKP Ed25519 avec leur `kid`, réseau interne) ou le secret Docker `auth_jwt_public_key` monté dans le conteneur récepteur. Rafraîchir le JWKS si le `kid` d'un jeton est inconnu.
 5. Un jeton de service n'est jamais accepté là où un jeton client est attendu, et inversement : `aud` et `token_use` sont contrôlés par `VerifyTokenUseCase` (`token_use` attendu fixé par le déploiement), ce que prouvent des tests avec un jeton forgé signé par la même clé.
 
-Le jeton statique actuel de `payment` (`PAYMENT_SERVICE_TOKEN_SHOP`) est inchangé : `payment` adoptera ce contrat sans modification d'`auth`.
+`payment` applique ce contrat (WORK-41) : plus aucun jeton statique, `shop` obtient son jeton de service auprès d'`auth` (voir [payment](payment.md#authentification)). Pour lire le JWKS, `auth` est aussi sur le réseau interne `payment-net` (en plus de `app`), sans autre accès à `payment`.
 
 ### Clients, secrets et rotation
 - Un client = identifiant, scopes autorisés, deux empreintes argon2id (secret courant et secret précédent optionnel). Aucun secret en clair en base, ni dans une migration, ni dans les journaux.

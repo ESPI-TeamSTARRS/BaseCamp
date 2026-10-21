@@ -121,7 +121,7 @@ class RefundPaymentUseCase:
                 names.REFUND_SUCCEEDED,
                 resource_type="refund",
                 resource_id=str(refund.id),
-                actor_type="service",
+                actor_type=command.actor_type,
                 actor_id=command.caller,
                 attributes={
                     "payment_intent_id": str(refunded.id),
@@ -185,7 +185,7 @@ class RefundPaymentUseCase:
         return {
             "resource_type": "payment_intent",
             "resource_id": intent_id,
-            "actor_type": "service",
+            "actor_type": command.actor_type,
             "actor_id": command.caller,
             "attributes": attributes,
         }

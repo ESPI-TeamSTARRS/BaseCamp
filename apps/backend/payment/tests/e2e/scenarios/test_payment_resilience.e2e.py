@@ -18,6 +18,8 @@ from typing import Any
 import httpx
 import pytest
 
+from app.caller_identity.__tests__.real_auth import service_token
+
 REPO_ROOT = Path(__file__).resolve().parents[6]
 BASE_URL = os.environ.get("E2E_BASE_URL", "")
 HEALTH_P95_BUDGET_SECONDS = 0.2
@@ -111,13 +113,7 @@ print(json.dumps(results))
 
 
 def _service_token() -> str:
-    token = os.environ.get("PAYMENT_SERVICE_TOKEN_SHOP")
-    if token:
-        return token
-    for line in (REPO_ROOT / ".env").read_text(encoding="utf-8").splitlines():
-        if line.startswith("PAYMENT_SERVICE_TOKEN_SHOP="):
-            return line.split("=", 1)[1].strip()
-    raise RuntimeError("PAYMENT_SERVICE_TOKEN_SHOP introuvable")
+    return service_token()
 
 
 def _compose(*args: str, timeout: int = 120) -> str:

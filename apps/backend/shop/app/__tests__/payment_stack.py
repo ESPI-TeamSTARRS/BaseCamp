@@ -26,6 +26,24 @@ RATE_LIMIT_PAUSE_SECONDS = 6.5  # la passerelle limite /orders a 10/min (un jeto
 RATE_LIMIT_ATTEMPTS = 8
 DELIVERY_SECONDS = 40
 LEDGER_CHECK = ["python", "-m", "app.ledgercheck.presentation.cli"]
+PHRASE = "Randonnee-GR20-" + uuid.uuid4().hex[:12]
+# Prelude des scripts executes DANS le conteneur shop : obtient un vrai jeton de service aupres
+# d'auth avec le secret de l'environnement du conteneur (il n'en sort jamais).
+AUTH_CALL_PRELUDE = r"""
+import json as _json, os as _os, urllib.request as _request
+
+
+def service_token():
+    body = _json.dumps({
+        "grant_type": "client_credentials", "client_id": "shop",
+        "client_secret": _os.environ["APP_AUTH_CLIENT_SECRET"],
+        "audience": "payment", "scope": "payments:write",
+    }).encode()
+    issue = _request.Request("http://auth:8000/internal/token", data=body,
+                             headers={"Content-Type": "application/json"}, method="POST")
+    return _json.load(_request.urlopen(issue, timeout=10))["access_token"]
+"""
+_operator: list[str] = []
 
 needs_docker = pytest.mark.skipif(
     not shutil.which("docker"), reason="docker compose requis (conteneur shop)"
@@ -74,6 +92,24 @@ def in_shop(script: str, *args: str) -> dict[str, Any]:
     """Exécute un script Python DANS le conteneur shop; sa dernière ligne est un JSON."""
     output = compose("exec", "-T", "shop", "python", "-c", script, *args)
     return dict(json.loads(output.strip().splitlines()[-1]))
+
+
+def operator_token() -> str:
+    """Jeton d'un operateur reel : cree par `create-operator`, connecte par la passerelle."""
+    if _operator:
+        return _operator[0]
+    email = f"e2e-operator-{uuid.uuid4().hex[:10]}@example.test"
+    created = run(
+        *["exec", "-T", "-e", f"OPERATOR_PASSWORD={PHRASE}", "auth"],
+        *["python", "-m", "app.admin.create_operator", "--email", email],
+        timeout=180,
+    )
+    assert created.returncode == 0, created.stderr[-300:]
+    with new_client() as client:
+        response = client.post("/api/auth/login", json={"email": email, "password": PHRASE})
+    assert response.status_code == 200, response.status_code
+    _operator.append(str(response.json()["access_token"]))
+    return _operator[0]
 
 
 def wait_for(check: Callable[[], Any], message: str) -> Any:

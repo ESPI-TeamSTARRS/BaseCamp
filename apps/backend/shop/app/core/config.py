@@ -25,7 +25,14 @@ class Settings(BaseSettings):
     # `http` : service payment (par défaut) ; `simulated` : fournisseur simulé en base, sans réseau ni clé.
     payment_provider: Literal["http", "simulated"] = "http"
     payment_url: str = "http://payment:8000"
-    payment_service_token: str = ""  # jeton de service de shop aupres de payment, via l'env
+    # Jeton de service de shop aupres de payment : emis par `auth` (`POST /internal/token`) a partir
+    # des identifiants du client `shop`; le secret vient de l'environnement (APP_AUTH_CLIENT_SECRET).
+    auth_issue_url: str = "http://auth:8000/internal/token"
+    auth_client_id: str = "shop"
+    auth_client_secret: str = ""
+    payment_audience: str = "payment"
+    payment_scope: str = "payments:write"
+    payment_renew_margin_seconds: float = 30.0
     payment_connect_timeout_seconds: float = 1.0
     payment_read_timeout_seconds: float = 3.0
 

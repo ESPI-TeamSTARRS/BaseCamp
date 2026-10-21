@@ -106,7 +106,9 @@ services:
       APP_LOG_PSEUDONYM_KEY: ${LOG_PSEUDONYM_KEY:?voir deploy/prod.env.example}
       # Appels a payment (delais courts dans l'application : un payment arrete ne bloque pas shop).
       APP_PAYMENT_URL: http://payment:8000
-      APP_PAYMENT_SERVICE_TOKEN: ${PAYMENT_SERVICE_TOKEN_SHOP:?voir deploy/prod.env.example}
+      # Jeton de service de shop pour payment : demande a auth (POST /internal/token) avec le secret
+      # du client `shop` (le meme que celui amorce dans auth), jamais un jeton statique.
+      APP_AUTH_CLIENT_SECRET: ${AUTH_SERVICE_CLIENT_SECRET_SHOP:?voir deploy/prod.env.example}
     networks: [data]
     depends_on:
       postgres: { condition: service_healthy }
@@ -174,7 +176,8 @@ services:
       APP_DB_USER: ${PAYMENT_DB_USER:-payment}
       APP_DB_PASSWORD: ${PAYMENT_DB_PASSWORD:?voir deploy/prod.env.example}
       APP_LOG_PSEUDONYM_KEY: ${LOG_PSEUDONYM_KEY:?voir deploy/prod.env.example}
-      APP_SERVICE_TOKENS: '{"shop": "${PAYMENT_SERVICE_TOKEN_SHOP:?voir deploy/prod.env.example}"}'
+      # Les jetons des appelants sont signes par auth : payment lit ses cles publiques (JWKS).
+      APP_AUTH_JWKS_URL: http://auth:8000/.well-known/jwks.json
     networks: [payment-data]
     depends_on:
       payment-db: { condition: service_healthy }
@@ -299,7 +302,8 @@ services:
     environment: *auth-env
     # Cles de signature generees sur la VM par scripts/init-auth-keys.sh (jamais versionnees).
     secrets: [auth_jwt_private_key, auth_jwt_public_key]
-    networks: [app, auth-data]
+    # payment-net : payment y lit les cles publiques (JWKS).
+    networks: [app, payment-net, auth-data]
     read_only: true
     depends_on:
       auth-migrate: { condition: service_completed_successfully }

@@ -18,3 +18,16 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
                 if marker == "e2e" and not stack_available:
                     item.add_marker(skip_e2e)
                 break
+
+
+@pytest.fixture(autouse=True)
+def _static_jwks(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest) -> None:
+    """Tests unitaires et d'integration : les cles d'`auth` sont celles de la cle de test, sans reseau.
+
+    Un test qui veut sa propre source la passe a `create_app(..., jwks_source=...)`.
+    """
+    if request.node.get_closest_marker("e2e"):
+        return
+    from app.caller_identity.__tests__.tokens import JWKS
+
+    monkeypatch.setattr("app.caller_identity.wiring.HttpJwksSource", lambda client, url: JWKS)

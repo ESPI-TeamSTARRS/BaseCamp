@@ -12,6 +12,7 @@ from httpx import Response
 from jsonschema import Draft202012Validator
 from sqlalchemy import Engine, StaticPool, create_engine, event, text
 
+from app.caller_identity.__tests__.tokens import SHOP_TOKEN
 from app.core.config import Settings
 from app.core.logging.structlog_business_event_logger import StructlogBusinessEventLogger
 from app.expiration.presentation.cli import main
@@ -19,7 +20,7 @@ from app.intent.infrastructure.models.base import Base
 from app.main import create_app
 from app.ratelimit.infrastructure.models.base import Base as RateLimitBase
 
-TOKEN = "tok-shop-test-0001"
+TOKEN = SHOP_TOKEN
 SCHEMA_PATH = Path(__file__).resolve().parents[7] / "docs/development/log-event.schema.json"
 VALIDATOR = Draft202012Validator(json.loads(SCHEMA_PATH.read_text(encoding="utf-8")))
 PAST = "2020-01-01 00:00:00"
@@ -43,7 +44,7 @@ def env() -> Iterator[Env]:
     )
     Base.metadata.create_all(engine)
     RateLimitBase.metadata.create_all(engine)
-    settings = Settings(service_tokens={"shop": TOKEN}, expiration_batch_size=2)
+    settings = Settings(expiration_batch_size=2)
     log = io.StringIO()
     application = create_app(settings, engine, StructlogBusinessEventLogger("payment", log))
     with TestClient(application) as client:

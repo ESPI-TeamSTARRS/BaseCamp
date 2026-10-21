@@ -21,6 +21,8 @@ from typing import Any
 import pytest
 from jsonschema import Draft202012Validator
 
+from app.caller_identity.__tests__.real_auth import operator_token, service_token
+
 REPO_ROOT = Path(__file__).resolve().parents[6]
 RECEIVER_PORT = 9100
 TOLERANCE_SECONDS = 300
@@ -107,7 +109,7 @@ def _env_value(name: str) -> str:
 def _call(
     method: str, path: str, *, key: str = "", body: Mapping[str, object] | None = None
 ) -> tuple[int, dict[str, Any]]:
-    token = _env_value("PAYMENT_SERVICE_TOKEN_SHOP")
+    token = operator_token() if path.endswith("/refunds") else service_token()
     output = _compose(
         *["exec", "-T", "shop", "python", "-c", CALL_SCRIPT],
         method,

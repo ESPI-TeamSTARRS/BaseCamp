@@ -7,15 +7,30 @@ from app.core.logging.correlation import set_correlation_id
 from app.pay.domain.entities.payment_intent_ref import PaymentIntentRef
 from app.pay.domain.exceptions.payment_rejected_error import PaymentRejectedError
 from app.pay.domain.exceptions.payment_unavailable_error import PaymentUnavailableError
+from app.pay.domain.interfaces.service_token_provider import ServiceTokenProvider
 from app.pay.infrastructure.clients.http_payment_gateway import HttpPaymentGateway
 
 TOKEN = "tok-shop-test-0001"  # noqa: S105
 INTENT = {"id": "7d1f", "status": "requires_confirmation", "amount": 4490, "currency": "EUR"}
 
 
-def _gateway(transport: httpx.MockTransport) -> HttpPaymentGateway:
+class FixedToken(ServiceTokenProvider):
+    def __init__(self) -> None:
+        self.discarded: list[str] = []
+
+    def token(self) -> str:
+        return TOKEN
+
+    def discard(self, token: str) -> None:
+        self.discarded.append(token)
+
+
+def _gateway(
+    transport: httpx.MockTransport, tokens: ServiceTokenProvider | None = None
+) -> HttpPaymentGateway:
     return HttpPaymentGateway(
-        httpx.Client(base_url="http://payment:8000", transport=transport), TOKEN
+        httpx.Client(base_url="http://payment:8000", transport=transport),
+        tokens or FixedToken(),
     )
 
 
@@ -166,3 +181,29 @@ class TestReadAndConfirm:
     def test_technical_failures_become_unavailable(self, status: int) -> None:
         with pytest.raises(PaymentUnavailableError):
             _gateway(_responding(status, {})).confirm_intent("7d1f", "pm_test_success", "k-0000001")
+
+
+class TestRefusedToken:
+    def test_a_401_discards_the_token_and_is_unavailable(self) -> None:
+        tokens = FixedToken()
+
+        with pytest.raises(PaymentUnavailableError):
+            _call(_gateway(_responding(401), tokens))
+
+        assert tokens.discarded == [TOKEN]
+
+    def test_no_token_from_auth_never_reaches_payment(self) -> None:
+        class NoToken(FixedToken):
+            def token(self) -> str:
+                raise PaymentUnavailableError
+
+        calls: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls.append(request)
+            return httpx.Response(201, json=INTENT)
+
+        with pytest.raises(PaymentUnavailableError):
+            _call(_gateway(httpx.MockTransport(handler), NoToken()))
+
+        assert calls == []
