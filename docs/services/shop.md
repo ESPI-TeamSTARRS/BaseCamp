@@ -53,7 +53,7 @@ Réponse : `id`, `number` (`BC-` + 10 caractères, non séquentiel), `status` (`
 Les prix sont relus en base sous verrou et la livraison suit la règle du devis (5,90 € sous 80 €). Les messages d'erreur sont fixes : aucune valeur reçue n'est reflétée. La passerelle limite `/api/shop/orders` à 10 requêtes par minute et par adresse.
 
 ### `POST /orders/lookup`
-Suivi d'une commande par son numéro et l'email de la commande. Corps strict : `{"orderNumber": "BC-XXXXXXXXXX", "email": "…"}` (le numéro doit avoir le format `BC-` + 10 caractères majuscules ou chiffres, sinon `422` assaini). Réponse `200` : `number`, `status` (`pending_payment`, `paid`, `expired`), `lines` (`name`, `unit_price_cents`, `quantity`, `line_total_cents`, tels que figés à la commande), `subtotal_cents`, `shipping_cents`, `total_cents`, `created_at`. Ni l'email ni l'adresse ne sont renvoyés. L'email est comparé sans tenir compte de la casse ni des espaces, en temps constant.
+Suivi d'une commande par son numéro et l'email de la commande. Corps strict : `{"orderNumber": "BC-XXXXXXXXXX", "email": "…"}` (le numéro doit avoir le format `BC-` + 10 caractères majuscules ou chiffres, sinon `422` assaini). Réponse `200` : `number`, `status` (`pending_payment`, `paid`, `expired`, `refunded`), `lines` (`name`, `unit_price_cents`, `quantity`, `line_total_cents`, tels que figés à la commande), `subtotal_cents`, `shipping_cents`, `total_cents`, `created_at`. Ni l'email ni l'adresse ne sont renvoyés. L'email est comparé sans tenir compte de la casse ni des espaces, en temps constant.
 
 **Anti-énumération** : un numéro inconnu et un email erroné donnent exactement la même réponse, `404 {"detail": "Commande introuvable."}` (même corps, mêmes en-têtes), et le lecteur fait le même nombre de requêtes dans les deux cas. Seuls les logs internes distinguent `order_not_found` de `email_mismatch`, pour repérer une tentative d'énumération. La valeur reçue n'est jamais reflétée.
 
@@ -118,7 +118,7 @@ Les autres routes métier s'ajoutent par tranche et se documentent ici.
 
 **`payment.succeeded`** : la référence `data.order_reference` est celle de la **tentative** de paiement (`BC-…`, puis `BC-…-2` après un refus), résolue par `payment_attempts.reference`. Dans une seule transaction, avec la commande verrouillée (`FOR UPDATE`) : la commande passe « payée » (si elle ne l'est pas déjà par `/pay/confirm`), la tentative « succeeded », les réservations de stock `reserved` deviennent `committed` (le stock avait déjà été retiré à la commande : il devient définitif et ne sera plus rendu par l'expiration) et l'événement est enregistré. L'email de confirmation part **après** le commit et la réponse. Jamais payée par un événement dont le montant (centimes) ou la devise (`EUR`) diffère de la commande, ni une commande expirée (`ignored`, motifs `amount_mismatch`, `currency_mismatch`, `order_expired`; référence inconnue : `order_not_found`).
 
-**`payment.failed`** : la tentative passe « failed », la commande reste payable (un événement tardif ne rétrograde jamais une tentative réussie : `attempt_settled`). Les autres types (dont `refund.succeeded`, traité par un ticket ultérieur) sont acquittés en 200 sans effet (`unsupported_type`).
+**`payment.failed`** : la tentative passe « failed », la commande reste payable (un événement tardif ne rétrograde jamais une tentative réussie : `attempt_settled`). **`refund.succeeded`** (WORK-29) : le cumul remboursé (`data.amount_refunded`, en centimes) est enregistré dans `order_refunds`. Remboursement total : commande « remboursée » (`refunded`, non repayable); partiel : la commande reste « payée » avec son cumul. Le cumul ne fait que croître : un rejeu, un événement plus ancien (`refund_already_recorded`), un cumul au-delà du total (`refund_exceeds_total`), absent (`refund_amount_missing`) ou sur une commande non payée (`order_not_paid`) est acquitté en 200 sans effet. Les autres types sont acquittés en 200 sans effet (`unsupported_type`).
 
 **Idempotence persistée** : table `payment_webhook_events` (clé primaire = identifiant d'événement de `payment`, constant à chaque relance). Elle survit à un redémarrage et départage les livraisons parallèles (la perdante est un rejeu). **Invariant** : `paid_order_id` est unique, donc une commande payée correspond à exactement un événement de paiement; un second événement pour la même commande est mémorisé mais n'a aucun effet (`order_already_confirmed`).
 
@@ -172,6 +172,7 @@ Format et règles communes : [journalisation métier](../development/logging.md)
 | `order.looked_up` | success | | ressource `order` (numéro); `status` |
 | `order.lookup_denied` | denied | `order_not_found`, `email_mismatch` | `email_hash` du demandeur; ressource `order` seulement si le numéro existe (jamais l'email reçu) |
 | `order.payment_requested` | success | | ressource `order` (numéro); `amount_cents`, `currency`, `attempt` |
+| `order.refunded` | success | | ressource `order` (numéro); `amount_refunded_cents` (cumul), `currency`, `source` = `webhook` |
 | `order.paid` | success | | ressource `order` (numéro); `amount_cents`, `currency`, `attempt` (confirmation synchrone) ou `source` = `webhook` (webhook de paiement) |
 | `order.payment_failed` | denied | `provider_declined` | ressource `order` (numéro); `attempt` |
 | `order.payment_rejected` | denied | `order_not_found`, `order_already_paid`, `order_expired`, `no_pending_payment` | ressource `order` (numéro) sauf `order_not_found`; couvre aussi un paiement reçu après expiration |
@@ -179,7 +180,7 @@ Format et règles communes : [journalisation métier](../development/logging.md)
 | `payment.webhook_received` | success | | webhook authentifié et lu : `event_id`, `event_type` |
 | `payment.webhook_rejected` | denied | `webhook_not_configured`, `signature_missing`, `signature_malformed`, `timestamp_out_of_window`, `signature_mismatch`, `payload_not_json`, `payload_not_object`, `event_id_invalid`, `event_type_invalid`, `data_invalid`, `amount_invalid`, `currency_invalid`, `reference_invalid`, `event_id_mismatch` | 401 ou 400; jamais le corps ni la signature reçus |
 | `payment.webhook_replayed` | success | | identifiant déjà reçu : `event_id`, `event_type` |
-| `payment.webhook_ignored` | denied | `order_not_found`, `amount_mismatch`, `currency_mismatch`, `order_expired`, `order_already_confirmed`, `attempt_settled`, `unsupported_type` | acquitté en 200 sans effet; ressource `order` si connue |
+| `payment.webhook_ignored` | denied | `order_not_found`, `amount_mismatch`, `currency_mismatch`, `order_expired`, `order_already_confirmed`, `attempt_settled`, `unsupported_type`, `order_not_paid`, `refund_exceeds_total`, `refund_already_recorded`, `refund_amount_missing` | acquitté en 200 sans effet; ressource `order` si connue |
 | `order.confirmation_email_sent` | success | | ressource `order` (numéro) |
 | `order.confirmation_email_failed` | error | `delivery_failed` | ressource `order`; `email_hash` (HMAC de l'adresse); le webhook reste en succès |
 | `order.expired` | success | | ressource `order` (numéro); `released_units`, `line_count`, `age_minutes` |
@@ -209,6 +210,8 @@ La migration `0004` ajoute les tables `payment_attempts` (une ligne par tentativ
 La migration `0005` élargit `ck_stock_reservations_status` à `reserved`, `released` (libération du stock des commandes expirées). Aucune table ni colonne ajoutée; l'ancien code n'écrit que `reserved`.
 
 La migration `0006` ajoute la table `payment_webhook_events` (identifiant d'événement en clé primaire, `outcome` `applied` ou `ignored`, `paid_order_id` unique et lié à `orders`) et élargit `ck_stock_reservations_status` à `reserved`, `released`, `committed`. L'ancien code n'écrit que `reserved` : il reste valide sur le schéma migré (test d'additivité).
+
+La migration `0007` (WORK-29) élargit `ck_orders_status` à `refunded` et ajoute la table `order_refunds` (cumul remboursé par commande, une ligne dès le premier remboursement, liée à `orders`). Ajout seul : l'ancien code n'écrit que les anciens statuts et ignore la table.
 
 La migration `0002` crée la table `products` (contraintes : prix > 0, stock ≥ 0, note 0 à 5, catégorie connue) et y charge le jeu de données initial : 15 produits, 3 par catégorie, dont un en rupture et un aux dernières pièces.
 
