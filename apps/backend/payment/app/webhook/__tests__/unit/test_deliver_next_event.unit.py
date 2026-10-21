@@ -1,6 +1,8 @@
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+from app.webhook.domain.interfaces.expired_order_refunder import ExpiredOrderRefunder
+
 from app.core.__tests__.in_memory_business_event_logger import InMemoryBusinessEventLogger
 from app.core.events.outcome import Outcome
 from app.webhook.__tests__.support import InMemoryDeliveryUnitOfWork, InMemoryOutbox, ScriptedSender
@@ -193,3 +195,94 @@ class TestBusinessEvents:
         assert SECRET not in logged
         assert "v1=" not in logged
         assert BODY not in logged
+
+
+class _Refunder(ExpiredOrderRefunder):
+    def __init__(self, fail: bool = False) -> None:
+        self.refunded: list[OutboxEvent] = []
+        self._fail = fail
+
+    def refund_in_full(self, event: OutboxEvent) -> None:
+        if self._fail:
+            raise RuntimeError("base injoignable")
+        self.refunded.append(event)
+
+
+EXPIRED = DeliveryResult.rejected("order_expired", 409)
+
+
+def _with_refunder(*results: DeliveryResult, fail: bool = False) -> tuple[Fixture, _Refunder]:
+    fx = Fixture(*results)
+    refunder = _Refunder(fail)
+    fx.use_case = DeliverNextEventUseCase(
+        InMemoryDeliveryUnitOfWork(fx.outbox),
+        fx.sender,
+        WebhookSigner([SECRET]),
+        POLICY,
+        lambda: fx.now,
+        fx.logger,
+        refunder,
+    )
+    return fx, refunder
+
+
+class TestRejectedByTheReceiver:
+    def test_a_late_payment_is_refunded_in_full_and_the_event_is_closed_with_an_alert(self) -> None:
+        fx, refunder = _with_refunder(EXPIRED)
+
+        assert fx.use_case.execute() is True
+
+        assert [e.id for e in refunder.refunded] == [fx.event.id]
+        assert fx.stored().status is OutboxStatus.REJECTED_BY_RECEIVER
+        assert (fx.stored().attempts, fx.stored().last_error) == (1, "order_expired")
+        (alert,) = [e for e in fx.logger.events if e.event == names.WEBHOOK_REJECTED_BY_RECEIVER]
+        assert (alert.outcome, alert.reason) == (Outcome.ERROR, "order_expired")
+        assert alert.attributes["status_code"] == 409
+        assert alert.attributes["payment_intent_id"] == str(fx.event.intent_id)
+
+    def test_the_rejected_event_is_never_sent_again(self) -> None:
+        fx, refunder = _with_refunder(EXPIRED)
+        fx.use_case.execute()
+
+        assert fx.use_case.execute() is False
+        assert len(fx.sender.sent) == 1
+        assert len(refunder.refunded) == 1
+
+    def test_a_refund_failure_keeps_the_event_pending_for_a_later_attempt_without_rejecting_it(
+        self,
+    ) -> None:
+        fx, refunder = _with_refunder(EXPIRED, fail=True)
+
+        fx.use_case.execute()
+
+        assert refunder.refunded == []
+        assert fx.stored().status is OutboxStatus.PENDING
+        assert fx.stored().last_error == "auto_refund_failed"
+        assert [e.event for e in fx.logger.events] == [names.WEBHOOK_DELIVERY_FAILED]
+
+    def test_a_5xx_or_a_timeout_retries_without_any_refund(self) -> None:
+        fx, refunder = _with_refunder(DeliveryResult.failed("http_503", 503))
+
+        fx.use_case.execute()
+
+        assert refunder.refunded == []
+        assert fx.stored().status is OutboxStatus.PENDING
+
+    def test_a_rejection_of_an_event_other_than_a_payment_is_never_refunded(self) -> None:
+        fx, refunder = _with_refunder(EXPIRED)
+        other = OutboxEvent.pending(uuid4(), WebhookEventType.REFUND_SUCCEEDED, uuid4(), BODY, NOW)
+        fx.outbox.events.clear()
+        fx.outbox.events[other.id] = other
+
+        fx.use_case.execute()
+
+        assert refunder.refunded == []
+        assert fx.outbox.events[other.id].status is OutboxStatus.PENDING
+
+    def test_without_a_refunder_a_rejection_is_a_plain_failed_attempt(self) -> None:
+        fx = Fixture(EXPIRED)
+
+        fx.use_case.execute()
+
+        assert fx.stored().status is OutboxStatus.PENDING
+        assert fx.stored().last_error == "order_expired"
