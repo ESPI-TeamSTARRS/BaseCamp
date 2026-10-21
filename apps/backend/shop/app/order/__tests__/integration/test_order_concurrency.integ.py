@@ -4,11 +4,12 @@ SQLite ne verrouille pas les lignes : seul un vrai Postgres prouve l'invariant d
 """
 
 import os
+import uuid
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from sqlalchemy import Engine, create_engine, func, select
+from sqlalchemy import Engine, create_engine, func, select, text
 from sqlalchemy.orm import Session
 
 from app.core.__tests__.in_memory_business_event_logger import InMemoryBusinessEventLogger
@@ -47,16 +48,26 @@ def _command(key: str, quantity: int = 1) -> PlaceOrderCommand:
 
 @pytest.fixture
 def engine() -> Iterator[Engine]:
+    """Schema jetable propre au test : une base existante n'est jamais modifiee."""
     assert POSTGRES_URL is not None
-    engine = create_engine(POSTGRES_URL, pool_size=CONTENDERS + 2)
-    OrderBase.metadata.drop_all(engine)
+    schema = f"test_orders_{uuid.uuid4().hex[:12]}"
+    admin = create_engine(POSTGRES_URL, isolation_level="AUTOCOMMIT")
+    with admin.connect() as connection:
+        connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+    engine = create_engine(
+        POSTGRES_URL,
+        pool_size=CONTENDERS + 2,
+        connect_args={"options": f"-csearch_path={schema}"},
+    )
     OrderBase.metadata.create_all(engine)
     with Session(engine) as session:
         session.add(OrderProductModel(id="derniere-piece", name="Rare", price_cents=2000, stock=1))
         session.commit()
     yield engine
-    OrderBase.metadata.drop_all(engine)
     engine.dispose()
+    with admin.connect() as connection:
+        connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+    admin.dispose()
 
 
 def _run_concurrently(engine: Engine, commands: list[PlaceOrderCommand]) -> list[object]:
