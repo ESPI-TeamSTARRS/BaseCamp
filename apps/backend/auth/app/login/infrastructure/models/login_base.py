@@ -5,5 +5,5 @@ class LoginBase(DeclarativeBase):
     """Base declarative de la tranche login : elle ne declare que les colonnes qu'elle utilise.
 
     La table `users` appartient a l'inscription ; la connexion en lit un sous-ensemble et y ajoute
-    `disabled_at` (migration 0005). Deux bases distinctes evitent tout import entre tranches.
+    `disabled_at` (migration 0007). Deux bases distinctes evitent tout import entre tranches.
     """

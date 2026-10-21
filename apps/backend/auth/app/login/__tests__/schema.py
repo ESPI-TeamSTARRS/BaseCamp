@@ -1,4 +1,4 @@
-"""Schema des tests d'integration : les vraies migrations (0004 puis 0005) sur SQLite en memoire."""
+"""Schema des tests d'integration : les vraies migrations (0004 puis 0007) sur SQLite en memoire."""
 
 import importlib.util
 from datetime import datetime
@@ -30,7 +30,7 @@ def migrated_engine() -> Engine:
     )
     with engine.begin() as connection, Operations.context(MigrationContext.configure(connection)):
         load_migration("0004_users_et_verification").upgrade()
-        load_migration("0005_login").upgrade()
+        load_migration("0007_login").upgrade()
     return engine
 
 

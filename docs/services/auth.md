@@ -109,12 +109,12 @@ Migrations `0004_users_et_verification` (down_revision `0003`), `0006_reinitiali
 
 | Table | Colonnes |
 |---|---|
-| `users` | `id` (uuid, clé primaire), `email` (unique, minuscules), `password_hash`, `role` (`customer` ou `operator`), `email_verified_at` (nullable), `created_at`, `disabled_at` (nullable, ajouté par la 0005 : compte désactivé) |
+| `users` | `id` (uuid, clé primaire), `email` (unique, minuscules), `password_hash`, `role` (`customer` ou `operator`), `email_verified_at` (nullable), `created_at`, `disabled_at` (nullable, ajouté par la 0007 : compte désactivé) |
 | `email_verification_tokens` | `id`, `user_id` (clé étrangère, suppression en cascade), `token_hash` (SHA-256 hex, unique), `expires_at`, `used_at` (nullable) |
 | `password_reset_tokens` | `id`, `user_id` (clé étrangère, suppression en cascade), `token_hash` (SHA-256 hex, unique), `expires_at`, `used_at` (nullable) |
 | `password_reset_attempts` | `id`, `email_fingerprint` (HMAC de l'adresse, indexé), `requested_at` (indexé); purgée à chaque demande au-delà de la fenêtre d'une heure |
 | `session_revocations` | `user_id` (clé primaire et étrangère, cascade), `revoked_at` : seuil de révocation des sessions |
-| `refresh_tokens` | `id`, `user_id` (clé étrangère, suppression en cascade, indexé), `token_hash` (SHA-256 hex, unique), `created_at`, `expires_at` (0005) |
+| `refresh_tokens` | `id`, `user_id` (clé étrangère, suppression en cascade, indexé), `token_hash` (SHA-256 hex, unique), `created_at`, `expires_at` (0007) |
 
 Les horodatages sont en UTC avec fuseau. Un test compare la migration aux modèles SQLAlchemy (aucune dérive possible sans échec). Les routes `/internal/*` (appels entre services) ne sont jamais routées par la passerelle : un appel externe reçoit 404 (couvert par le test e2e `test_auth_stack.e2e.py`).
 

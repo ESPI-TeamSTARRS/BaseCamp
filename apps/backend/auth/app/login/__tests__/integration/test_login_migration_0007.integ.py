@@ -11,7 +11,7 @@ from sqlalchemy.schema import SchemaItem
 from app.login.__tests__.schema import load_migration
 from app.login.infrastructure.models.login_base import LoginBase
 
-NAME = "0005_login"
+NAME = "0007_login"
 
 
 @pytest.fixture
@@ -30,11 +30,11 @@ def _only_declared(
     return not (reflected and compare_to is None)
 
 
-class TestMigration0005:
-    def test_it_follows_revision_0004_and_is_additive(self) -> None:
+class TestMigration0007:
+    def test_it_follows_revision_0006_and_is_additive(self) -> None:
         migration = load_migration(NAME)
 
-        assert (migration.revision, migration.down_revision) == ("0005", "0004")
+        assert (migration.revision, migration.down_revision) == ("0007", "0006")
 
     def test_upgrade_matches_the_login_models(self, engine: Engine) -> None:
         with engine.begin() as connection:
