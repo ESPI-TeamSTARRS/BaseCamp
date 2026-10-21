@@ -34,7 +34,7 @@ from app.registration.infrastructure.repositories.sqlalchemy_unit_of_work import
 )
 
 SCHEMA = Path(__file__).resolve().parents[7] / "docs/development/log-event.schema.json"
-PHRASE = "nouveau-sentier-2026"
+PHRASE = "aaaa-bbbb-aaaa-bbbb"
 EMAIL = "camille.dupont@example.com"
 CORRELATION = "7c1f0e52-3a0b-4f1e-9a52-1d6f7a9b2c10"
 

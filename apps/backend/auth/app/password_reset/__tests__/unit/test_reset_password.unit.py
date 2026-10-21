@@ -19,7 +19,7 @@ from app.registration.__tests__.fakes import (
 from app.registration.domain.services.password_policy import PasswordPolicy
 
 EMAIL = "camille@example.com"
-NEW_PASSWORD = "nouveau-sentier-2026"
+NEW_PASSWORD = "aaaa-bbbb-aaaa-bbbb"
 
 
 class Harness:
@@ -84,7 +84,7 @@ class TestSuccess:
         harness.reset.execute(harness.token, NEW_PASSWORD)
 
         with pytest.raises(InvalidResetTokenError):
-            harness.reset.execute(harness.token, "un-autre-mot-de-passe-42")
+            harness.reset.execute(harness.token, "cccc-dddd-cccc-dddd")
 
     def test_a_notification_failure_is_logged_and_does_not_undo_the_change(self) -> None:
         harness = Harness(mail_fails=True)
