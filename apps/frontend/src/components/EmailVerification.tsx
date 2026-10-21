@@ -19,7 +19,7 @@ export function EmailVerification() {
     const hash = window.location.hash;
     // Le jeton quitte la barre d'adresse avant tout appel : il ne reste ni dans l'historique ni dans un Referer.
     window.history.replaceState(null, '', window.location.pathname);
-    verifyFromHash(hash).then((result) => {
+    void verifyFromHash(hash).then((result) => {
       if (active) setState(result);
     });
     return () => {
