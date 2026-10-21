@@ -41,6 +41,19 @@ class Settings(BaseSettings):
     smtp_from: str = "commandes@basecamp.local"
     smtp_timeout_seconds: float = 3.0
 
+    # Identification des clients connectes (WORK-40) : jetons d'acces signes par `auth`, verifies
+    # localement avec ses cles publiques (JWKS) lues sur le reseau interne `app`.
+    auth_jwks_url: str = "http://auth:8000/.well-known/jwks.json"
+    auth_profile_url: str = (
+        "http://auth:8000/me"  # profil du porteur du jeton (email, verification)
+    )
+    auth_issuer: str = "basecamp-auth"
+    auth_audience: str = "basecamp-client-api"
+    auth_jwks_ttl_seconds: float = 300.0
+    auth_jwks_min_refetch_seconds: float = 10.0
+    auth_connect_timeout_seconds: float = 1.0
+    auth_read_timeout_seconds: float = 2.0
+
     # Délai avant qu'une commande impayée expire et rende son stock (minutes).
     order_expiration_minutes: int = 30
 

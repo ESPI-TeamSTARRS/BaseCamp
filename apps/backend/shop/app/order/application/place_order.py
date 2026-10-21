@@ -119,6 +119,7 @@ class PlaceOrderUseCase:
             idempotency_key=command.idempotency_key,
             request_fingerprint=command.fingerprint,
             created_at=datetime.now(UTC),
+            user_id=command.customer_id,
         )
 
     def _validate(self, command: PlaceOrderCommand) -> ShippingAddress:

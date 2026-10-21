@@ -56,12 +56,19 @@ export async function placeOrder(
   lines: CartLine[],
   form: OrderForm,
   idempotencyKey: string,
-  fetchImpl: FetchLike = fetch
+  fetchImpl: FetchLike = fetch,
+  accessToken: string | null = null
 ): Promise<PlaceOrderResult> {
   try {
+    // Un client connecté joint son jeton : la commande est rattachée à son compte. Un invité n'envoie
+    // rien et son parcours reste identique ; un jeton refusé par le serveur est traité en invité.
     const response = await fetchImpl(ORDERS_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
+      headers: {
+        'Content-Type': 'application/json',
+        'Idempotency-Key': idempotencyKey,
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
       body: JSON.stringify(toOrderRequest(lines, form)),
       cache: 'no-store',
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),

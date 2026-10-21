@@ -16,6 +16,7 @@ class PlaceOrderCommand:
     city: str
     country: str
     items: tuple[tuple[str, int], ...]
+    customer_id: str | None = None  # compte connecte (jeton verifie), nul pour un invite
 
     @property
     def fingerprint(self) -> str:

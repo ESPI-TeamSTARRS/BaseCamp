@@ -183,3 +183,30 @@ describe('IdempotencyKeys', () => {
     expect(keys.keyFor(lines, { ...form, city: 'Lyon' })).not.toBe(first);
   });
 });
+
+describe('placeOrder et le jeton du compte', () => {
+  const ok = () => reply(201, apiOrder);
+
+  it('n envoie aucun en-tete d autorisation pour un invite', async () => {
+    const fetchImpl = ok();
+
+    await placeOrder(lines, form, 'cle-invite-0001', fetchImpl);
+
+    const init = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    expect(init.headers.Authorization).toBeUndefined();
+    expect(init.headers['Idempotency-Key']).toBe('cle-invite-0001');
+  });
+
+  it('joint le jeton d un client connecte sans rien changer d autre', async () => {
+    const guest = ok();
+    const member = ok();
+
+    await placeOrder(lines, form, 'cle-0001', guest);
+    await placeOrder(lines, form, 'cle-0001', member, 'jeton.du.compte');
+
+    const [, guestInit] = (guest as ReturnType<typeof vi.fn>).mock.calls[0];
+    const [, memberInit] = (member as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(memberInit.headers.Authorization).toBe('Bearer jeton.du.compte');
+    expect(memberInit.body).toBe(guestInit.body);
+  });
+});

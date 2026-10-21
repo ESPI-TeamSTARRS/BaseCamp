@@ -80,6 +80,7 @@ class SqlAlchemyOrderRepository(OrderRepository):
             idempotency_key=order.idempotency_key,
             request_fingerprint=order.request_fingerprint,
             created_at=order.created_at,
+            user_id=order.user_id,
         )
 
     @staticmethod
@@ -104,4 +105,5 @@ class SqlAlchemyOrderRepository(OrderRepository):
             idempotency_key=row.idempotency_key,
             request_fingerprint=row.request_fingerprint,
             created_at=row.created_at,
+            user_id=row.user_id,
         )

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ShoppingBag, Menu, Mountain, UserPlus, LogIn, LogOut } from 'lucide-react';
+import { ShoppingBag, Menu, Mountain, UserPlus, LogIn, LogOut, Package } from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
 import { useCart } from '../context/CartContext';
 import { categoryLabels } from '../lib/categories';
@@ -42,14 +42,23 @@ export function Header() {
 
         <div className="flex items-center gap-3">
           {signedIn ? (
-            <button
-              type="button"
-              onClick={onSignOut}
-              aria-label="Me déconnecter"
-              className="flex h-11 w-11 items-center justify-center rounded-full text-granite transition-colors hover:bg-granite/5"
-            >
-              <LogOut size={20} />
-            </button>
+            <>
+              <Link
+                href="/compte/commandes"
+                aria-label="Mes commandes"
+                className="flex h-11 w-11 items-center justify-center rounded-full text-granite transition-colors hover:bg-granite/5"
+              >
+                <Package size={20} />
+              </Link>
+              <button
+                type="button"
+                onClick={onSignOut}
+                aria-label="Me déconnecter"
+                className="flex h-11 w-11 items-center justify-center rounded-full text-granite transition-colors hover:bg-granite/5"
+              >
+                <LogOut size={20} />
+              </button>
+            </>
           ) : (
             <Link
               href="/compte/connexion"

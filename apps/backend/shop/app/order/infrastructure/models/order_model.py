@@ -25,3 +25,5 @@ class OrderModel(OrderBase):
     idempotency_key: Mapped[str] = mapped_column(String(128), unique=True)
     request_fingerprint: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # Identifiant du compte d'`auth` (WORK-40), nul pour une commande invitee.
+    user_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
