@@ -2,7 +2,7 @@ import io
 import json
 from collections.abc import Iterator
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -73,7 +73,9 @@ def _confirm(env: Env, intent_id: str) -> Response:
 
 
 def _status(env: Env, intent_id: str) -> str:
-    return str(env.client.get(f"/payments/intents/{intent_id}", headers=_headers()).json()["status"])
+    return str(
+        env.client.get(f"/payments/intents/{intent_id}", headers=_headers()).json()["status"]
+    )
 
 
 def _set_deadline(env: Env, intent_id: str, when: str) -> None:

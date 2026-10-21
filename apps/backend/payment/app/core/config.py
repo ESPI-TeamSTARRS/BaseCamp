@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     service_tokens: dict[str, str] = {}
     intent_ttl_minutes: int = 30
     max_amount_cents: int = 500_000  # plafond par intention : 5 000 EUR
+    # Expiration des intentions non confirmées : nombre d'intentions traitées par transaction.
+    expiration_batch_size: int = Field(default=100, gt=0, le=1000)
     # Délai simulé du fournisseur interne pour pm_test_timeout : toujours borné (10 s au plus).
     provider_timeout_seconds: float = Field(default=2.0, gt=0, le=10)
 
