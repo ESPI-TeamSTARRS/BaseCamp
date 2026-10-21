@@ -48,3 +48,38 @@ class TestSettingsLogPseudonymKey:
         monkeypatch.setenv("APP_LOG_PSEUDONYM_KEY", "une-cle-longue-et-secrete")
 
         assert Settings().log_pseudonym_key == "une-cle-longue-et-secrete"
+
+
+class TestSettingsServiceTokens:
+    def test_defaults_point_to_the_docker_secrets_and_a_sane_rate_limit(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        for name in (
+            "JWT_PRIVATE_KEY_FILE",
+            "JWT_PUBLIC_KEY_FILE",
+            "JWT_ISSUER",
+            "SERVICE_TOKEN_RATE_LIMIT_PER_MINUTE",
+            "SERVICE_CLIENTS",
+        ):
+            monkeypatch.delenv(f"APP_{name}", raising=False)
+
+        settings = Settings()
+
+        assert settings.jwt_private_key_file == "/run/secrets/auth_jwt_private_key"
+        assert settings.jwt_public_key_file == "/run/secrets/auth_jwt_public_key"
+        assert settings.jwt_issuer == "basecamp-auth"
+        assert settings.service_token_rate_limit_per_minute == 60
+        assert settings.service_clients == {}
+
+    def test_service_clients_are_read_from_a_json_variable(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("APP_SERVICE_CLIENTS", '{"shop": ["payments:write"]}')
+
+        assert Settings().service_clients == {"shop": ["payments:write"]}
+
+    def test_rate_limit_must_be_positive(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("APP_SERVICE_TOKEN_RATE_LIMIT_PER_MINUTE", "0")
+
+        with pytest.raises(ValueError, match="greater than 0"):
+            Settings()
