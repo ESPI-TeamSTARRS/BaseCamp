@@ -1,3 +1,6 @@
+import base64
+import binascii
+import json
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -16,6 +19,7 @@ from app.customer_identity.infrastructure.clients.jwks_key_cache import JwksKeyC
 ALGORITHM = "EdDSA"  # jamais `none`, jamais HS* : seul l'algorithme d'`auth` est accepte
 CLIENT_TOKEN_USE = "client"  # noqa: S105
 CLOCK_TOLERANCE_SECONDS = 30
+JWT_SEGMENTS = 3
 REQUIRED_CLAIMS = ["exp", "iat", "iss", "aud", "sub", "jti"]
 
 
@@ -47,10 +51,22 @@ class JwksClientTokenVerifier(ClientTokenVerifier):
 
     @staticmethod
     def _header(token: str) -> dict[str, Any]:
+        """En-tete JOSE seul, pour choisir la cle (`kid`) : aucune revendication n'est lue ici.
+
+        Le jeton n'est accepte qu'apres `jwt.decode` (signature, emetteur, audience), qui impose
+        l'algorithme et la cle choisis, jamais ceux de l'en-tete.
+        """
+        segments = token.split(".")
+        if len(segments) != JWT_SEGMENTS:
+            raise ClientTokenRejectedError(TokenRejection.INVALID)
         try:
-            return dict(jwt.get_unverified_header(token))
-        except jwt.PyJWTError:
+            padded = segments[0] + "=" * (-len(segments[0]) % 4)
+            header = json.loads(base64.urlsafe_b64decode(padded))
+        except (ValueError, binascii.Error):
             raise ClientTokenRejectedError(TokenRejection.INVALID) from None
+        if not isinstance(header, dict):
+            raise ClientTokenRejectedError(TokenRejection.INVALID)
+        return header
 
     def _decode(self, token: str, jwk: Any) -> dict[str, Any]:
         try:

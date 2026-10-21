@@ -147,7 +147,10 @@ class TestRejectedTokens:
 
         assert error.value.rejection is TokenRejection.BAD_ALGORITHM
 
-    @pytest.mark.parametrize("garbage", ["", "pas.un.jeton", "a.b", "x" * 50])
+    @pytest.mark.parametrize(
+        "garbage",
+        ["", "pas.un.jeton", "a.b", "x" * 50, "W10.e30.sig", "bm9uLWpzb24.e30.sig", "a.b.c.d"],
+    )
     def test_garbage_is_refused(self, garbage: str) -> None:
         setup = Setup()
 
