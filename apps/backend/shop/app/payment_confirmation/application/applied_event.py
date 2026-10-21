@@ -14,3 +14,4 @@ class AppliedEvent:
     order_number: str | None = None
     confirmed: bool = False  # vrai : cet événement confirme le paiement de la commande
     mail: ConfirmationMail | None = None
+    refunded_cents: int | None = None  # cumul remboursé enregistré par cet événement

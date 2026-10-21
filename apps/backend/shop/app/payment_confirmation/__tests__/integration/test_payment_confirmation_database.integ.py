@@ -39,10 +39,12 @@ from app.payment_confirmation.infrastructure.models.payment_webhook_event_model 
 from app.payment_confirmation.infrastructure.repositories.sqlalchemy_confirmation_unit_of_work import (
     SqlAlchemyConfirmationUnitOfWork,
 )
+from app.payment_request.application.order_not_payable_error import OrderNotPayableError
 from app.payment_request.application.request_order_payment import RequestOrderPaymentUseCase
 from app.payment_request.infrastructure.gateways.simulated_payment_gateway import (
     SimulatedPaymentGateway,
 )
+from app.payment_request.infrastructure.models.order_refund_model import OrderRefundModel
 from app.payment_request.infrastructure.models.payment_attempt_model import PaymentAttemptModel
 from app.payment_request.infrastructure.repositories.sqlalchemy_payment_unit_of_work import (
     SqlAlchemyPaymentUnitOfWork,
@@ -289,6 +291,57 @@ class TestEventsThatMustNotPay:
         assert shop.attempt_status(order_id) == "failed"
         assert shop.order_status(order_id) == "pending_payment"
         assert shop.stored_events() == {EVENT_1: ("applied", None)}
+
+
+class TestRefundOnTheDatabase:
+    def _refund(self, shop: _Shop, reference: str, refunded: int, event_id: str) -> Any:
+        data = {
+            "order_reference": reference,
+            "amount": refunded,
+            "amount_refunded": refunded,
+            "currency": "EUR",
+        }
+        body = event_body(id=event_id, type="refund.succeeded", data=data)
+        return shop.receive.execute(body, sign(body), event_id)
+
+    def _refunded_cents(self, shop: _Shop, order_id: str) -> int | None:
+        with Session(shop.engine) as session:
+            return session.scalar(
+                select(OrderRefundModel.refunded_cents).where(OrderRefundModel.order_id == order_id)
+            )
+
+    def test_a_partial_then_full_refund_updates_the_total_and_the_status(self, shop: _Shop) -> None:
+        order_id, reference, total = shop.pending_order()
+        shop.webhook(reference, total)
+
+        partial = self._refund(shop, reference, 1000, EVENT_2)
+        assert partial.outcome is WebhookOutcome.APPLIED
+        assert (shop.order_status(order_id), self._refunded_cents(shop, order_id)) == ("paid", 1000)
+
+        full = self._refund(shop, reference, total, "6d2e5c63-a7b7-4e63-9a1c-7c1f2c3a8b44")
+        assert full.outcome is WebhookOutcome.APPLIED
+        assert (shop.order_status(order_id), self._refunded_cents(shop, order_id)) == (
+            "refunded",
+            total,
+        )
+
+    def test_an_order_refunded_in_full_can_no_longer_be_paid_again(self, shop: _Shop) -> None:
+        order_id, reference, total = shop.pending_order()
+        shop.webhook(reference, total)
+        self._refund(shop, reference, total, EVENT_2)
+
+        with pytest.raises(OrderNotPayableError):
+            shop.request_payment.execute(order_id)
+
+    def test_a_replayed_refund_changes_nothing(self, shop: _Shop) -> None:
+        order_id, reference, total = shop.pending_order()
+        shop.webhook(reference, total)
+        self._refund(shop, reference, 1000, EVENT_2)
+
+        replay = self._refund(shop, reference, 1000, EVENT_2)
+
+        assert replay.outcome is WebhookOutcome.REPLAYED
+        assert self._refunded_cents(shop, order_id) == 1000
 
 
 NOW_UTC = datetime(2026, 10, 21, 12, 0, tzinfo=UTC)

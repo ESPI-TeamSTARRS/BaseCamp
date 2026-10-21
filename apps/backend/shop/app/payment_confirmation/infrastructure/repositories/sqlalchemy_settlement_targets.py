@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
@@ -9,6 +11,7 @@ from app.payment_confirmation.domain.entities.confirmation_mail import Confirmat
 from app.payment_confirmation.domain.entities.mail_line import MailLine
 from app.payment_confirmation.domain.entities.settlement_target import SettlementTarget
 from app.payment_confirmation.domain.interfaces.settlement_targets import SettlementTargets
+from app.payment_request.infrastructure.models.order_refund_model import OrderRefundModel
 from app.payment_request.infrastructure.models.payment_attempt_model import PaymentAttemptModel
 
 RESERVED = "reserved"
@@ -30,6 +33,9 @@ class SqlAlchemySettlementTargets(SettlementTargets):
         ).one()
         # La tentative est relue sous le verrou de la commande : son statut est celui du commit précédent.
         self._session.refresh(attempt)
+        refunded = self._session.scalar(
+            select(OrderRefundModel.refunded_cents).where(OrderRefundModel.order_id == order.id)
+        )
         return SettlementTarget(
             order_id=order.id,
             order_number=order.number,
@@ -37,6 +43,7 @@ class SqlAlchemySettlementTargets(SettlementTargets):
             total_cents=order.total_cents,
             attempt_id=attempt.id,
             attempt_status=attempt.status,
+            refunded_cents=refunded or 0,
         )
 
     def mark_paid(self, order_id: str) -> None:
@@ -44,6 +51,23 @@ class SqlAlchemySettlementTargets(SettlementTargets):
             update(OrderModel)
             .where(OrderModel.id == order_id)
             .values(status=OrderStatus.PAID.value)
+        )
+
+    def record_refund(self, order_id: str, refunded_cents: int) -> None:
+        # La commande est verrouillée (find_for_update) : lire puis écrire est sans concurrence.
+        now = datetime.now(UTC)
+        row = self._session.get(OrderRefundModel, order_id)
+        if row is None:
+            self._session.add(
+                OrderRefundModel(order_id=order_id, refunded_cents=refunded_cents, updated_at=now)
+            )
+        else:
+            row.refunded_cents = refunded_cents
+            row.updated_at = now
+        self._session.execute(
+            update(OrderModel)
+            .where(OrderModel.id == order_id, OrderModel.total_cents <= refunded_cents)
+            .values(status=OrderStatus.REFUNDED.value)
         )
 
     def set_attempt_status(self, attempt_id: str, status: str) -> None:

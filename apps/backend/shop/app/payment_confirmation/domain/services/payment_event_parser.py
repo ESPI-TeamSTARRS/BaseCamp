@@ -27,17 +27,15 @@ def parse_payment_event(raw_body: bytes) -> PaymentEvent:
     created = created_at if isinstance(created_at, str) and len(created_at) <= 40 else None
     if event_type.startswith(_PAYMENT_PREFIX):
         return _payment_event(event_id, event_type, created, data)
-    other_amount = data.get("amount")
     return PaymentEvent(
         event_id,
         event_type,
         created,
         _optional_text(data.get("order_reference")),
-        other_amount
-        if isinstance(other_amount, int) and not isinstance(other_amount, bool)
-        else None,
+        _optional_cents(data.get("amount")),
         None,
         None,
+        _optional_cents(data.get("amount_refunded")),
     )
 
 
@@ -66,6 +64,10 @@ def _text(value: object, reason: str) -> str:
     if not isinstance(value, str) or not value or len(value) > _MAX_TEXT:
         raise InvalidWebhookPayloadError(reason)
     return value
+
+
+def _optional_cents(value: object) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
 
 
 def _optional_text(value: object) -> str | None:

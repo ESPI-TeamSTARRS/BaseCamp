@@ -13,6 +13,10 @@ class SettlementTargets(ABC):
     def mark_paid(self, order_id: str) -> None: ...
 
     @abstractmethod
+    def record_refund(self, order_id: str, refunded_cents: int) -> None:
+        """Enregistre le cumul remboursé; « remboursée » si le total est rendu en entier."""
+
+    @abstractmethod
     def set_attempt_status(self, attempt_id: str, status: str) -> None: ...
 
     @abstractmethod

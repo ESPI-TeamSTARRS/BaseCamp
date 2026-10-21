@@ -117,7 +117,7 @@ class TestAcceptedWebhook:
     async def test_an_unrelated_event_is_acknowledged_without_effect(self) -> None:
         client = _Client()
 
-        response = await client.post(event_body(type="refund.succeeded"))
+        response = await client.post(event_body(type="payment.pending"))
 
         assert (response.status_code, response.json()) == (200, {"status": "ignored"})
         assert client.sender.sent == []

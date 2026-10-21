@@ -46,7 +46,12 @@ class TestParsePaymentEvent:
     def test_a_refund_event_is_read_without_payment_only_fields(self) -> None:
         body = _body(
             type="refund.succeeded",
-            data={"refund_id": "r-1", "order_reference": "BC-ABCDEFGHJK", "amount": 100},
+            data={
+                "refund_id": "r-1",
+                "order_reference": "BC-ABCDEFGHJK",
+                "amount": 100,
+                "amount_refunded": 250,
+            },
         )
 
         event = parse_payment_event(body)
@@ -56,6 +61,16 @@ class TestParsePaymentEvent:
             "BC-ABCDEFGHJK",
             100,
         )
+        assert event.amount_refunded_cents == 250
+
+    @pytest.mark.parametrize("cumulative", [-1, True, "250", None])
+    def test_an_unusable_cumulative_refund_is_read_as_missing(self, cumulative: object) -> None:
+        body = _body(
+            type="refund.succeeded",
+            data={"order_reference": "BC-ABCDEFGHJK", "amount": 100, "amount_refunded": cumulative},
+        )
+
+        assert parse_payment_event(body).amount_refunded_cents is None
 
     @pytest.mark.parametrize(
         "body",
