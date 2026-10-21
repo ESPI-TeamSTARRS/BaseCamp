@@ -79,6 +79,15 @@ class PatientClient(httpx.Client):
         return response
 
 
+@pytest.fixture(scope="module", autouse=True)
+def archive_created_products(operator: dict[str, str]) -> Any:
+    """Les autres scénarios attendent le catalogue d'origine : tout produit créé ici est archivé."""
+    yield
+    with PatientClient(base_url=BASE_URL, timeout=20.0) as client:
+        for product_id in CREATED:
+            client.post(f"{ADMIN}/{product_id}/archive", headers=operator)
+
+
 @pytest.fixture
 def client() -> httpx.Client:
     return PatientClient(base_url=BASE_URL, timeout=20.0)
@@ -97,9 +106,15 @@ def _new_body() -> dict[str, Any]:
     }
 
 
+CREATED: list[
+    str
+] = []  # produits créés par les scénarios, archivés à la fin (le catalogue reste à 15)
+
+
 def _create(client: httpx.Client, headers: dict[str, str]) -> dict[str, Any]:
     response = client.post(ADMIN, json=_new_body(), headers=headers)
     assert response.status_code == 201, response.text
+    CREATED.append(response.json()["id"])
     return dict(response.json())
 
 
