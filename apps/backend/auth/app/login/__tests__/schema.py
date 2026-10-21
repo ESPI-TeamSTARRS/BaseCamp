@@ -33,6 +33,7 @@ def migrated_engine() -> Engine:
         load_migration("0007_login").upgrade()
         load_migration("0008_refresh_rotation").upgrade()
         load_migration("0009_login_lockouts").upgrade()
+        load_migration("0010_connexion_backoffice").upgrade()
     return engine
 
 

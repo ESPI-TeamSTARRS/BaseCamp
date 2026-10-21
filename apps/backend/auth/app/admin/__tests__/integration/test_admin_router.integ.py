@@ -194,8 +194,8 @@ class TestDisable:
 
         assert response.status_code == 200
         assert response.json()["disabled"] is True
-        # il ne reste que la session de l'operateur
-        assert stack.scalar("SELECT COUNT(*) FROM refresh_tokens") == 1
+        # les sessions du compte desactive sont revoquees (l'operateur n'en a pas : pas de refresh)
+        assert stack.scalar("SELECT COUNT(*) FROM refresh_tokens") == 0
         login = await client.post("/login", json={"email": EMAIL, "password": ACCOUNT_SECRET})
         assert (login.status_code, login.json()) == (401, {"detail": "Identifiants invalides."})
 

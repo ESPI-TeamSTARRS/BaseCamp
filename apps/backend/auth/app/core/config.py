@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
@@ -52,6 +54,13 @@ class Settings(BaseSettings):
     access_token_ttl_seconds: int = Field(default=900, gt=0)
     refresh_token_ttl_seconds: int = Field(default=604800, gt=0)
 
+    # Connexion du back-office en trois temps (WORK-59) : routes /backoffice/* montees seulement si
+    # `backoffice_enabled`. Il faut alors un verificateur de visage : `fake` (developpement
+    # uniquement, aucune reconnaissance reelle) ; aucun adaptateur reel n'est encore branche.
+    backoffice_enabled: bool = False
+    face_verifier: Literal["none", "fake"] = "none"
+    backoffice_challenge_ttl_seconds: int = Field(default=120, gt=0)
+
     # Adresse reelle du client (WORK-59) : plages CIDR (separees par des virgules) des proxies dont on
     # croit X-Forwarded-For. Vide (defaut) : seule l'adresse du pair TCP est utilisee.
     trusted_proxies: str = ""
@@ -94,6 +103,14 @@ class Settings(BaseSettings):
             ) from None
         if not durations or any(value <= 0 for value in durations):
             raise ValueError("APP_LOCKOUT_DURATIONS_SECONDS needs at least one positive duration")
+        return self
+
+    @model_validator(mode="after")
+    def _check_face_verifier(self) -> "Settings":
+        if self.face_verifier == "fake" and self.environment not in DEVELOPMENT_ENVIRONMENTS:
+            raise ValueError("APP_FACE_VERIFIER=fake is only allowed in dev and local")
+        if self.backoffice_enabled and self.face_verifier == "none":
+            raise ValueError("APP_BACKOFFICE_ENABLED needs a real face verifier adapter")
         return self
 
     @model_validator(mode="after")

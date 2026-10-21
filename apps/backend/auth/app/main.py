@@ -7,6 +7,9 @@ from sqlalchemy import Engine, create_engine
 from app.admin.composition import wire_admin
 from app.admin.presentation.error_handlers import register_admin_error_handlers
 from app.admin.presentation.router import router as admin_router
+from app.backoffice.composition import wire_backoffice
+from app.backoffice.presentation.error_handlers import register_backoffice_error_handlers
+from app.backoffice.presentation.router import router as backoffice_router
 from app.core.client_address_resolver import ClientAddressResolver
 from app.core.config import Settings
 from app.core.errors import register_error_handlers
@@ -72,6 +75,8 @@ def create_app(
     wire_registration(application, settings, engine, events)
     wire_password_reset(application, settings, engine, events)
     wire_login(application, settings, engine, events)
+    if settings.backoffice_enabled:
+        wire_backoffice(application, settings, engine, events)
     wire_admin(application, engine, events)
     application.include_router(health_router)
     application.include_router(observability_router)
@@ -79,6 +84,8 @@ def create_app(
     application.include_router(registration_router)
     application.include_router(password_reset_router)
     application.include_router(login_router)
+    if settings.backoffice_enabled:
+        application.include_router(backoffice_router)
     application.include_router(well_known_router)
     application.include_router(admin_router)
     register_error_handlers(application, events)
@@ -86,6 +93,7 @@ def create_app(
     register_registration_error_handlers(application)
     register_password_reset_error_handlers(application)
     register_login_error_handlers(application)
+    register_backoffice_error_handlers(application)
     register_admin_error_handlers(application)
     return application
 
