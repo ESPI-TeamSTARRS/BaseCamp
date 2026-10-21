@@ -37,6 +37,20 @@ class PaymentIntent:
         """Une intention se confirme une fois, tant qu'elle attend sa confirmation et n'a pas expiré."""
         return self.status is IntentStatus.REQUIRES_CONFIRMATION and now < self.expires_at
 
+    def is_overdue(self, now: datetime) -> bool:
+        """L'échéance est atteinte (l'instant d'échéance lui-même compte comme dépassé)."""
+        return now >= self.expires_at
+
+    def can_be_canceled(self, now: datetime) -> bool:
+        """Seule une intention encore en attente de confirmation, dans son délai, s'annule."""
+        return self.status is IntentStatus.REQUIRES_CONFIRMATION and not self.is_overdue(now)
+
+    def cancel(self) -> "PaymentIntent":
+        return replace(self, status=IntentStatus.CANCELED)
+
+    def expire(self) -> "PaymentIntent":
+        return replace(self, status=IntentStatus.EXPIRED)
+
     def succeed(self) -> "PaymentIntent":
         return replace(self, status=IntentStatus.SUCCEEDED)
 
