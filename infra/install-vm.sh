@@ -162,11 +162,21 @@ for unit in basecamp-deploy.service basecamp-deploy.timer; do
   install -m 644 "$BASE/repo/infra/systemd/$unit" "/etc/systemd/system/$unit"
 done
 systemctl daemon-reload
-log "unites systemd installees (minuteur NON active)."
+# daemon-reload recharge les unites sans arreter ni desactiver un minuteur deja actif : son etat est conserve.
+if systemctl is-enabled --quiet basecamp-deploy.timer 2> /dev/null; then
+  TIMER_ACTIVE=1
+  log "unites systemd mises a jour (minuteur deja actif : etat conserve)."
+else
+  TIMER_ACTIVE=0
+  log "unites systemd installees (minuteur NON active)."
+fi
 verify_install || fail "installation incomplete (voir les lignes KO ci-dessus)."
 
-echo
-echo "Prochaines etapes (voir docs/deployment/runbook.md, section Bascule) :"
-echo "  1. Verifier $ENV_FILE (domaine, valeurs facultatives du front)."
-echo "  2. Arreter l'ancienne pile '$OLD_PROJECT' (docker compose down dans son dossier)."
-echo "  3. sudo bash $BASE/repo/infra/install-vm.sh --enable-timer"
+# Etapes suivantes : seulement tant que la bascule n'est pas faite (minuteur inactif et pile de production absente).
+if [[ "$TIMER_ACTIVE" == 0 && -z "$(docker ps -aq --filter "label=com.docker.compose.project=basecamp-prod")" ]]; then
+  echo
+  echo "Prochaines etapes (voir docs/deployment/runbook.md, section Bascule) :"
+  echo "  1. Verifier $ENV_FILE (domaine, valeurs facultatives du front)."
+  echo "  2. Tester la nouvelle pile avec GATEWAY_EXPOSE=false, puis ARRETER (stop, jamais down) l'ancienne pile '$OLD_PROJECT' dans son dossier : ses conteneurs et ses volumes sont conserves."
+  echo "  3. sudo bash $BASE/repo/infra/install-vm.sh --enable-timer"
+fi
