@@ -11,6 +11,8 @@ Les paramètres de route (`params`) sont asynchrones (`await params`). Les visue
 ## Comptes
 Pages `/compte/inscription` (formulaire, états d'erreur sans détail technique) et `/compte/verification` (jeton lu dans le fragment d'URL `#token=`, retiré de la barre d'adresse avant l'appel). Les appels vont à `/api/auth/register` et `/api/auth/verify-email` par la passerelle (même origine). La logique testée est dans `src/lib/account-api.ts` et `src/lib/registration-flow.ts`; les composants `RegistrationForm` et `EmailVerification` ne font que l'affichage.
 
+Page `/compte/connexion` : `POST /api/auth/login` par la passerelle (`src/lib/login-api.ts`, `src/lib/login-flow.ts`, composant `LoginForm`). Un refus affiche toujours « Email ou mot de passe incorrect. », sans distinguer la cause. Le jeton d'accès est gardé **uniquement en mémoire** du module `src/lib/session-store.ts` (jamais `localStorage`, `sessionStorage` ni un cookie lisible par le script; un rechargement complet de la page l'efface); le jeton de rafraîchissement est un cookie `HttpOnly` que le script ne voit pas.
+
 ## Organisation
 `src/app` (routes), `src/components`, `src/context` (panier), `src/lib` (utilitaires métier), `src/types`.
 
