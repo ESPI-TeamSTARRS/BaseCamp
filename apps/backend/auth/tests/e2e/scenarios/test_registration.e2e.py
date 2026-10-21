@@ -14,6 +14,7 @@ import time
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx
 import pytest
@@ -23,6 +24,7 @@ MAILPIT_URL = os.environ.get("E2E_MAILPIT_URL", "")
 PHRASE = "Randonnee-GR20-" + uuid.uuid4().hex[:12]
 TOKEN_PATTERN = re.compile(r"/compte/verification#token=([A-Za-z0-9_-]+)")
 MAIL_TIMEOUT_SECONDS = 15.0
+REPO_ROOT = Path(__file__).resolve().parents[6]
 
 needs_mailbox = pytest.mark.skipif(not MAILPIT_URL, reason="definir E2E_MAILPIT_URL (Mailpit)")
 
@@ -198,6 +200,7 @@ class TestRegistrationLogs:
         logs = subprocess.run(
             ["docker", "compose", "logs", "--no-color", "auth", "traefik"],  # noqa: S607
             capture_output=True,
+            cwd=REPO_ROOT,
             text=True,
             timeout=60,
             check=True,
