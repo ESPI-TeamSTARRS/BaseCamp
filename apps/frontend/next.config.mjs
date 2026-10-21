@@ -2,15 +2,15 @@
 
 const contentSecurityPolicy = `
   default-src 'self';
-  script-src 'self' 'unsafe-inline' https://js.stripe.com;
-  frame-src 'self' https://js.stripe.com https://hooks.stripe.com;
-  connect-src 'self' https://api.stripe.com https://checkout.stripe.com;
+  script-src 'self' 'unsafe-inline';
+  frame-src 'none';
+  connect-src 'self';
   img-src 'self' data: https: blob:;
   style-src 'self' 'unsafe-inline';
   font-src 'self' data:;
   object-src 'none';
   base-uri 'self';
-  form-action 'self' https://checkout.stripe.com;
+  form-action 'self';
   frame-ancestors 'none';
   block-all-mixed-content;
   upgrade-insecure-requests;
@@ -24,7 +24,7 @@ const securityHeaders = [
   { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
   {
     key: 'Permissions-Policy',
-    value: 'camera=(), microphone=(), geolocation=(), payment=(self "https://js.stripe.com")',
+    value: 'camera=(), microphone=(), geolocation=(), payment=()',
   },
   { key: 'Content-Security-Policy', value: contentSecurityPolicy },
 ];
