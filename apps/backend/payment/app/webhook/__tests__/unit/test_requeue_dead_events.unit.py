@@ -97,6 +97,7 @@ class TestRequeue:
             fx.logger,
         )
         fx.outbox.events.pop(fx.other_dead.id)
+        fx.outbox.events.pop(fx.pending.id)
 
         deliver.execute()
 

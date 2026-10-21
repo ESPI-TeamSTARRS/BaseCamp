@@ -4,6 +4,7 @@ from uuid import UUID
 from app.confirmation.domain.entities.confirmation_record import ConfirmationRecord
 from app.intent.domain.entities.payment_intent import PaymentIntent
 from app.ledger.domain.entities.ledger_transaction import LedgerTransaction
+from app.webhook.domain.entities.outbox_event import OutboxEvent
 
 
 class ConfirmationSession(ABC):
@@ -18,9 +19,16 @@ class ConfirmationSession(ABC):
 
     @abstractmethod
     def save(
-        self, intent: PaymentIntent, record: ConfirmationRecord, ledger: LedgerTransaction | None
+        self,
+        intent: PaymentIntent,
+        record: ConfirmationRecord,
+        ledger: LedgerTransaction | None,
+        outbox_event: OutboxEvent,
     ) -> None:
-        """Écrit l'état de l'intention, la clé d'idempotence et le grand livre, atomiquement.
+        """Écrit l'état, la clé d'idempotence, le grand livre et l'événement à publier, atomiquement.
+
+        L'événement du webhook est dans la même transaction que le changement d'état : jamais
+        d'événement sans état, ni d'état sans événement.
 
         Lève ConfirmationKeyReusedError si la clé a été prise par une autre demande.
         """

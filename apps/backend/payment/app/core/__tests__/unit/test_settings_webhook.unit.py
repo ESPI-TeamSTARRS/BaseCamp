@@ -2,7 +2,7 @@ import io
 import logging
 
 import pytest
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 
 from app.core.config import Settings
 from app.core.logging_setup import install_log_redaction
@@ -21,20 +21,24 @@ class TestWebhookSettings:
         assert 0 < settings.webhook_timeout_seconds <= 10
 
     def test_the_current_secret_signs_first_then_the_previous_one(self) -> None:
-        settings = Settings(webhook_secret=SECRET, webhook_secret_previous=PREVIOUS)
+        settings = Settings(
+            webhook_secret=SecretStr(SECRET), webhook_secret_previous=SecretStr(PREVIOUS)
+        )
 
         assert settings.webhook_secrets == [SECRET, PREVIOUS]
 
     def test_a_previous_secret_alone_is_refused(self) -> None:
         with pytest.raises(ValidationError):
-            Settings(webhook_secret_previous=PREVIOUS)
+            Settings(webhook_secret_previous=SecretStr(PREVIOUS))
 
     def test_a_short_secret_is_refused(self) -> None:
         with pytest.raises(ValidationError):
             Settings(webhook_secret="too-short")
 
     def test_the_secrets_never_appear_in_the_representation(self) -> None:
-        settings = Settings(webhook_secret=SECRET, webhook_secret_previous=PREVIOUS)
+        settings = Settings(
+            webhook_secret=SecretStr(SECRET), webhook_secret_previous=SecretStr(PREVIOUS)
+        )
 
         assert SECRET not in repr(settings)
         assert PREVIOUS not in repr(settings)
@@ -61,7 +65,7 @@ class TestWebhookSettings:
     )
     def test_out_of_bound_values_are_refused(self, field: str, value: float) -> None:
         with pytest.raises(ValidationError):
-            Settings(**{field: value})
+            Settings.model_validate({field: value})
 
 
 class TestWebhookSecretsAreRedacted:
@@ -72,7 +76,9 @@ class TestWebhookSecretsAreRedacted:
         framework.addHandler(handler)
         try:
             install_log_redaction(
-                Settings(webhook_secret=SECRET, webhook_secret_previous=PREVIOUS)
+                Settings(
+                    webhook_secret=SecretStr(SECRET), webhook_secret_previous=SecretStr(PREVIOUS)
+                )
             )
             framework.error("oups %s puis %s", SECRET, PREVIOUS)
         finally:
