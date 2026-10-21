@@ -115,7 +115,15 @@ services:
     <<: *hardening
     image: ${SHOP_IMAGE}
     mem_limit: 256m
-    environment: *shop-env
+    environment:
+      <<: *shop-env
+      # Webhook signe de payment (secret partage avec payment-worker) : seul shop le recoit.
+      APP_PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:?voir deploy/prod.env.example}
+      APP_PAYMENT_WEBHOOK_SECRET_PREVIOUS: ${PAYMENT_WEBHOOK_SECRET_PREVIOUS:-}
+      # Email de confirmation de commande : relais SMTP facultatif (un echec est journalise, jamais bloquant).
+      APP_SMTP_HOST: ${SHOP_SMTP_HOST:-localhost}
+      APP_SMTP_PORT: ${SHOP_SMTP_PORT:-25}
+      APP_SMTP_FROM: ${SHOP_SMTP_FROM:-commandes@basecamp.local}
     networks: [app, data, payment-net]
     read_only: true
     depends_on:

@@ -87,7 +87,15 @@ services:
     <<: *hardening
     build: ./apps/backend/shop
     image: ${COMPOSE_PROJECT_NAME:-basecamp}-shop
-    environment: *shop-env
+    environment:
+      <<: *shop-env
+      # Webhook signe de payment (secret partage avec payment-worker, jamais versionne) : seul shop le recoit.
+      APP_PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:?voir .env.example}
+      APP_PAYMENT_WEBHOOK_SECRET_PREVIOUS: ${PAYMENT_WEBHOOK_SECRET_PREVIOUS:-}
+      # Email de confirmation de commande : Mailpit sur le reseau interne `app`, aucun relais externe.
+      APP_SMTP_HOST: mailpit
+      APP_SMTP_PORT: "1025"
+      APP_SMTP_FROM: ${SHOP_SMTP_FROM:-commandes@basecamp.local}
     networks: [app, data, payment-net]
     read_only: true
     depends_on:
