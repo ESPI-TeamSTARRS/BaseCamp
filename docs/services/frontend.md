@@ -15,6 +15,8 @@ Réinitialisation du mot de passe : pages `/compte/mot-de-passe-oublie` (saisie 
 
 Page `/compte/connexion` : `POST /api/auth/login` par la passerelle (`src/lib/login-api.ts`, `src/lib/login-flow.ts`, composant `LoginForm`). Un refus affiche toujours « Email ou mot de passe incorrect. », sans distinguer la cause. Le jeton d'accès est gardé **uniquement en mémoire** du module `src/lib/session-store.ts` (jamais `localStorage`, `sessionStorage` ni un cookie lisible par le script; un rechargement complet de la page l'efface); le jeton de rafraîchissement est un cookie `HttpOnly` que le script ne voit pas.
 
+Session persistante : le composant `SessionKeeper` (monté dans le layout) retrouve la session au chargement de la page par `POST /api/auth/refresh` (`src/lib/session-api.ts`, avec l'en-tête `X-Requested-With`) et la rafraîchit en silence une minute avant l'expiration du jeton d'accès (`src/lib/session-keeper.ts`). Un seul rafraîchissement est en vol à la fois par onglet (sinon le serveur verrait un rejeu). Un 401 sur une session ouverte renvoie une seule fois vers `/compte/connexion`, sans nouvelle tentative (pas de boucle); un visiteur sans cookie reste anonyme sans redirection; une panne du service est retentée trois fois au plus. Le bouton de l'en-tête devient « Me déconnecter » quand une session est ouverte : il appelle `POST /api/auth/logout` (idempotent) puis efface le jeton en mémoire.
+
 ## Suivi de commande
 `/suivi` remplace l'ancien texte statique par un formulaire (numéro `BC-…` et email) qui appelle `POST /api/shop/orders/lookup`. Le résultat affiche le statut (en attente de paiement, payée, expirée), les lignes figées et les totaux. Un numéro inconnu et un email erroné affichent le même message, comme côté serveur.
 

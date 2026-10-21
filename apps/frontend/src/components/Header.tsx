@@ -1,14 +1,28 @@
 'use client';
 
 import Link from 'next/link';
-import { ShoppingBag, Menu, Mountain, UserPlus, LogIn } from 'lucide-react';
-import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { ShoppingBag, Menu, Mountain, UserPlus, LogIn, LogOut } from 'lucide-react';
+import { useState, useSyncExternalStore } from 'react';
 import { useCart } from '../context/CartContext';
 import { categoryLabels } from '../lib/categories';
+import { signOut } from '../lib/session-keeper';
+import { getAccessToken, subscribeSession } from '../lib/session-store';
 
 export function Header() {
   const { itemCount, openCart } = useCart();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const router = useRouter();
+  const signedIn = useSyncExternalStore(
+    subscribeSession,
+    () => getAccessToken() !== null,
+    () => false
+  );
+
+  async function onSignOut() {
+    await signOut();
+    router.push('/');
+  }
 
   return (
     <header className="sticky top-0 z-30 border-b border-granite/10 bg-sand/95 backdrop-blur-sm">
@@ -27,13 +41,24 @@ export function Header() {
         </nav>
 
         <div className="flex items-center gap-3">
-          <Link
-            href="/compte/connexion"
-            aria-label="Me connecter"
-            className="flex h-11 w-11 items-center justify-center rounded-full text-granite transition-colors hover:bg-granite/5"
-          >
-            <LogIn size={20} />
-          </Link>
+          {signedIn ? (
+            <button
+              type="button"
+              onClick={onSignOut}
+              aria-label="Me déconnecter"
+              className="flex h-11 w-11 items-center justify-center rounded-full text-granite transition-colors hover:bg-granite/5"
+            >
+              <LogOut size={20} />
+            </button>
+          ) : (
+            <Link
+              href="/compte/connexion"
+              aria-label="Me connecter"
+              className="flex h-11 w-11 items-center justify-center rounded-full text-granite transition-colors hover:bg-granite/5"
+            >
+              <LogIn size={20} />
+            </Link>
+          )}
           <Link
             href="/compte/inscription"
             aria-label="Créer mon compte"

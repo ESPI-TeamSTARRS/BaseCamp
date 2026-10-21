@@ -25,6 +25,8 @@ export default defineConfig({
         'src/lib/login-api.ts',
         'src/lib/login-flow.ts',
         'src/lib/session-store.ts',
+        'src/lib/session-api.ts',
+        'src/lib/session-keeper.ts',
         'src/lib/order-lookup.ts',
         'src/lib/order-payment.ts',
       ],
