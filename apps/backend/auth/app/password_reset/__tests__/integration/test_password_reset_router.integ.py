@@ -9,7 +9,11 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.__tests__.in_memory_business_event_logger import InMemoryBusinessEventLogger
 from app.main import create_app
-from app.password_reset.__tests__.fakes import FakeResetMailer
+from app.password_reset.__tests__.fakes import (
+    FakeResetMailer,
+    add_refresh_token,
+    create_refresh_tokens,
+)
 from app.password_reset.application.request_password_reset import RequestPasswordResetUseCase
 from app.password_reset.application.reset_password import ResetPasswordUseCase
 from app.password_reset.infrastructure.repositories.sqlalchemy_password_reset_unit_of_work import (
@@ -43,6 +47,7 @@ class Stack:
             "sqlite+pysqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False}
         )
         AuthBase.metadata.create_all(self.engine)
+        create_refresh_tokens(self.engine)
         self.mailer = FakeResetMailer(fail=mail_fails)
         self.clock = FakeClock()
         self.events = InMemoryBusinessEventLogger()
@@ -71,6 +76,8 @@ class Stack:
         with SqlAlchemyUnitOfWork(self.engine) as work:
             work.users.add(user)
             work.commit()
+        add_refresh_token(self.engine, user.id, f"{email}-1")
+        add_refresh_token(self.engine, user.id, f"{email}-2")
 
     def scalar(self, sql: str) -> Any:
         with self.engine.connect() as connection:
@@ -204,7 +211,7 @@ class TestReset:
 
         assert response.status_code == 200
         assert stack.scalar("SELECT password_hash FROM users").startswith("hashed::")
-        assert stack.scalar("SELECT COUNT(*) FROM session_revocations") == 1
+        assert stack.scalar("SELECT COUNT(*) FROM refresh_tokens") == 0
         assert stack.mailer.changes == [EMAIL]
 
     async def test_the_link_cannot_be_used_twice(

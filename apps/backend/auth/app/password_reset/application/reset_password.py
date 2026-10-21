@@ -55,7 +55,7 @@ class ResetPasswordUseCase:
                 )
                 raise InvalidResetTokenError
             work.accounts.change_password(user_id, password_hash)
-            work.sessions.revoke_all(user_id, now)
+            revoked_sessions = work.sessions.revoke_all(user_id, now)
             account = work.accounts.find_by_id(user_id)
             work.commit()
         self._events.log(
@@ -63,6 +63,7 @@ class ResetPasswordUseCase:
                 catalog.RESET_COMPLETED,
                 resource_type=catalog.RESOURCE_ACCOUNT,
                 resource_id=str(user_id),
+                attributes={"sessions_revoked": revoked_sessions},
             )
         )
         return None if account is None else PendingChangeNotice(account.email)

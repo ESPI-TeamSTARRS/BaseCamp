@@ -14,7 +14,7 @@ Tranches verticales Clean Architecture (`domain / application / infrastructure /
 | `health` | liveness (`GetHealthUseCase`) et readiness (`GetReadinessUseCase`, sonde `DatabaseProbe`) |
 | `service_token` | jetons de service : émission (`IssueServiceTokenUseCase`), vérification (`VerifyTokenUseCase`), amorçage des clients, limitation de débit par client, `Ed25519KeyStore` (lecture des clés montées) |
 | `registration` | inscription et vérification d'email : `RegisterAccountUseCase`, `VerifyEmailUseCase`, `PasswordPolicy`, `EmailAddress`, dépôts SQLAlchemy dans une unité de travail, hachage argon2id, envoi SMTP |
-| `password_reset` | réinitialisation du mot de passe : `RequestPasswordResetUseCase`, `ResetPasswordUseCase`, port `SessionRevoker`, limite par adresse en base; réutilise le domaine de `registration` (`PasswordPolicy`, `EmailAddress`, horloge, jetons, hachage) |
+| `password_reset` | réinitialisation du mot de passe : `RequestPasswordResetUseCase`, `ResetPasswordUseCase`, port `SessionRevoker` (supprime les jetons de rafraîchissement), limite par adresse en base; réutilise le domaine de `registration` (`PasswordPolicy`, `EmailAddress`, horloge, jetons, hachage) |
 | `login` | connexion et jetons d'accès clients : `LoginAccountUseCase`, `GetCurrentAccountUseCase`, `GetPublicKeysUseCase`, trousseau Ed25519 (`Ed25519KeyRing`, `LazyEd25519KeyRing`), signature et vérification JWT (`JwtAccessTokenSigner`, `JwtAccessTokenVerifier`), vérificateur argon2id avec hachage factice, dépôts SQLAlchemy |
 
 Les autres tranches métier (rafraîchissement, déconnexion) s'ajoutent à côté; leurs routes se documentent ici. Le câblage de chaque tranche est dans son `composition.py` ou `wiring.py` (seul endroit qui importe l'infrastructure). `login` ne dépend d'aucune autre tranche : elle déclare ses propres modèles sur la table `users` (colonnes lues seulement) avec une base SQLAlchemy distincte; seul `app/login/composition.py` réutilise `Ed25519KeyStore` pour lire le secret de signature monté, afin que jetons clients et jetons de service partagent la même clé et le même `kid`.
@@ -54,12 +54,12 @@ Jeton aléatoire de 256 bits (`secrets.token_urlsafe(32)`), **seul son SHA-256 e
 - Jeton inconnu, expiré, déjà utilisé ou remplacé : le même 400 générique.
 - Panne d'email : réponse inchangée, événement `auth.email_delivery_failed` (`kind` = `password_reset` ou `password_changed`).
 
-#### Point d'intégration des sessions (`SessionRevoker`)
-Les jetons de rafraîchissement sont créés par le ticket de connexion (WORK-34), qui n'existe pas encore dans cette base. Le cas d'usage dépend donc du port `app/password_reset/domain/interfaces/session_revoker.py` (`revoke_all(user_id, now)`), appelé **dans la transaction** du changement de mot de passe, et testé avec un faux. L'implémentation actuelle (`SqlAlchemySessionRevoker`) écrit un seuil par compte dans `session_revocations(user_id, revoked_at)` : toute session émise avant `revoked_at` est invalide.
+#### Sessions après un changement de mot de passe (`SessionRevoker`)
+Le cas d'usage dépend du port `app/password_reset/domain/interfaces/session_revoker.py` (`revoke_all(user_id, now)`, qui renvoie le nombre de sessions révoquées), appelé **dans la transaction** du changement de mot de passe. L'adaptateur `SqlAlchemySessionRevoker` **supprime tous les jetons de rafraîchissement du compte** (`refresh_tokens`, la famille entière) : un jeton supprimé est inconnu au rafraîchissement, donc refusé; si la transaction échoue, rien n'est supprimé. Il ne dépend pas de la tranche `login` : il ne voit que la colonne `user_id` de la table.
 
-Pour brancher la connexion sans refonte, au choix du ticket de connexion :
-1. **Contrôler le seuil** : la vérification d'un jeton de rafraîchissement (et d'accès) refuse un `iat` antérieur à `session_revocations.revoked_at` du compte; rien à changer côté réinitialisation.
-2. **Remplacer l'adaptateur** : écrire un `SessionRevoker` qui marque les lignes de la table des jetons de rafraîchissement comme révoquées, et le substituer dans `app/password_reset/composition.py` (seul fichier à modifier). Le seuil peut alors rester ou être supprimé par une migration contract.
+Un jeton d'accès déjà émis n'est pas révoqué : il reste valide jusqu'à son expiration (15 minutes au plus), comme pour une désactivation de compte. Seul `/me` consulte l'état du compte.
+
+Le cas d'usage journalise `auth.password_reset_completed` avec l'attribut `sessions_revoked` (nombre de jetons de rafraîchissement supprimés, jamais leur valeur).
 
 Le futur changement de mot de passe depuis « mon compte » réutilisera le même port.
 
@@ -113,7 +113,7 @@ Migrations `0004_users_et_verification` (down_revision `0003`), `0006_reinitiali
 | `email_verification_tokens` | `id`, `user_id` (clé étrangère, suppression en cascade), `token_hash` (SHA-256 hex, unique), `expires_at`, `used_at` (nullable) |
 | `password_reset_tokens` | `id`, `user_id` (clé étrangère, suppression en cascade), `token_hash` (SHA-256 hex, unique), `expires_at`, `used_at` (nullable) |
 | `password_reset_attempts` | `id`, `email_fingerprint` (HMAC de l'adresse, indexé), `requested_at` (indexé); purgée à chaque demande au-delà de la fenêtre d'une heure |
-| `session_revocations` | `user_id` (clé primaire et étrangère, cascade), `revoked_at` : seuil de révocation des sessions |
+| `session_revocations` | **plus utilisée** (WORK-36 l'écrivait, la révocation passe désormais par la suppression des `refresh_tokens`); conservée par la migration 0006 le temps de l'ancienne version, une migration *contract* ultérieure la supprimera |
 | `refresh_tokens` | `id`, `user_id` (clé étrangère, suppression en cascade, indexé), `token_hash` (SHA-256 hex, unique), `created_at`, `expires_at` (0007) |
 
 Les horodatages sont en UTC avec fuseau. Un test compare la migration aux modèles SQLAlchemy (aucune dérive possible sans échec). Les routes `/internal/*` (appels entre services) ne sont jamais routées par la passerelle : un appel externe reçoit 404 (couvert par le test e2e `test_auth_stack.e2e.py`).

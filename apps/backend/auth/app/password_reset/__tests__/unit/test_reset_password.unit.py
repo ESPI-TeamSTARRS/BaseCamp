@@ -76,6 +76,7 @@ class TestSuccess:
         [event] = harness.events.events
         assert (event.event, event.outcome) == ("auth.password_reset_completed", Outcome.SUCCESS)
         assert event.resource_id == str(harness.user_id)
+        assert dict(event.attributes) == {"sessions_revoked": 2}
         assert harness.token not in repr(event)
         assert NEW_PASSWORD not in repr(event)
 
