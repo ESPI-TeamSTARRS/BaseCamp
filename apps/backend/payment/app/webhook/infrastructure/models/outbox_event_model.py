@@ -15,7 +15,10 @@ class OutboxEventModel(Base):
 
     __tablename__ = "outbox"
     __table_args__ = (
-        CheckConstraint("status IN ('pending', 'delivered', 'dead')", name="ck_outbox_status"),
+        CheckConstraint(
+            "status IN ('pending', 'delivered', 'dead', 'rejected_by_receiver')",
+            name="ck_outbox_status",
+        ),
         CheckConstraint("attempts >= 0", name="ck_outbox_attempts_positive"),
         Index("ix_outbox_status_next_attempt_at", "status", "next_attempt_at"),
     )
@@ -24,7 +27,7 @@ class OutboxEventModel(Base):
     event_type: Mapped[str] = mapped_column(String(32))
     intent_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("payment_intents.id"), index=True)
     body: Mapped[str] = mapped_column(Text)
-    status: Mapped[str] = mapped_column(String(16))
+    status: Mapped[str] = mapped_column(String(32))
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
