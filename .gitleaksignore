@@ -1,3 +1,12 @@
 # Jeton factice d'un test d'integration (historique de la PR WORK-33), pas un secret.
 8512686cd1ab1ede325b7bf2bc534e61625afbfe:apps/backend/auth/app/registration/__tests__/integration/test_smtp_registration_mailer.integ.py:generic-api-key:13
 eaa6b432029535ac6ab51d2fba7df7fe199e8ba5:apps/backend/auth/app/registration/__tests__/integration/test_smtp_registration_mailer.integ.py:generic-api-key:13
+
+# Jeton factice de test (réinitialisation du mot de passe, historique de la branche WORK-36), pas un secret.
+490845a3b60e382554dd5bfbdfa1f9f5a55bb2d3:apps/backend/auth/app/password_reset/__tests__/integration/test_password_reset_router.integ.py:generic-api-key:32
+490845a3b60e382554dd5bfbdfa1f9f5a55bb2d3:apps/backend/auth/app/password_reset/__tests__/integration/test_smtp_password_reset_mailer.integ.py:generic-api-key:14
+490845a3b60e382554dd5bfbdfa1f9f5a55bb2d3:apps/backend/auth/app/password_reset/__tests__/unit/test_reset_password.unit.py:generic-api-key:22
+490845a3b60e382554dd5bfbdfa1f9f5a55bb2d3:apps/backend/auth/app/password_reset/__tests__/unit/test_reset_password.unit.py:generic-api-key:83
+6bb5c818d829cb4d6b16d4bccc326679f1ab584e:apps/backend/auth/app/password_reset/__tests__/integration/test_password_reset_router.integ.py:generic-api-key:32
+6bb5c818d829cb4d6b16d4bccc326679f1ab584e:apps/backend/auth/app/password_reset/__tests__/integration/test_smtp_password_reset_mailer.integ.py:generic-api-key:14
+6bb5c818d829cb4d6b16d4bccc326679f1ab584e:apps/backend/auth/app/password_reset/__tests__/unit/test_reset_password.unit.py:generic-api-key:22
