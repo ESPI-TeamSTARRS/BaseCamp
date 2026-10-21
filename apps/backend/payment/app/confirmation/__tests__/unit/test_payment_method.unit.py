@@ -13,5 +13,5 @@ class TestPaymentMethod:
 
     @pytest.mark.parametrize("value", ["4242424242424242", "pm_card_visa", "", "PM_TEST_SUCCESS"])
     def test_any_other_value_is_refused(self, value: str) -> None:
-        with pytest.raises(ValueError):  # noqa: PT011
+        with pytest.raises(ValueError):
             PaymentMethod(value)
