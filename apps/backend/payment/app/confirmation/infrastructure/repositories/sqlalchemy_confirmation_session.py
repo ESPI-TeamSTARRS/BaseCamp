@@ -15,12 +15,17 @@ from app.intent.infrastructure.mappers.payment_intent_mapper import PaymentInten
 from app.intent.infrastructure.models.payment_intent_model import PaymentIntentModel
 from app.ledger.domain.entities.ledger_transaction import LedgerTransaction
 from app.ledger.domain.interfaces.ledger_repository import LedgerRepository
+from app.webhook.domain.entities.outbox_event import OutboxEvent
+from app.webhook.domain.interfaces.outbox_repository import OutboxRepository
 
 
 class SqlAlchemyConfirmationSession(ConfirmationSession):
-    def __init__(self, session: Session, ledger: LedgerRepository) -> None:
+    def __init__(
+        self, session: Session, ledger: LedgerRepository, outbox: OutboxRepository
+    ) -> None:
         self._session = session
         self._ledger = ledger
+        self._outbox = outbox
 
     def lock_intent(self, intent_id: UUID) -> PaymentIntent | None:
         model = self._session.scalar(
@@ -35,7 +40,11 @@ class SqlAlchemyConfirmationSession(ConfirmationSession):
         return ConfirmationRecord(row.caller, row.key, row.request_hash, row.intent_id)
 
     def save(
-        self, intent: PaymentIntent, record: ConfirmationRecord, ledger: LedgerTransaction | None
+        self,
+        intent: PaymentIntent,
+        record: ConfirmationRecord,
+        ledger: LedgerTransaction | None,
+        outbox_event: OutboxEvent,
     ) -> None:
         model = self._session.get(PaymentIntentModel, intent.id)
         if model is None:  # impossible : l'intention est verrouillée par la même transaction
@@ -52,6 +61,7 @@ class SqlAlchemyConfirmationSession(ConfirmationSession):
         self._flush_key()
         if ledger:
             self._ledger.add(ledger)
+        self._outbox.add(outbox_event)
 
     def _flush_key(self) -> None:
         try:

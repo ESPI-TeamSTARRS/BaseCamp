@@ -40,6 +40,7 @@ from app.intent.infrastructure.repositories.sqlalchemy_payment_intent_repository
     SqlAlchemyPaymentIntentRepository,
 )
 from app.ledger.infrastructure.models.ledger_entry_model import LedgerEntryModel
+from app.webhook.infrastructure.models.outbox_event_model import OutboxEventModel
 
 DATABASE_URL = os.environ.get("PAYMENT_TEST_DATABASE_URL")
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
@@ -103,6 +104,11 @@ def _count_entries(engine: Engine) -> int:
         return session.scalar(select(func.count()).select_from(LedgerEntryModel)) or 0
 
 
+def _count_outbox(engine: Engine) -> int:
+    with Session(engine) as session:
+        return session.scalar(select(func.count()).select_from(OutboxEventModel)) or 0
+
+
 class TestConcurrency:
     def test_two_concurrent_confirmations_of_the_same_intent_only_one_succeeds(
         self, engine: Engine
@@ -127,6 +133,7 @@ class TestConcurrency:
 
         assert sorted(outcomes) == ["conflict", "ok"]
         assert _count_entries(engine) == 2
+        assert _count_outbox(engine) == 1
 
     def test_two_concurrent_confirmations_with_the_same_key_write_once(
         self, engine: Engine

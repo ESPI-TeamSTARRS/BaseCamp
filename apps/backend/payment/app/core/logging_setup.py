@@ -12,7 +12,9 @@ def install_log_redaction(settings: Settings) -> None:
     Les événements métier passent par `BusinessEventLogger` (voir docs/development/logging.md);
     ce filtre couvre le reste, par exemple la pile d'une exception inattendue. Idempotent.
     """
-    redaction = SecretRedactionFilter([*settings.service_tokens.values(), settings.db_password])
+    redaction = SecretRedactionFilter(
+        [*settings.service_tokens.values(), settings.db_password, *settings.webhook_secrets]
+    )
     for name in _FRAMEWORK_LOGGERS:
         for handler in logging.getLogger(name).handlers:
             for old in [f for f in handler.filters if isinstance(f, SecretRedactionFilter)]:

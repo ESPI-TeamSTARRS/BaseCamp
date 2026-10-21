@@ -126,6 +126,9 @@ jobs:
       # Surcharge de test : publie l'API de Mailpit sur 127.0.0.1 pour lire les emails d'inscription.
       COMPOSE_FILE: docker-compose.yml:docker-compose.e2e.yml
       E2E_MAILPIT_URL: http://127.0.0.1:8025
+      # Webhook payment -> shop : recepteur factice dans le conteneur shop, relances rapprochees.
+      PAYMENT_WEBHOOK_URL: http://shop:9100/webhooks/payment
+      PAYMENT_WEBHOOK_BACKOFF_BASE_SECONDS: "2"
     steps:
       - uses: actions/checkout@v4
       - name: Fichier .env de CI (valeurs factices) et cles de signature auth (non versionnees)
@@ -162,8 +165,8 @@ jobs:
             NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_dummy
           cache-from: type=gha,scope=front
           cache-to: type=gha,scope=front,mode=max
-      - name: Pile minimale (Traefik, front, shop, auth, payment, Mailpit, bucket d images et leurs bases) healthy
-        run: docker compose up -d --no-build --wait --wait-timeout 120 --scale payment=2 traefik payment seaweedfs mailpit
+      - name: Pile minimale (Traefik, front, shop, auth, payment et son worker, Mailpit, bucket d images et leurs bases) healthy
+        run: docker compose up -d --no-build --wait --wait-timeout 120 --scale payment=2 traefik payment payment-worker seaweedfs mailpit
       - name: Amorcage des clients de service (jetons entre services) rejouable sans effet
         run: docker compose run --rm --no-deps auth-bootstrap
       - name: Amorcage du bucket (visuels du catalogue)
@@ -188,7 +191,7 @@ jobs:
         run: sh scripts/check-payment-isolation.sh
       - run: uv sync --frozen
         working-directory: apps/backend/payment
-      - name: Scenarios e2e de payment (charge, attaque, 2 instances, arret) depuis l'exterieur
+      - name: Scenarios e2e de payment (charge, attaque, 2 instances, arret, webhook signe) depuis l'exterieur
         run: uv run poe test:e2e
         working-directory: apps/backend/payment
       - name: Logs des conteneurs
