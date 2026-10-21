@@ -10,7 +10,7 @@ from app.registration.infrastructure.clients.smtp_registration_mailer import (
     SmtpRegistrationMailer,
 )
 
-TOKEN = "jeton-de-test-0123456789-abcdefghijklmnopqrstu"
+TOKEN = "jeton-factice"
 
 
 class FakeSmtp:
