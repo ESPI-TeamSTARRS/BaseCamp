@@ -6,8 +6,8 @@ from sqlalchemy import StaticPool, create_engine
 
 from app.core.config import Settings
 from app.intent.infrastructure.models.base import Base
-from app.intent.wiring import build_intent_services
 from app.main import create_app
+from app.ratelimit.infrastructure.models.base import Base as RateLimitBase
 
 TOKEN = "tok-shop-test-0001"
 OTHER_TOKEN = "tok-admin-test-0002"
@@ -30,11 +30,9 @@ def client() -> Iterator[TestClient]:
         "sqlite+pysqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
-    application = create_app()
+    RateLimitBase.metadata.create_all(engine)
     settings = Settings(service_tokens={"shop": TOKEN, "admin": OTHER_TOKEN})
-    application.state.intent_services = build_intent_services(
-        engine, settings, application.state.events
-    )
+    application = create_app(settings, engine)
     with TestClient(application) as test_client:
         yield test_client
 
