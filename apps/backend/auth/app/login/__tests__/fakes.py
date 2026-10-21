@@ -22,7 +22,7 @@ from app.login.domain.interfaces.refresh_token_repository import RefreshTokenRep
 from app.login.domain.interfaces.unit_of_work import UnitOfWork
 
 START = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
-PASSWORD = "sentier-du-mont-blanc"  # noqa: S105
+PASSWORD = "sentier-du-mont-blanc"
 EMAIL = "camille@example.com"
 
 

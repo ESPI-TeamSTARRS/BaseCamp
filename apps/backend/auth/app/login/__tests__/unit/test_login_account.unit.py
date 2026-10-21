@@ -51,7 +51,7 @@ class TestSuccessfulLogin:
 
         assert result.access_token == f"signed::{account.id}"
         assert result.expires_in == ACCESS_TTL
-        assert result.refresh_token == "raw-refresh-token"  # noqa: S105
+        assert result.refresh_token == "raw-refresh-token"
         assert result.refresh_expires_in == REFRESH_TTL
 
     def test_access_token_claims_describe_the_account_for_15_minutes(self) -> None:

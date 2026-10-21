@@ -1,7 +1,7 @@
 import base64
 import hashlib
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from cryptography.hazmat.primitives import serialization
@@ -57,14 +57,18 @@ class Ed25519KeyRing(PublicKeySet):
 
     @classmethod
     def from_files(cls, private_key_path: Path, previous_keys_dir: Path | None) -> "Ed25519KeyRing":
-        private = cls._load_private(private_key_path)
+        return cls.from_pem(private_key_path.read_bytes(), previous_keys_dir)
+
+    @classmethod
+    def from_pem(cls, private_key_pem: bytes, previous_keys_dir: Path | None) -> "Ed25519KeyRing":
+        private = cls._load_private(private_key_pem)
         previous = [] if previous_keys_dir is None else cls._load_previous(previous_keys_dir)
         return cls(private, previous)
 
     @staticmethod
-    def _load_private(path: Path) -> Ed25519PrivateKey:
+    def _load_private(pem: bytes) -> Ed25519PrivateKey:
         try:
-            key = serialization.load_pem_private_key(path.read_bytes(), password=None)
+            key = serialization.load_pem_private_key(pem, password=None)
         except ValueError:
             raise ValueError(KEY_ERROR) from None
         if not isinstance(key, Ed25519PrivateKey):
@@ -104,3 +108,41 @@ class Ed25519KeyRing(PublicKeySet):
 
     def __repr__(self) -> str:
         return f"Ed25519KeyRing(kid={self.signing_kid!r}, keys={len(self._order)})"
+
+
+class LazyEd25519KeyRing(Ed25519KeyRing):
+    """Trousseau lu au premier usage : le service demarre et repond sur /health meme sans secrets.
+
+    Les secrets montes sont lus par `Ed25519KeyStore` (tranche des jetons de service) : une seule
+    lecture de la cle privee pour les deux sortes de jetons, donc le meme `kid`.
+    """
+
+    def __init__(self, load: Callable[[], Ed25519KeyRing]) -> None:
+        self._load = load
+        self._ring: Ed25519KeyRing | None = None
+
+    def _loaded(self) -> Ed25519KeyRing:
+        if self._ring is None:
+            self._ring = self._load()
+        return self._ring
+
+    @property
+    def signing_kid(self) -> str:
+        return self._loaded().signing_kid
+
+    @property
+    def signing_key(self) -> Ed25519PrivateKey:
+        return self._loaded().signing_key
+
+    @property
+    def signing_public_key(self) -> Ed25519PublicKey:
+        return self._loaded().signing_public_key
+
+    def verification_key(self, kid: str) -> Ed25519PublicKey | None:
+        return self._loaded().verification_key(kid)
+
+    def public_keys(self) -> tuple[PublicKey, ...]:
+        return self._loaded().public_keys()
+
+    def __repr__(self) -> str:
+        return "LazyEd25519KeyRing()"

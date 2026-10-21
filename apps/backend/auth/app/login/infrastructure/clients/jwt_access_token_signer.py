@@ -5,11 +5,11 @@ from app.login.domain.interfaces.access_token_signer import AccessTokenSigner
 from app.login.infrastructure.clients.ed25519_key_ring import Ed25519KeyRing
 
 ALGORITHM = "EdDSA"
-TOKEN_USE_ACCESS = "access"  # noqa: S105
+TOKEN_USE_CLIENT = "client"  # noqa: S105
 
 
 class JwtAccessTokenSigner(AccessTokenSigner):
-    """JWT d'acces client : `aud` dedie et `token_use`=access, pour ne jamais le confondre
+    """JWT d'acces client : `aud` dedie et `token_use`=client, pour ne jamais le confondre
     avec un futur jeton de service.
     """
 
@@ -25,7 +25,7 @@ class JwtAccessTokenSigner(AccessTokenSigner):
             "sub": str(claims.subject),
             "roles": list(claims.roles),
             "email_verified": claims.email_verified,
-            "token_use": TOKEN_USE_ACCESS,
+            "token_use": TOKEN_USE_CLIENT,
             "iat": int(claims.issued_at.timestamp()),
             "exp": int(claims.expires_at.timestamp()),
             "jti": claims.token_id,

@@ -81,7 +81,7 @@ class TestPublishedClaims:
         assert payload["sub"] == str(subject.subject)
         assert payload["roles"] == ["operator"]
         assert payload["email_verified"] is True
-        assert payload["token_use"] == "access"  # noqa: S105
+        assert payload["token_use"] == "client"
         assert payload["jti"] == subject.token_id
         assert payload["exp"] - payload["iat"] == 900
 

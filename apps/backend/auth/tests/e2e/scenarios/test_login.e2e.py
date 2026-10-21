@@ -14,12 +14,14 @@ import subprocess
 import time
 import uuid
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import httpx
 import jwt
 import pytest
 
+REPO_ROOT = Path(__file__).resolve().parents[6]  # docker compose se lance depuis la racine
 BASE_URL = os.environ.get("E2E_BASE_URL", "http://127.0.0.1:8080")
 PHRASE = "Randonnee-GR20-" + uuid.uuid4().hex[:12]
 ISSUER = "basecamp-auth"
@@ -87,7 +89,7 @@ class TestLogin:
         }  # fmt: skip
         assert claims["roles"] == ["customer"]
         assert claims["email_verified"] is False
-        assert claims["token_use"] == "access"  # noqa: S105
+        assert claims["token_use"] == "client"
         assert claims["exp"] - claims["iat"] == 900
 
     def test_the_refresh_token_is_a_strict_httponly_secure_cookie_scoped_to_auth(
@@ -233,6 +235,7 @@ class TestDisabledAccountAndLogs:
             text=True,
             timeout=180,
             check=True,
+            cwd=REPO_ROOT,
         ).stdout
 
         assert "auth.login_succeeded" in logs
@@ -244,4 +247,6 @@ class TestDisabledAccountAndLogs:
     def _sql(statement: str) -> None:
         command = ["docker", "compose", "exec", "-T", "postgres-auth"]
         command += ["psql", "-U", "auth", "-d", "auth", "-c", statement]
-        subprocess.run(command, capture_output=True, text=True, timeout=180, check=True)  # noqa: S603
+        subprocess.run(  # noqa: S603
+            command, capture_output=True, text=True, timeout=180, check=True, cwd=REPO_ROOT
+        )

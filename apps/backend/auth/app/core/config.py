@@ -43,23 +43,17 @@ class Settings(BaseSettings):
     # Origine publique du site : base des liens envoyes par email.
     public_base_url: str = "http://localhost:8080"
 
-    # Jetons d'acces (JWT Ed25519). Cle privee : fichier monte en secret Docker, jamais en variable.
-    jwt_private_key_file: str = ""  # APP_JWT_PRIVATE_KEY_FILE, obligatoire hors dev et local
+    # Jetons d'acces des clients (WORK-34), signes avec la meme cle que les jetons de service.
     # Dossier facultatif de cles publiques PEM precedentes, gardees pendant une rotation.
     jwt_previous_public_keys_dir: str = ""
-    jwt_issuer: str = "basecamp-auth"
     jwt_audience: str = "basecamp-client-api"
     access_token_ttl_seconds: int = Field(default=900, gt=0)
     refresh_token_ttl_seconds: int = Field(default=604800, gt=0)
 
     @model_validator(mode="after")
-    def _require_secrets_outside_development(self) -> "Settings":
-        if self.environment in DEVELOPMENT_ENVIRONMENTS:
-            return self
-        if not self.log_pseudonym_key:
+    def _require_pseudonym_key_outside_development(self) -> "Settings":
+        if self.environment not in DEVELOPMENT_ENVIRONMENTS and not self.log_pseudonym_key:
             raise ValueError("APP_LOG_PSEUDONYM_KEY is required outside dev and local")
-        if not self.jwt_private_key_file:
-            raise ValueError("APP_JWT_PRIVATE_KEY_FILE is required outside dev and local")
         return self
 
     @property
