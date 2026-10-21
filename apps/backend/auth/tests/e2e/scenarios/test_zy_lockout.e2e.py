@@ -1,4 +1,9 @@
-"""Verrouillage progressif sur la pile reelle : l'etat est en base (Postgres), pas en memoire."""
+"""Verrouillage progressif sur la pile reelle : l'etat est en base (Postgres), pas en memoire.
+
+Le nom place ce fichier apres les autres scenarios d'auth (et avant `test_zz_gateway_protection`) :
+`login` et `register` partagent un seuil par IP a la passerelle (60/min, rafale 30), que ces
+scenarios consomment.
+"""
 
 import os
 import uuid
