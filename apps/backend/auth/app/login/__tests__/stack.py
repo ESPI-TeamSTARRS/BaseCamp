@@ -14,6 +14,7 @@ from app.lockout.infrastructure.repositories.sqlalchemy_lockout_unit_of_work imp
 )
 from app.login.__tests__.fakes import FakeClock, FakeEmailFingerprinter
 from app.login.__tests__.schema import insert_user, migrated_engine
+from app.login.application.authorize_request import AuthorizeRequestUseCase
 from app.login.application.get_current_account import GetCurrentAccountUseCase
 from app.login.application.get_public_keys import GetPublicKeysUseCase
 from app.login.application.login_account import LoginAccountUseCase
@@ -71,6 +72,9 @@ class LoginStack:
         )
         self.application.state.logout_session_use_case = LogoutSessionUseCase(
             factory, refresh_tokens, events
+        )
+        self.application.state.authorize_request_use_case = AuthorizeRequestUseCase(
+            factory, access_verifier, self.clock, events
         )
         self.application.state.get_current_account_use_case = GetCurrentAccountUseCase(
             factory, access_verifier, self.clock, events

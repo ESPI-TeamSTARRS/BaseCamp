@@ -7,9 +7,11 @@ TOKEN_REFRESHED = "auth.token_refreshed"  # noqa: S105
 REFRESH_REJECTED = "auth.refresh_rejected"
 REFRESH_REUSE_DETECTED = "auth.refresh_reuse_detected"
 LOGOUT_COMPLETED = "auth.logout_completed"
+ACCESS_DENIED = "auth.access_denied"
 
 REASON_INVALID_CREDENTIALS = "invalid_credentials"
 REASON_INVALID_REFRESH_TOKEN = "invalid_refresh_token"  # noqa: S105
+REASON_ROLE_REQUIRED = "role_required"
 REASON_REFRESH_REUSED = "refresh_token_reused"
 
 CAUSE_UNKNOWN_ACCOUNT = "unknown_account"

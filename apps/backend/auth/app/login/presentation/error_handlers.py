@@ -3,6 +3,7 @@ from typing import cast
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
+from app.login.application.forbidden_error import ForbiddenError
 from app.login.application.invalid_credentials_error import InvalidCredentialsError
 from app.login.application.invalid_refresh_token_error import InvalidRefreshTokenError
 from app.login.application.unauthenticated_error import UnauthenticatedError
@@ -41,7 +42,18 @@ def _invalid_refresh_token(_: Request, error: Exception) -> JSONResponse:
     return response
 
 
+def _forbidden(_: Request, error: Exception) -> JSONResponse:
+    """Une seule reponse pour tout role insuffisant."""
+    forbidden = cast(ForbiddenError, error)
+    return JSONResponse(
+        status_code=status.HTTP_403_FORBIDDEN,
+        content={"detail": forbidden.message},
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 def register_login_error_handlers(application: FastAPI) -> None:
     application.add_exception_handler(InvalidCredentialsError, _invalid_credentials)
     application.add_exception_handler(UnauthenticatedError, _unauthenticated)
     application.add_exception_handler(InvalidRefreshTokenError, _invalid_refresh_token)
+    application.add_exception_handler(ForbiddenError, _forbidden)
