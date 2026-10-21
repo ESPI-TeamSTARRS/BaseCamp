@@ -176,13 +176,14 @@ class FakeConfirmationUnitOfWork(ConfirmationUnitOfWork):
 
 
 class RecordingSender(ConfirmationSender):
-    def __init__(self, failing: bool = False) -> None:
+    def __init__(self, failing: bool = False, reason: str = "delivery_failed") -> None:
         self.sent: list[ConfirmationMail] = []
         self._failing = failing
+        self._reason = reason
 
     def send(self, mail: ConfirmationMail) -> None:
         if self._failing:
-            raise ConfirmationDeliveryError
+            raise ConfirmationDeliveryError(self._reason)
         self.sent.append(mail)
 
 

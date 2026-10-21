@@ -48,6 +48,13 @@ class Settings(BaseSettings):
     smtp_from: str = "commandes@basecamp.local"
     smtp_timeout_seconds: float = 3.0
 
+    # Transport des emails : "smtp" (Mailpit en dev et en CI) ou "n8n" (webhook, production sans relais SMTP).
+    # Avec "n8n", l'URL et le secret sont obligatoires (démarrage refusé sinon); le secret n'est jamais versionné.
+    mail_transport: Literal["smtp", "n8n"] = "smtp"
+    n8n_mail_url: str = ""
+    n8n_mail_secret: str = ""
+    n8n_mail_timeout_seconds: float = 5.0
+
     # Identification des clients connectes (WORK-40) : jetons d'acces signes par `auth`, verifies
     # localement avec ses cles publiques (JWKS) lues sur le reseau interne `app`.
     auth_jwks_url: str = "http://auth:8000/.well-known/jwks.json"
@@ -79,6 +86,14 @@ class Settings(BaseSettings):
     log_pseudonym_key: str = (
         ""  # cle HMAC des empreintes d'email dans les logs (APP_LOG_PSEUDONYM_KEY)
     )
+
+    @model_validator(mode="after")
+    def _require_n8n_settings(self) -> "Settings":
+        if self.mail_transport == "n8n" and not (self.n8n_mail_url and self.n8n_mail_secret):
+            raise ValueError(
+                "APP_N8N_MAIL_URL and APP_N8N_MAIL_SECRET are required with APP_MAIL_TRANSPORT=n8n"
+            )
+        return self
 
     @model_validator(mode="after")
     def _require_pseudonym_key_outside_development(self) -> "Settings":

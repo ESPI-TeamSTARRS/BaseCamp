@@ -220,3 +220,26 @@ class TestLogsFollowTheSchema:
         ]
         assert SECRET not in output and EMAIL not in output
         assert all(line["correlation_id"] == CORRELATION_ID for line in lines[:2])
+
+
+class TestMailTransportFailure:
+    async def test_a_refusal_by_the_mail_workflow_never_changes_the_webhook_answer(self) -> None:
+        stream = io.StringIO()
+        client = _Client(
+            sender=RecordingSender(failing=True, reason="http_403"),
+            events=StructlogBusinessEventLogger("basecamp-shop", stream),
+        )
+
+        response = await client.post(event_body())
+
+        assert (response.status_code, response.json()) == (200, {"status": "applied"})
+        assert client.store.targets[REFERENCE].order_status is OrderStatus.PAID
+        output = stream.getvalue()
+        lines = [json.loads(line) for line in output.splitlines() if line.strip()]
+        validator = Draft202012Validator(json.loads(SCHEMA_PATH.read_text(encoding="utf-8")))
+        for line in lines:
+            validator.validate(line)
+        (failed,) = [line for line in lines if line["event"] == "order.confirmation_email_failed"]
+        assert failed["reason"] == "http_403" and failed["outcome"] == "error"
+        assert EMAIL not in output and SECRET not in output
+        assert "BC-" in failed["resource_id"] and "body" not in failed.get("attributes", {})
