@@ -3,6 +3,7 @@ from app.core.events.business_event_logger import BusinessEventLogger
 from app.password_reset.application import password_reset_events as catalog
 from app.password_reset.application.invalid_new_password_error import InvalidNewPasswordError
 from app.password_reset.application.invalid_reset_token_error import InvalidResetTokenError
+from app.password_reset.application.pending_change_notice import PendingChangeNotice
 from app.password_reset.application.unit_of_work_factory import UnitOfWorkFactory
 from app.password_reset.domain.interfaces.password_reset_mailer import PasswordResetMailer
 from app.registration.domain.exceptions.mail_delivery_error import MailDeliveryError
@@ -11,7 +12,6 @@ from app.registration.domain.interfaces.clock import Clock
 from app.registration.domain.interfaces.password_hasher import PasswordHasher
 from app.registration.domain.interfaces.token_generator import TokenGenerator
 from app.registration.domain.services.password_policy import PasswordPolicy
-from app.registration.domain.value_objects.email_address import EmailAddress
 
 
 class ResetPasswordUseCase:
@@ -39,7 +39,7 @@ class ResetPasswordUseCase:
         self._clock = clock
         self._events = events
 
-    def execute(self, token: str, new_password: str) -> None:
+    def execute(self, token: str, new_password: str) -> PendingChangeNotice | None:
         self._check_policy(new_password)
         password_hash = self._hasher.hash(new_password)
         now = self._clock.now()
@@ -65,8 +65,7 @@ class ResetPasswordUseCase:
                 resource_id=str(user_id),
             )
         )
-        if account is not None:
-            self._notify(account.email)
+        return None if account is None else PendingChangeNotice(account.email)
 
     def _check_policy(self, password: str) -> None:
         try:
@@ -82,9 +81,9 @@ class ResetPasswordUseCase:
             )
             raise InvalidNewPasswordError(error.message) from None
 
-    def _notify(self, email: EmailAddress) -> None:
+    def notify(self, notice: PendingChangeNotice) -> None:
         try:
-            self._mailer.send_password_changed(email)
+            self._mailer.send_password_changed(notice.to)
         except MailDeliveryError:
             self._events.log(
                 BusinessEvent.error(

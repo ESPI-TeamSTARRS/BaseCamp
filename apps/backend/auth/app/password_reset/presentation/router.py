@@ -38,7 +38,10 @@ def forgot_password(
 @router.post("/reset", response_model=PasswordResetMessageResponse)
 def reset_password(
     body: ResetPasswordRequest,
+    background: BackgroundTasks,
     use_case: Annotated[ResetPasswordUseCase, Depends(get_reset_password_use_case)],
 ) -> PasswordResetMessageResponse:
-    use_case.execute(body.token.get_secret_value(), body.password.get_secret_value())
+    notice = use_case.execute(body.token.get_secret_value(), body.password.get_secret_value())
+    if notice is not None:
+        background.add_task(use_case.notify, notice)
     return PasswordResetMessageResponse(message=PASSWORD_CHANGED)

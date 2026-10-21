@@ -58,7 +58,11 @@ class TestSuccess:
     def test_it_replaces_the_hash_revokes_every_session_and_notifies_the_owner(self) -> None:
         harness = Harness()
 
-        harness.reset.execute(harness.token, NEW_PASSWORD)
+        notice = harness.reset.execute(harness.token, NEW_PASSWORD)
+
+        assert notice is not None
+        assert harness.mailer.changes == []  # la notification part apres la reponse
+        harness.reset.notify(notice)
 
         assert harness.store.password_hashes[harness.user_id].startswith("hashed::")
         assert harness.store.revocations == [(harness.user_id, harness.clock.now())]
@@ -85,7 +89,9 @@ class TestSuccess:
     def test_a_notification_failure_is_logged_and_does_not_undo_the_change(self) -> None:
         harness = Harness(mail_fails=True)
 
-        harness.reset.execute(harness.token, NEW_PASSWORD)
+        notice = harness.reset.execute(harness.token, NEW_PASSWORD)
+        assert notice is not None
+        harness.reset.notify(notice)
 
         assert harness.store.password_hashes[harness.user_id].startswith("hashed::")
         failure = harness.events.events[-1]

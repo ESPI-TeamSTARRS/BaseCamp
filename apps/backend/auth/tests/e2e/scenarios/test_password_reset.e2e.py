@@ -202,9 +202,7 @@ class TestPasswordResetFlow:
 
         responses = [forgot(client, address) for _ in range(5)]
 
-        assert {(r.status_code, r.content) for r in responses} == {
-            (202, responses[0].content)
-        }
+        assert {(r.status_code, r.content) for r in responses} == {(202, responses[0].content)}
         reset_links(mailbox, address, count=3)
         time.sleep(1.5)
         assert mailbox.count(address, "Réinitialisez") == 3
@@ -234,9 +232,7 @@ class TestPasswordResetFlow:
     def test_unknown_field_is_refused_without_being_reflected(
         self, client: httpx.Client, address: str
     ) -> None:
-        response = post(
-            client, "/api/auth/password/forgot", {"email": address, "role": "operator"}
-        )
+        response = post(client, "/api/auth/password/forgot", {"email": address, "role": "operator"})
 
         assert response.status_code == 422
         assert "operator" not in response.text
