@@ -6,3 +6,4 @@ class WebhookEventType(StrEnum):
 
     PAYMENT_SUCCEEDED = "payment.succeeded"
     PAYMENT_FAILED = "payment.failed"
+    REFUND_SUCCEEDED = "refund.succeeded"
