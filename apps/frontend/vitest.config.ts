@@ -27,6 +27,7 @@ export default defineConfig({
         'src/lib/login-api.ts',
         'src/lib/login-flow.ts',
         'src/lib/session-store.ts',
+        'src/lib/order-lookup.ts',
       ],
       thresholds: { lines: 80, functions: 80, branches: 80, statements: 80 },
     },

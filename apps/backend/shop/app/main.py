@@ -28,6 +28,11 @@ from app.order.infrastructure.repositories.sqlalchemy_order_unit_of_work import 
     SqlAlchemyOrderUnitOfWork,
 )
 from app.order.presentation.router import router as order_router
+from app.order_tracking.application.lookup_order import LookupOrderUseCase
+from app.order_tracking.infrastructure.repositories.sqlalchemy_tracked_order_reader import (
+    SqlAlchemyTrackedOrderReader,
+)
+from app.order_tracking.presentation.router import router as order_tracking_router
 from app.pay.application.start_payment import StartPaymentUseCase
 from app.pay.error_handlers import register_pay_error_handlers
 from app.pay.infrastructure.clients.http_payment_gateway import HttpPaymentGateway
@@ -64,6 +69,11 @@ def create_app() -> FastAPI:
         events,
         build_pseudonymizer(settings.log_pseudonym_key),
     )
+    application.state.lookup_order_use_case = LookupOrderUseCase(
+        SqlAlchemyTrackedOrderReader(engine),
+        events,
+        build_pseudonymizer(settings.log_pseudonym_key),
+    )
     payment_client = httpx.Client(
         base_url=settings.payment_url,
         timeout=httpx.Timeout(
@@ -85,6 +95,7 @@ def create_app() -> FastAPI:
     application.include_router(health_router)
     application.include_router(catalog_router)
     application.include_router(cart_router)
+    application.include_router(order_tracking_router)
     application.include_router(order_router)
     return application
 

@@ -15,6 +15,9 @@ Réinitialisation du mot de passe : pages `/compte/mot-de-passe-oublie` (saisie 
 
 Page `/compte/connexion` : `POST /api/auth/login` par la passerelle (`src/lib/login-api.ts`, `src/lib/login-flow.ts`, composant `LoginForm`). Un refus affiche toujours « Email ou mot de passe incorrect. », sans distinguer la cause. Le jeton d'accès est gardé **uniquement en mémoire** du module `src/lib/session-store.ts` (jamais `localStorage`, `sessionStorage` ni un cookie lisible par le script; un rechargement complet de la page l'efface); le jeton de rafraîchissement est un cookie `HttpOnly` que le script ne voit pas.
 
+## Suivi de commande
+`/suivi` remplace l'ancien texte statique par un formulaire (numéro `BC-…` et email) qui appelle `POST /api/shop/orders/lookup`. Le résultat affiche le statut (en attente de paiement, payée, expirée), les lignes figées et les totaux. Un numéro inconnu et un email erroné affichent le même message, comme côté serveur.
+
 ## Organisation
 `src/app` (routes), `src/components`, `src/context` (panier), `src/lib` (utilitaires métier), `src/types`.
 
