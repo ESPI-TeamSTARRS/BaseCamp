@@ -237,10 +237,44 @@ class TestAcknowledgedWithoutEffect:
 
         receipt = setup.receive(event_body())
 
-        assert (receipt.outcome, receipt.reason) == (WebhookOutcome.IGNORED, "order_expired")
+        assert (receipt.outcome, receipt.reason) == (WebhookOutcome.REJECTED, "order_expired")
         assert setup.store.targets[REFERENCE].order_status is OrderStatus.EXPIRED
         assert setup.store.committed_orders == []
         assert receipt.mail is None
+        stored = setup.store.events[EVENT_ID]
+        assert (stored[1], stored[2]) == (WebhookOutcome.IGNORED, "order_expired")
+
+    def test_the_same_late_payment_replayed_is_rejected_again_never_acknowledged(self) -> None:
+        setup = _Setup(store_with(OrderStatus.EXPIRED))
+        setup.receive(event_body())
+
+        again = setup.receive(event_body())
+
+        assert (again.outcome, again.reason) == (WebhookOutcome.REJECTED, "order_expired")
+        assert setup.units[1].events.recorded == []
+
+    def test_a_late_failure_on_an_expired_order_is_not_a_rejection(self) -> None:
+        setup = _Setup(store_with(OrderStatus.EXPIRED))
+
+        receipt = setup.receive(event_body(type="payment.failed"))
+
+        assert receipt.outcome is not WebhookOutcome.REJECTED
+
+    def test_other_ignored_payments_stay_acknowledged_with_200(self) -> None:
+        setup = _Setup()
+
+        receipt = setup.receive(
+            event_body(
+                data={
+                    "order_reference": REFERENCE,
+                    "amount": 1,
+                    "currency": "EUR",
+                    "status": "succeeded",
+                }
+            )
+        )
+
+        assert (receipt.outcome, receipt.reason) == (WebhookOutcome.IGNORED, "amount_mismatch")
 
     def test_an_unsupported_event_type_is_acknowledged_without_effect(self) -> None:
         setup = _Setup()
