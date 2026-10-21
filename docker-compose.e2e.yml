@@ -4,6 +4,13 @@
 # Un reseau interne (`app`) ne peut pas publier de port : Mailpit rejoint donc un reseau dedie.
 
 services:
+  # Les scenarios e2e de payment creent plus de 60 intentions (le budget de creation par minute)
+  # avec le meme appelant `shop` : sans ce plafond releve, la fenetre fixe d'une minute les rend
+  # intermittents selon l'instant de lancement. Le 429 reste verifie par le scenario de lecture.
+  payment:
+    environment:
+      APP_RATE_LIMIT_CREATE_PER_WINDOW: "600"
+
   mailpit:
     ports:
       - "127.0.0.1:${MAILPIT_PORT:-8025}:8025"
