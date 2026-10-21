@@ -1,0 +1,43 @@
+name: Controle de l'App de release
+
+# Verifie, sans rien creer, que la GitHub App peut ouvrir une PR (droit « Pull requests » en ecriture).
+# A lancer a la main apres un changement de permissions : Actions > Controle de l'App de release > Run workflow.
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  check:
+    name: check-app
+    runs-on: ubuntu-latest
+    steps:
+      - name: Jeton de la GitHub App
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+      - name: Droit de creer une PR
+        env:
+          TOKEN: ${{ steps.app.outputs.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Creation d'une PR volontairement invalide (branche inexistante) :
+          # 422 = le droit existe (l'API refuse seulement le contenu), 403 = droit manquant.
+          code="$(curl -s -o "$RUNNER_TEMP/reponse.json" -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPO/pulls" \
+            -d '{"title":"controle","head":"branche-inexistante-controle","base":"main"}')"
+          echo "Code HTTP : $code"
+          if [[ "$code" == 422 ]]; then
+            echo "OK : l'App peut creer des pull requests."
+          elif [[ "$code" == 403 ]]; then
+            echo "KO : l'App n'a pas le droit Pull requests (ecriture) sur ce depot."
+            exit 1
+          else
+            echo "Reponse inattendue :"
+            cat "$RUNNER_TEMP/reponse.json"
+            exit 1
+          fi
