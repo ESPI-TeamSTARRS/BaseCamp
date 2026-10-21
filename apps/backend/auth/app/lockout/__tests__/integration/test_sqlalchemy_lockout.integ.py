@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from pathlib import Path
 from threading import Barrier
+from types import ModuleType
 
 import pytest
 from alembic.autogenerate import compare_metadata
@@ -24,7 +25,7 @@ MIGRATION = Path(__file__).resolve().parents[4] / "alembic" / "versions" / "0009
 SUBJECT = "fp-camille"
 
 
-def load_migration():  # type: ignore[no-untyped-def]
+def load_migration() -> ModuleType:
     spec = importlib.util.spec_from_file_location("0009_login_lockouts", MIGRATION)
     assert spec is not None
     assert spec.loader is not None
@@ -167,10 +168,10 @@ class TestConcurrency:
 
 
 class TestMigration:
-    def test_it_follows_revision_0007(self) -> None:
+    def test_it_follows_revision_0008(self) -> None:
         migration = load_migration()
 
-        assert (migration.revision, migration.down_revision) == ("0009", "0007")
+        assert (migration.revision, migration.down_revision) == ("0009", "0008")
 
     def test_upgrade_matches_the_model(self, engine: Engine) -> None:
         with engine.begin() as connection:

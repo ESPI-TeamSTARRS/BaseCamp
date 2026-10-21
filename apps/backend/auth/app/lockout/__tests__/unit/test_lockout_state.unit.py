@@ -1,4 +1,5 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
+from typing import Any
 
 import pytest
 
@@ -9,7 +10,17 @@ from app.lockout.domain.entities.lockout_state import LockoutState
 MINUTE = timedelta(minutes=1)
 
 
-def fail(state: LockoutState, times: int, start=START, every=timedelta(seconds=10)):  # type: ignore[no-untyped-def]
+def until(state: LockoutState) -> datetime:
+    assert state.locked_until is not None
+    return state.locked_until
+
+
+def fail(
+    state: LockoutState,
+    times: int,
+    start: datetime = START,
+    every: timedelta = timedelta(seconds=10),
+) -> LockoutState:
     for index in range(times):
         state = state.after_failure(start + index * every, FIVE_IN_FIFTEEN)
     return state
@@ -46,8 +57,8 @@ class TestPolicy:
             ({"durations": (timedelta(0),)}, "durations"),
         ],
     )
-    def test_an_invalid_policy_is_refused(self, kwargs: dict[str, object], message: str) -> None:
-        base = {
+    def test_an_invalid_policy_is_refused(self, kwargs: dict[str, Any], message: str) -> None:
+        base: dict[str, Any] = {
             "max_failures": 5,
             "window": 15 * MINUTE,
             "durations": (15 * MINUTE,),
@@ -55,7 +66,7 @@ class TestPolicy:
         }
 
         with pytest.raises(ValueError, match=message):
-            LockoutPolicy(**{**base, **kwargs})  # type: ignore[arg-type]
+            LockoutPolicy(**{**base, **kwargs})
 
 
 class TestFailures:
@@ -95,13 +106,13 @@ class TestFailures:
         for _ in range(5):
             state = fail(state, 5, start=now)
             durations.append(state.retry_after_seconds(now + timedelta(seconds=40)) // 60)
-            now = state.locked_until + MINUTE  # type: ignore[operator]
+            now = until(state) + MINUTE
 
         assert durations == [15, 30, 60, 60, 60]
 
     def test_the_ladder_is_forgotten_after_the_memory_period(self) -> None:
         state = fail(LockoutState("password", "s"), 5)
-        later = state.locked_until + timedelta(hours=25)  # type: ignore[operator]
+        later = until(state) + timedelta(hours=25)
 
         state = fail(state, 5, start=later)
 
@@ -111,5 +122,5 @@ class TestFailures:
     def test_expiry_of_the_lock_frees_the_subject(self) -> None:
         state = fail(LockoutState("password", "s"), 5)
 
-        assert not state.locked(state.locked_until)  # type: ignore[arg-type]
-        assert state.retry_after_seconds(state.locked_until) == 0  # type: ignore[arg-type]
+        assert not state.locked(until(state))
+        assert state.retry_after_seconds(until(state)) == 0
