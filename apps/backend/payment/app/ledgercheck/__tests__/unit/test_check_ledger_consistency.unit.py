@@ -9,9 +9,11 @@ from app.ledgercheck.__tests__.support import StubLedgerReader, balanced, positi
 from app.ledgercheck.application import ledger_check_event_names as names
 from app.ledgercheck.application.audit_ledger import AuditLedgerUseCase
 from app.ledgercheck.application.check_ledger_consistency import CheckLedgerConsistencyUseCase
+from app.ledgercheck.application.exceptions.ledger_check_unavailable_error import (
+    LedgerCheckUnavailableError,
+)
 from app.ledgercheck.domain.entities.ledger_snapshot import LedgerSnapshot
 from app.ledgercheck.domain.entities.transaction_balance import TransactionBalance
-from app.ledgercheck.domain.exceptions.ledger_read_error import LedgerReadError
 
 TICKS = iter(range(0, 10_000, 3))
 
@@ -125,7 +127,7 @@ class TestReadFailure:
     def test_it_logs_a_failure_event_and_propagates(self) -> None:
         events = InMemoryBusinessEventLogger()
 
-        with pytest.raises(LedgerReadError):
+        with pytest.raises(LedgerCheckUnavailableError):
             _use_case(StubLedgerReader(fail=True), events).execute()
 
         (failed,) = events.events

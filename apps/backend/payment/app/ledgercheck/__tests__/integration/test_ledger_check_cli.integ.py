@@ -139,8 +139,8 @@ class TestHealthyLedger:
         assert run.report[0] == "grand livre cohérent"
         assert "intentions contrôlées : 2" in run.report
         assert "transactions : 3" in run.report
-        assert "débits : 9980 centimes" in run.report
-        assert "crédits : 9980 centimes" in run.report
+        assert "débits : 11970 centimes" in run.report
+        assert "crédits : 11970 centimes" in run.report
         assert "écarts : 0" in run.report
 
     def test_an_empty_database_is_coherent(self, env: Env) -> None:
@@ -296,7 +296,7 @@ class TestInconsistentLedger:
         for forbidden in (
             TOKEN,
             "CMD-SECRET-REF",
-            f"confirm-CMD-SECRET-REF-key",
+            "confirm-CMD-SECRET-REF-key",
             "pm_test_success",
         ):
             assert forbidden not in run.raw

@@ -94,6 +94,7 @@ test            = "pytest"
 "test:integ"    = "pytest -m integ --no-cov"
 "test:e2e"      = "pytest -m e2e --no-cov"
 "test:cov"      = "pytest -m 'unit or integ' --cov=app --cov-fail-under=80"
+"ledger-check"   = "python -m app.ledgercheck.presentation.cli"
 "security:deps" = "pip-audit"
 security        = ["security:deps"]
 quality         = ["lint", "format:check", "typecheck"]

@@ -16,13 +16,19 @@ from typing import Any
 from uuid import UUID
 
 import pytest
-from sqlalchemy import Engine, event, text
+from sqlalchemy import Connection, Engine, event, text
 
+from alembic import command
 from app.confirmation.application.commands.confirm_payment_command import ConfirmPaymentCommand
-from app.core.__tests__.in_memory_business_event_logger import InMemoryBusinessEventLogger
-from app.core.__tests__.postgres_support import add_intent, migrated_engine, requires_postgres
-from app.core.config import Settings
 from app.confirmation.wiring import build_confirmation_services
+from app.core.__tests__.in_memory_business_event_logger import InMemoryBusinessEventLogger
+from app.core.__tests__.postgres_support import (
+    add_intent,
+    alembic_config,
+    migrated_engine,
+    requires_postgres,
+)
+from app.core.config import Settings
 from app.intent.domain.entities.payment_intent import PaymentIntent
 from app.ledgercheck.application.audit_ledger import AuditLedgerUseCase
 from app.ledgercheck.application.check_ledger_consistency import CheckLedgerConsistencyUseCase
@@ -40,6 +46,9 @@ VOLUME = 10_000
 
 @pytest.fixture
 def engine(monkeypatch: pytest.MonkeyPatch) -> Iterator[Engine]:
+    # Les comptes exacts exigent une base vide : un test d'une autre tranche peut avoir laissé des lignes
+    # (sa fermeture de générateur saute le nettoyage), on repart donc toujours du schéma vide.
+    command.downgrade(alembic_config(monkeypatch), "base")
     yield from migrated_engine(monkeypatch)
 
 
@@ -72,11 +81,18 @@ def _tamper(engine: Engine, sql: str, **params: Any) -> None:
         connection.execute(text("ALTER TABLE ledger_entries ENABLE TRIGGER USER"))
 
 
-def _insert_line(account: str, direction: str, amount: int) -> str:
-    return (
-        "INSERT INTO ledger_entries (id, transaction_id, intent_id, account, direction, amount,"
-        f" created_at) VALUES (gen_random_uuid(), :tx, :intent, '{account}', '{direction}',"
-        f" {amount}, now())"
+_INSERT_LINE = text(
+    "INSERT INTO ledger_entries (id, transaction_id, intent_id, account, direction, amount,"
+    " created_at) VALUES (gen_random_uuid(), :tx, :intent, :account, :direction, :amount, now())"
+)
+
+
+def _insert_line(
+    connection: Connection, tx: object, intent: object, account: str, direction: str, amount: int
+) -> None:
+    connection.execute(
+        _INSERT_LINE,
+        {"tx": tx, "intent": intent, "account": account, "direction": direction, "amount": amount},
     )
 
 
@@ -136,14 +152,8 @@ class TestAlteredLedger:
         unpaid = add_intent(engine)
         transaction = "00000000-0000-0000-0000-0000000000aa"
         with engine.begin() as connection:  # paire équilibrée : la base l'accepte, le contrôle non
-            connection.execute(
-                text(_insert_line("client_attente", "debit", 700)),
-                {"tx": transaction, "intent": unpaid.id},
-            )
-            connection.execute(
-                text(_insert_line("marchand", "credit", 700)),
-                {"tx": transaction, "intent": unpaid.id},
-            )
+            _insert_line(connection, transaction, unpaid.id, "client_attente", "debit", 700)
+            _insert_line(connection, transaction, unpaid.id, "marchand", "credit", 700)
 
         report = _check(engine)
 
@@ -161,10 +171,7 @@ class TestAlteredLedger:
         transaction = UUID(int=42)
         with engine.begin() as connection:
             connection.execute(text("ALTER TABLE ledger_entries DISABLE TRIGGER USER"))
-            connection.execute(
-                text(_insert_line("marchand", "credit", 300)),
-                {"tx": str(transaction), "intent": intent.id},
-            )
+            _insert_line(connection, str(transaction), intent.id, "marchand", "credit", 300)
             connection.execute(text("ALTER TABLE ledger_entries ENABLE TRIGGER USER"))
 
         report = _check(engine)
@@ -225,6 +232,12 @@ class TestReadOnly:
         assert all(statement.lstrip().upper().startswith("SELECT") for _, _, statement in observed)
 
 
+def _analyze(engine: Engine) -> None:
+    with engine.begin() as connection:
+        connection.execute(text("ANALYZE payment_intents"))
+        connection.execute(text("ANALYZE ledger_entries"))
+
+
 class TestVolume:
     def test_ten_thousand_intents_are_checked_in_under_two_seconds(self, engine: Engine) -> None:
         with engine.begin() as connection:
@@ -259,6 +272,7 @@ class TestVolume:
                     " FROM p"
                 )
             )
+        _analyze(engine)  # statistiques à jour, comme après un autovacuum
         _check(engine)  # échauffe la connexion et les plans
 
         started = time.perf_counter()
@@ -297,6 +311,7 @@ class TestVolume:
             " WHERE account = 'marchand' LIMIT 1)",
         )
 
+        _analyze(engine)
         started = time.perf_counter()
         report = _check(engine)
 
