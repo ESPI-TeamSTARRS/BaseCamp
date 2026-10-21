@@ -1,14 +1,20 @@
+import io
+import json
 import logging
 from collections.abc import Iterator
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 from httpx import Response
+from jsonschema import Draft202012Validator
 from sqlalchemy import Engine, StaticPool, create_engine, event, text
 
 from app.confirmation.wiring import build_confirmation_services
 from app.core.config import Settings
+from app.core.logging.structlog_business_event_logger import StructlogBusinessEventLogger
 from app.intent.infrastructure.models.base import Base
 from app.main import create_app
 from app.ratelimit.infrastructure.models.base import Base as RateLimitBase
@@ -16,6 +22,9 @@ from app.ratelimit.infrastructure.models.base import Base as RateLimitBase
 TOKEN = "tok-shop-test-0001"
 CARD_NUMBER = "4242424242424242"
 TIMEOUT_SECONDS = 0.5
+CORRELATION_ID = "7c1f0e52-3a0b-4f1e-9a52-1d6f7a9b2c10"
+SCHEMA_PATH = Path(__file__).resolve().parents[7] / "docs/development/log-event.schema.json"
+VALIDATOR = Draft202012Validator(json.loads(SCHEMA_PATH.read_text(encoding="utf-8")))
 
 
 @dataclass
@@ -23,6 +32,7 @@ class Env:
     client: TestClient
     engine: Engine
     waits: list[float]
+    log: io.StringIO
 
 
 @pytest.fixture
@@ -37,12 +47,14 @@ def env() -> Iterator[Env]:
     RateLimitBase.metadata.create_all(engine)
     settings = Settings(service_tokens={"shop": TOKEN}, provider_timeout_seconds=TIMEOUT_SECONDS)
     waits: list[float] = []
-    application = create_app(settings, engine)
+    log = io.StringIO()
+    events = StructlogBusinessEventLogger(settings.service_name, log)
+    application = create_app(settings, engine, events)
     application.state.confirmation_services = build_confirmation_services(
-        engine, settings, waits.append
+        engine, settings, events, waits.append
     )
     with TestClient(application) as client:
-        yield Env(client, engine, waits)
+        yield Env(client, engine, waits, log)
 
 
 def _headers(key: str = "confirm-0001") -> dict[str, str]:
@@ -240,3 +252,98 @@ class TestInputValidation:
         )
 
         assert response.status_code == 401
+
+
+def _lines(env: Env) -> list[dict[str, Any]]:
+    """Lignes JSON du journal; chacune doit respecter le schéma commun."""
+    records = [json.loads(line) for line in env.log.getvalue().splitlines()]
+    for record in records:
+        errors = [error.message for error in VALIDATOR.iter_errors(record)]
+        assert not errors, errors
+    return records
+
+
+def _confirm_logged(env: Env, intent_id: str, method: object, key: str = "confirm-0001") -> None:
+    env.client.post(
+        f"/payments/intents/{intent_id}/confirm",
+        json={"payment_method": method},
+        headers={**_headers(key), "X-Correlation-ID": CORRELATION_ID},
+    )
+
+
+class TestBusinessEvents:
+    def test_a_success_logs_valid_correlated_lines_without_secrets(self, env: Env) -> None:
+        intent_id = _create(env)
+        env.log.truncate(0)
+        env.log.seek(0)
+
+        _confirm_logged(env, intent_id, "pm_test_success")
+
+        records = _lines(env)
+        assert [r["event"] for r in records] == [
+            "payment.service_authenticated",
+            "payment.confirmed",
+            "ledger.entries_written",
+        ]
+        assert {r["correlation_id"] for r in records} == {CORRELATION_ID}
+        assert records[1]["resource_id"] == intent_id
+        raw = env.log.getvalue()
+        assert TOKEN not in raw
+        assert "confirm-0001" not in raw
+
+    def test_a_decline_and_a_timeout_are_logged_with_their_outcome(self, env: Env) -> None:
+        declined, timed_out = _create(env, "CMD-1"), _create(env, "CMD-2")
+        env.log.truncate(0)
+        env.log.seek(0)
+
+        _confirm_logged(env, declined, "pm_test_declined")
+        _confirm_logged(env, timed_out, "pm_test_timeout", "confirm-0002")
+
+        by_event = {r["event"]: r for r in _lines(env)}
+        assert (
+            by_event["payment.declined"]["outcome"],
+            by_event["payment.declined"]["reason"],
+        ) == (
+            "denied",
+            "provider_declined",
+        )
+        assert (by_event["payment.timeout"]["outcome"], by_event["payment.timeout"]["reason"]) == (
+            "error",
+            "provider_timeout",
+        )
+
+    def test_a_card_number_is_rejected_without_the_value_or_any_secret(self, env: Env) -> None:
+        intent_id = _create(env)
+        env.log.truncate(0)
+        env.log.seek(0)
+
+        _confirm_logged(env, intent_id, CARD_NUMBER)
+
+        rejected = next(r for r in _lines(env) if r["event"] == "payment.confirmation_rejected")
+        assert (rejected["outcome"], rejected["reason"]) == ("denied", "invalid_payment_method")
+        assert rejected["resource_id"] == intent_id
+        assert rejected["correlation_id"] == CORRELATION_ID
+        raw = env.log.getvalue()
+        assert CARD_NUMBER not in raw
+        assert TOKEN not in raw
+
+    def test_a_malformed_intent_id_is_never_echoed(self, env: Env) -> None:
+        env.log.truncate(0)
+        env.log.seek(0)
+
+        _confirm_logged(env, "secret-looking-id", "bad-method")
+
+        rejected = next(r for r in _lines(env) if r["event"] == "payment.confirmation_rejected")
+        assert "resource_id" not in rejected
+        assert "secret-looking-id" not in env.log.getvalue()
+
+    def test_a_conflict_is_rejected_with_the_status_as_reason(self, env: Env) -> None:
+        intent_id = _create(env)
+        _confirm_logged(env, intent_id, "pm_test_success")
+        env.log.truncate(0)
+        env.log.seek(0)
+
+        _confirm_logged(env, intent_id, "pm_test_success", "confirm-0002")
+
+        rejected = next(r for r in _lines(env) if r["event"] == "payment.confirmation_rejected")
+        assert rejected["reason"] == "status_succeeded"

@@ -6,6 +6,7 @@ from uuid import UUID
 
 import pytest
 
+from app.confirmation.application import confirmation_event_names as names
 from app.confirmation.application.commands.confirm_payment_command import ConfirmPaymentCommand
 from app.confirmation.application.confirm_payment import ConfirmPaymentUseCase
 from app.confirmation.domain.entities.confirmation_record import ConfirmationRecord
@@ -20,6 +21,8 @@ from app.confirmation.domain.exceptions.intent_not_confirmable_error import (
 from app.confirmation.domain.interfaces.confirmation_session import ConfirmationSession
 from app.confirmation.domain.interfaces.confirmation_unit_of_work import ConfirmationUnitOfWork
 from app.confirmation.domain.interfaces.payment_provider import PaymentProvider
+from app.core.__tests__.in_memory_business_event_logger import InMemoryBusinessEventLogger
+from app.core.events.outcome import Outcome
 from app.intent.domain.entities.payment_intent import PaymentIntent
 from app.intent.domain.enums.currency import Currency
 from app.intent.domain.enums.intent_status import IntentStatus
@@ -84,8 +87,9 @@ class Fixture:
     def __init__(self) -> None:
         self.store = InMemoryStore()
         self.provider = FakeProvider()
+        self.logger = InMemoryBusinessEventLogger()
         self.use_case = ConfirmPaymentUseCase(
-            InMemoryUnitOfWork(self.store), self.provider, lambda: NOW
+            InMemoryUnitOfWork(self.store), self.provider, lambda: NOW, self.logger
         )
         self.intent = PaymentIntent.create(
             "CMD-1", Amount(4990), Currency.EUR, NOW - timedelta(minutes=1), timedelta(minutes=30)
@@ -219,3 +223,103 @@ class TestRefusedConfirmation:
     def test_an_unknown_or_malformed_intent_is_not_found(self, fx: Fixture, intent_id: str) -> None:
         with pytest.raises(PaymentIntentNotFoundError):
             fx.use_case.execute(fx.command(intent_id=intent_id))
+
+
+class TestBusinessEvents:
+    def _summary(self, fx: Fixture) -> list[tuple[str, Outcome, str | None]]:
+        return [(e.event, e.outcome, e.reason) for e in fx.logger.events]
+
+    def test_a_success_logs_the_confirmation_then_the_ledger_write(self, fx: Fixture) -> None:
+        fx.use_case.execute(fx.command())
+
+        assert self._summary(fx) == [
+            (names.PAYMENT_CONFIRMED, Outcome.SUCCESS, None),
+            (names.LEDGER_ENTRIES_WRITTEN, Outcome.SUCCESS, None),
+        ]
+        confirmed, ledger = fx.logger.events
+        assert (confirmed.resource_type, confirmed.resource_id) == (
+            "payment_intent",
+            str(fx.intent.id),
+        )
+        assert (confirmed.actor_type, confirmed.actor_id) == ("service", "shop")
+        assert confirmed.attributes == {
+            "order_reference": "CMD-1",
+            "amount_cents": 4990,
+            "currency": "EUR",
+        }
+        assert ledger.attributes == {
+            "transaction_id": str(fx.store.ledger[0].id),
+            "entry_count": 2,
+            "amount_cents": 4990,
+        }
+
+    def test_a_decline_is_a_denied_event(self, fx: Fixture) -> None:
+        fx.use_case.execute(fx.command(payment_method="pm_test_declined"))
+
+        assert self._summary(fx) == [(names.PAYMENT_DECLINED, Outcome.DENIED, "provider_declined")]
+
+    def test_a_timeout_is_an_error_event(self, fx: Fixture) -> None:
+        fx.use_case.execute(fx.command(payment_method="pm_test_timeout"))
+
+        assert self._summary(fx) == [(names.PAYMENT_TIMEOUT, Outcome.ERROR, "provider_timeout")]
+
+    def test_a_replay_logs_nothing_new(self, fx: Fixture) -> None:
+        fx.use_case.execute(fx.command())
+        fx.logger.events.clear()
+
+        fx.use_case.execute(fx.command())
+
+        assert fx.logger.events == []
+
+    def test_a_conflict_on_a_succeeded_intent_is_rejected_with_its_status(
+        self, fx: Fixture
+    ) -> None:
+        fx.use_case.execute(fx.command())
+        fx.logger.events.clear()
+
+        with pytest.raises(IntentNotConfirmableError):
+            fx.use_case.execute(fx.command(idempotency_key="key-0002"))
+
+        assert self._summary(fx) == [
+            (names.PAYMENT_CONFIRMATION_REJECTED, Outcome.DENIED, "status_succeeded")
+        ]
+
+    def test_an_expired_intent_is_rejected_as_expired(self, fx: Fixture) -> None:
+        fx.store.intents[fx.intent.id] = replace(fx.intent, expires_at=NOW)
+
+        with pytest.raises(IntentNotConfirmableError):
+            fx.use_case.execute(fx.command())
+
+        assert self._summary(fx) == [
+            (names.PAYMENT_CONFIRMATION_REJECTED, Outcome.DENIED, "expired")
+        ]
+
+    def test_a_reused_key_is_rejected(self, fx: Fixture) -> None:
+        fx.use_case.execute(fx.command())
+        fx.logger.events.clear()
+
+        with pytest.raises(ConfirmationKeyReusedError):
+            fx.use_case.execute(fx.command(payment_method="pm_test_declined"))
+
+        assert self._summary(fx) == [
+            (names.PAYMENT_CONFIRMATION_REJECTED, Outcome.DENIED, "idempotency_key_reused")
+        ]
+
+    def test_an_unknown_intent_is_rejected_without_echoing_the_received_id(
+        self, fx: Fixture
+    ) -> None:
+        with pytest.raises(PaymentIntentNotFoundError):
+            fx.use_case.execute(fx.command(intent_id="4242424242424242"))
+
+        (event,) = fx.logger.events
+        assert (event.event, event.reason) == (
+            names.PAYMENT_CONFIRMATION_REJECTED,
+            "intent_not_found",
+        )
+        assert event.resource_id is None
+        assert "4242" not in repr(event)
+
+    def test_the_idempotency_key_never_appears_in_an_event(self, fx: Fixture) -> None:
+        fx.use_case.execute(fx.command())
+
+        assert "key-0001" not in repr(fx.logger.events)
