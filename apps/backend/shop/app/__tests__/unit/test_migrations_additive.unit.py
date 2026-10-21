@@ -2,7 +2,7 @@
 
 Le retour arriere automatique du deploiement ne restaure pas les bases : l'ancienne image doit
 tourner sur le schema migre. Les migrations apres la 0002 ne font donc qu'ajouter (tables,
-index, colonnes optionnelles), jamais supprimer ni modifier l'existant.
+index, colonnes NULLABLES), jamais supprimer ni modifier l'existant.
 """
 
 import ast
@@ -10,12 +10,13 @@ import re
 from pathlib import Path
 
 VERSIONS = Path(__file__).resolve().parents[3] / "alembic" / "versions"
-ADDITIVE_OPERATIONS = {"create_table", "create_index"}
+ADDITIVE_OPERATIONS = {"create_table", "create_index", "add_column"}
 # Elargir une contrainte CHECK de statut (ajout d'une valeur) reste compatible : l'ancien code
 # n'ecrit que les anciennes valeurs. Seules les contraintes listees ici peuvent etre remplacees.
 WIDENABLE_CONSTRAINTS = {"ck_orders_status", "ck_stock_reservations_status"}
 CONSTRAINT_OPERATIONS = {"drop_constraint", "create_check_constraint"}
 LAST_BASELINE_REVISION = 2
+NL = chr(10)
 
 
 def _revision(path: Path) -> int:
@@ -41,8 +42,24 @@ def _upgrade_operations(path: Path) -> list[str]:
         name = node.func.attr
         if name in CONSTRAINT_OPERATIONS and _first_string(node) in WIDENABLE_CONSTRAINTS:
             continue
+        if name == "add_column" and not _is_nullable_column(node):
+            operations.append("add_column_not_nullable")
+            continue
         operations.append(name)
     return operations
+
+
+def _is_nullable_column(call: ast.Call) -> bool:
+    """Une colonne ajoutee doit etre nullable : l'ancien code ne la renseigne pas."""
+    for argument in call.args:
+        if isinstance(argument, ast.Call):
+            return any(
+                keyword.arg == "nullable"
+                and isinstance(keyword.value, ast.Constant)
+                and keyword.value.value is True
+                for keyword in argument.keywords
+            )
+    return False
 
 
 def _first_string(call: ast.Call) -> str | None:
@@ -89,3 +106,27 @@ def test_the_webhook_migration_adds_its_table_and_only_widens_the_reservation_st
     assert "payment_webhook_events" in source
     assert "uq_payment_webhook_events_paid_order_id" in source
     assert "'reserved', 'released', 'committed'" in source
+
+
+def _migration(tmp_path: Path, name: str, nullable: bool) -> Path:
+    path = tmp_path / name
+    path.write_text(
+        "import sqlalchemy as sa"
+        + NL
+        + "from alembic import op"
+        + NL
+        + "def upgrade():"
+        + NL
+        + f"    op.add_column('t', sa.Column('c', sa.String(3), nullable={nullable}))"
+        + NL,
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_an_added_column_must_be_nullable(tmp_path: Path) -> None:
+    good = _migration(tmp_path, "0098_good.py", nullable=True)
+    bad = _migration(tmp_path, "0099_bad.py", nullable=False)
+
+    assert _upgrade_operations(good) == ["add_column"]
+    assert _upgrade_operations(bad) == ["add_column_not_nullable"]

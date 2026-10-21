@@ -14,6 +14,7 @@ import {
 } from '../lib/order-form';
 import { rememberLastOrder } from '../lib/order-recap';
 import { IdempotencyKeys, placeOrder } from '../lib/place-order';
+import { getAccessToken } from '../lib/session-store';
 
 type Phase = 'idle' | 'submitting' | 'redirecting';
 
@@ -62,7 +63,13 @@ export function CartPage() {
     setErrors({});
     setMessage(null);
     setPhase('submitting');
-    const result = await placeOrder(lines, checked.form, keys.current.keyFor(lines, checked.form));
+    const result = await placeOrder(
+      lines,
+      checked.form,
+      keys.current.keyFor(lines, checked.form),
+      fetch,
+      getAccessToken()
+    );
     if (!result.ok) {
       setPhase('idle');
       setMessage(

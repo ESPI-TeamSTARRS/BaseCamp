@@ -13,6 +13,8 @@ Catalogue, commandes et stock. Demande les paiements au service [payment](paymen
 | POST | `/cart/quote` | devis d'un panier calculé par le serveur (voir ci-dessous) |
 | POST | `/orders` | crée une commande « en attente de paiement » (voir ci-dessous) |
 | POST | `/orders/lookup` | retrouve une commande par numéro et email (suivi, voir ci-dessous) |
+| GET | `/me/orders` | **client connecté** : ses commandes (paginées), voir « Commandes du compte » |
+| GET | `/me/orders/{id}` | **client connecté** : une de ses commandes, 404 identique pour une commande inconnue ou d'un autre compte |
 | POST | `/orders/{id}/pay` | demande l'intention de paiement d'une commande en attente |
 | POST | `/orders/{id}/pay/confirm` | confirme le paiement avec une méthode de test |
 | POST | `/webhooks/payment` | **interne** : webhook signé de `payment` (jamais routé par la passerelle, voir ci-dessous) |
@@ -80,6 +82,26 @@ Paiement d'une commande créée par `POST /orders` (`{id}` est l'identifiant ren
 | 503 | fournisseur arrêté ou saturé, `Retry-After: 5` |
 
 Concurrence : la commande est lue avec un verrou de ligne (`SELECT … FOR UPDATE`) pour toute la transaction, appel au fournisseur compris. Deux confirmations parallèles ne paient qu'une fois (l'autre reçoit 409), deux demandes parallèles ne créent qu'une tentative (test sur Postgres).
+
+## Commandes du compte (WORK-40)
+`shop` reconnaît un client connecté **sans appeler `auth` à chaque requête** : il vérifie localement son jeton d'accès, et ne rattache à son compte que des commandes dont l'adresse est **vérifiée**. Le parcours invité (WORK-11 à WORK-14) est inchangé.
+
+**Vérification des jetons** (tranche `customer_identity`, contrat d'[auth](auth.md#contrat-de-vérification-pour-shop-et-payment-jeton-client)) : signature EdDSA par `kid` avec les clés publiques d'`auth` (`GET http://auth:8000/.well-known/jwks.json`, réseau `app`), `iss` = `basecamp-auth`, `aud` = `basecamp-client-api`, `token_use` = `client`, `exp` (tolérance de 30 s), `sub`, `jti`; `alg` autre qu'EdDSA refusé. Le cache des clés (publiques, relisibles à tout moment, ce n'est pas un état métier) :
+- une clé reste valable 5 minutes (`APP_AUTH_JWKS_TTL_SECONDS`), puis est relue;
+- un `kid` inconnu déclenche une relecture, **au plus une toutes les 10 s** : des `kid` tirés au hasard ne peuvent pas marteler `auth`;
+- une lecture qui échoue **ne vide jamais le cache** : `auth` arrêté, les jetons déjà émis restent vérifiables avec les clés connues (même périmées). Sans aucune clé connue et `auth` injoignable, la route réservée répond **503** `Identification momentanément indisponible.` (avec `Retry-After: 5`), jamais 401; un achat reste possible en invité.
+
+**Routes réservées (`/me/orders`)** : sans jeton, avec un jeton refusé (signature, émetteur, audience, expiré) : **401** `Authentification requise.` identique pour toute cause (le motif n'est que dans l'événement `customer.token_rejected`). Elles ne renvoient que les commandes du compte : le compte est une condition de chaque requête (`orders.user_id`). Réponse : `id`, `number`, `status`, `lines`, totaux en centimes, `created_at`; **jamais l'email ni l'adresse de livraison**. Liste : `limit` (1 à 50, 20 par défaut), `offset`, `total`, les plus récentes d'abord. Détail d'une commande inconnue, d'un invité ou d'un autre compte : le même **404** `Commande introuvable.`.
+
+**Passage de commande** (`POST /orders`) : sans en-tête `Authorization`, comportement strictement inchangé. Avec un jeton valide, la commande porte l'identifiant du compte (`orders.user_id`, rien d'autre n'est copié du compte). Avec un jeton **présent mais invalide ou expiré** (ou sans clé lisible), l'appelant est traité en invité : **un achat n'est jamais bloqué par l'identification** (l'événement `customer.token_rejected` reste journalisé).
+
+**Rattachement des commandes invitées** : le jeton ne contient pas l'adresse. Au premier appel connecté (liste des commandes, ou passage de commande), `shop` lit `GET /me` d'`auth` (réseau interne, avec le jeton du client) pour obtenir l'adresse et `email_verified`, puis exécute **un seul `UPDATE`** : les commandes sans compte dont l'adresse est identique (sans tenir compte de la casse) passent au compte. Garde-fous :
+- **adresse non vérifiée : rien n'est rattaché** (ni d'après le jeton, ni d'après `auth`; sinon n'importe qui pourrait s'approprier les commandes d'une adresse qu'il ne possède pas);
+- idempotent, et une commande déjà rattachée à un compte n'est **jamais reprise** par un autre;
+- `auth` arrêté ou en erreur : rien n'est rattaché cette fois et la tentative suivante réessaie, sans effet sur la liste ni sur l'achat (le rattachement ne fait jamais échouer son appelant);
+- le suivi par numéro et email (`POST /orders/lookup`) continue de fonctionner, avec ou sans compte.
+
+Événements : `order.account_listed`, `order.account_view_denied`, `order.guest_orders_linked` (`count`, `email_hash`), `order.guest_link_skipped` (motifs `email_not_verified`, `profile_unavailable`, `link_failed`), `customer.token_rejected` (motifs internes `missing_key_id`, `unknown_key`, `bad_algorithm`, `expired`, `invalid`, `wrong_issuer`, `wrong_audience`, `not_a_client_token`) et `customer.keys_unavailable`. Ni jeton, ni adresse en clair.
 
 Les autres routes métier s'ajoutent par tranche et se documentent ici.
 
@@ -151,6 +173,11 @@ Variables d'environnement préfixées `APP_` (voir `.env.example` à la racine) 
 | `APP_PAYMENT_URL` | `http://payment:8000` | adresse interne de `payment` |
 | `APP_PAYMENT_SERVICE_TOKEN` | vide | jeton de service de `shop` auprès de `payment` (alimenté par `PAYMENT_SERVICE_TOKEN_SHOP`, jamais versionné) |
 | `APP_PAYMENT_CONNECT_TIMEOUT_SECONDS` / `APP_PAYMENT_READ_TIMEOUT_SECONDS` | `1` / `3` | délais des appels à `payment` |
+| `APP_AUTH_JWKS_URL` | `http://auth:8000/.well-known/jwks.json` | clés publiques de vérification des jetons clients (réseau interne) |
+| `APP_AUTH_PROFILE_URL` | `http://auth:8000/me` | profil du porteur du jeton (adresse, vérifiée ou non), pour le rattachement |
+| `APP_AUTH_ISSUER` / `APP_AUTH_AUDIENCE` | `basecamp-auth` / `basecamp-client-api` | `iss` et `aud` exigés |
+| `APP_AUTH_JWKS_TTL_SECONDS` / `APP_AUTH_JWKS_MIN_REFETCH_SECONDS` | `300` / `10` | durée de vie des clés en cache; intervalle minimal entre deux relectures |
+| `APP_AUTH_CONNECT_TIMEOUT_SECONDS` / `APP_AUTH_READ_TIMEOUT_SECONDS` | `1` / `2` | délais des appels à `auth` |
 | `APP_LOG_PSEUDONYM_KEY` | vide | clé HMAC des empreintes d'email dans les logs; obligatoire hors `dev` et `local` |
 
 ## Événements métier
@@ -209,6 +236,8 @@ La migration `0004` ajoute les tables `payment_attempts` (une ligne par tentativ
 La migration `0005` élargit `ck_stock_reservations_status` à `reserved`, `released` (libération du stock des commandes expirées). Aucune table ni colonne ajoutée; l'ancien code n'écrit que `reserved`.
 
 La migration `0006` ajoute la table `payment_webhook_events` (identifiant d'événement en clé primaire, `outcome` `applied` ou `ignored`, `paid_order_id` unique et lié à `orders`) et élargit `ck_stock_reservations_status` à `reserved`, `released`, `committed`. L'ancien code n'écrit que `reserved` : il reste valide sur le schéma migré (test d'additivité).
+
+La migration `0007` ajoute `orders.user_id` (identifiant du compte d'`auth`, **nullable**, indexé, sans clé étrangère : le compte vit dans une autre base). Les commandes existantes restent invitées (`user_id` nul); l'ancienne version, qui ignore la colonne, tourne sur le schéma migré (expand/contract; le test `test_migrations_additive` n'autorise l'ajout de colonne que si elle est nullable).
 
 La migration `0002` crée la table `products` (contraintes : prix > 0, stock ≥ 0, note 0 à 5, catégorie connue) et y charge le jeu de données initial : 15 produits, 3 par catégorie, dont un en rupture et un aux dernières pièces.
 

@@ -5,6 +5,19 @@ import httpx
 from fastapi import FastAPI
 from sqlalchemy import create_engine
 
+from app.account_orders.application.get_my_order import GetMyOrderUseCase
+from app.account_orders.application.link_guest_orders import LinkGuestOrdersUseCase
+from app.account_orders.application.list_my_orders import ListMyOrdersUseCase
+from app.account_orders.infrastructure.clients.http_account_profile_directory import (
+    HttpAccountProfileDirectory,
+)
+from app.account_orders.infrastructure.repositories.sqlalchemy_account_order_reader import (
+    SqlAlchemyAccountOrderReader,
+)
+from app.account_orders.infrastructure.repositories.sqlalchemy_guest_order_linker import (
+    SqlAlchemyGuestOrderLinker,
+)
+from app.account_orders.presentation.router import router as account_orders_router
 from app.cart.application.quote_cart import QuoteCartUseCase
 from app.cart.infrastructure.repositories.sqlalchemy_cart_product_reader import (
     SqlAlchemyCartProductReader,
@@ -21,6 +34,13 @@ from app.core.errors import register_error_handlers
 from app.core.logging.correlation_id_middleware import CorrelationIdMiddleware
 from app.core.logging.email_pseudonymizer import build_pseudonymizer
 from app.core.logging.structlog_business_event_logger import StructlogBusinessEventLogger
+from app.customer_identity.application.authenticate_customer import AuthenticateCustomerUseCase
+from app.customer_identity.infrastructure.clients.http_jwks_source import HttpJwksSource
+from app.customer_identity.infrastructure.clients.jwks_client_token_verifier import (
+    JwksClientTokenVerifier,
+)
+from app.customer_identity.infrastructure.clients.jwks_key_cache import JwksKeyCache
+from app.customer_identity.infrastructure.clients.system_clock import SystemClock
 from app.health.application.get_readiness import GetReadinessUseCase
 from app.health.infrastructure.clients.sqlalchemy_database_probe import SqlAlchemyDatabaseProbe
 from app.health.presentation.router import router as health_router
@@ -102,6 +122,39 @@ def create_app() -> FastAPI:
         events,
         build_pseudonymizer(settings.log_pseudonym_key),
     )
+    auth_timeout = httpx.Timeout(
+        connect=settings.auth_connect_timeout_seconds,
+        read=settings.auth_read_timeout_seconds,
+        write=settings.auth_read_timeout_seconds,
+        pool=settings.auth_connect_timeout_seconds,
+    )
+    auth_client = httpx.Client(timeout=auth_timeout, limits=httpx.Limits(max_connections=10))
+    application.state.authenticate_customer_use_case = AuthenticateCustomerUseCase(
+        JwksClientTokenVerifier(
+            JwksKeyCache(
+                HttpJwksSource(auth_client, settings.auth_jwks_url),
+                time.monotonic,
+                settings.auth_jwks_ttl_seconds,
+                settings.auth_jwks_min_refetch_seconds,
+            ),
+            settings.auth_issuer,
+            settings.auth_audience,
+        ),
+        SystemClock(),
+        events,
+    )
+    account_reader = SqlAlchemyAccountOrderReader(engine)
+    link_guest_orders = LinkGuestOrdersUseCase(
+        HttpAccountProfileDirectory(auth_client, settings.auth_profile_url),
+        SqlAlchemyGuestOrderLinker(engine),
+        events,
+        build_pseudonymizer(settings.log_pseudonym_key),
+    )
+    application.state.link_guest_orders_use_case = link_guest_orders
+    application.state.list_my_orders_use_case = ListMyOrdersUseCase(
+        account_reader, link_guest_orders, events
+    )
+    application.state.get_my_order_use_case = GetMyOrderUseCase(account_reader, events)
     payment_client = httpx.Client(
         base_url=settings.payment_url,
         timeout=httpx.Timeout(
@@ -153,6 +206,7 @@ def create_app() -> FastAPI:
     application.include_router(catalog_router)
     application.include_router(cart_router)
     application.include_router(order_tracking_router)
+    application.include_router(account_orders_router)
     application.include_router(order_router)
     application.include_router(payment_request_router)
     application.include_router(payment_confirmation_router)
