@@ -42,12 +42,16 @@ def cookie_of(response: httpx.Response) -> str:
     return response.headers["set-cookie"].split(";")[0].split("=", 1)[1]
 
 
-def refresh(client: httpx.Client, token: str | None, headers: dict[str, str] | None = CSRF):
+def refresh(
+    client: httpx.Client, token: str | None, headers: dict[str, str] | None = CSRF
+) -> httpx.Response:
     cookie = {"Cookie": f"refresh_token={token}"} if token else {}
     return client.post("/api/auth/refresh", headers={**(headers or {}), **cookie})
 
 
-def logout(client: httpx.Client, token: str | None, headers: dict[str, str] | None = CSRF):
+def logout(
+    client: httpx.Client, token: str | None, headers: dict[str, str] | None = CSRF
+) -> httpx.Response:
     cookie = {"Cookie": f"refresh_token={token}"} if token else {}
     return client.post("/api/auth/logout", headers={**(headers or {}), **cookie})
 
@@ -98,7 +102,7 @@ class TestRefresh:
         def attempt(_: int) -> int:
             with httpx.Client(base_url=BASE_URL, timeout=30.0) as http:
                 start.wait()
-                return refresh(http, session).status_code
+                return int(refresh(http, session).status_code)
 
         with ThreadPoolExecutor(contenders) as pool:
             statuses = list(pool.map(attempt, range(contenders)))
