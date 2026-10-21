@@ -191,7 +191,7 @@ jobs:
         run: sh scripts/check-payment-isolation.sh
       - run: uv sync --frozen
         working-directory: apps/backend/payment
-      - name: Scenarios e2e de payment (charge, attaque, 2 instances, arret, webhook signe) depuis l'exterieur
+      - name: Scenarios e2e de payment (charge, attaque, 2 instances, arret, webhook signe, signaux) depuis l'exterieur
         run: uv run poe test:e2e
         working-directory: apps/backend/payment
       - name: Logs des conteneurs
