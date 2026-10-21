@@ -15,7 +15,6 @@ from app.core.config import Settings
 from app.core.events.business_event_logger import BusinessEventLogger
 from app.core.logging.structlog_business_event_logger import StructlogBusinessEventLogger
 from app.main import create_app
-from app.service_token.application.get_jwks import GetJwksUseCase
 from app.service_token.application.issue_service_token import IssueServiceTokenUseCase
 from app.service_token.application.service_token_services import ServiceTokenServices
 from app.service_token.domain.entities.service_client import ServiceClient
@@ -94,7 +93,6 @@ def _client(keys: Ed25519KeyStore, events: BusinessEventLogger) -> TestClient:
             Settings().jwt_issuer,
             events,
         ),
-        jwks=GetJwksUseCase(keys),
     )
     application.state.events = events
     return TestClient(application)
@@ -308,23 +306,6 @@ class TestJsonLogLines:
             ok.json()["access_token"],
         ):
             assert forbidden not in raw
-
-
-class TestJwks:
-    def test_publishes_the_public_key_only(self, client: TestClient, keys: Ed25519KeyStore) -> None:
-        response = client.get("/internal/jwks")
-
-        assert response.status_code == 200
-        [key] = response.json()["keys"]
-        assert key == {
-            "kty": "OKP",
-            "crv": "Ed25519",
-            "alg": "EdDSA",
-            "use": "sig",
-            "kid": keys.key_id,
-            "x": keys.public_jwk().x,
-        }
-        assert "d" not in key
 
 
 class TestStartupWithoutKeys:

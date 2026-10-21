@@ -35,7 +35,7 @@ class TestAccountRepository:
             "operator",
         )
         assert (account.email_verified, account.disabled) == (False, False)
-        assert account.password_hash == "$argon2id$x"  # noqa: S105
+        assert account.password_hash == "$argon2id$x"
 
     def test_a_disabled_account_is_flagged(self, engine: Engine) -> None:
         user_id = uuid4()

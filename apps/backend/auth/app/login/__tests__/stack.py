@@ -24,7 +24,7 @@ from app.main import create_app
 
 ISSUER = "basecamp-auth"
 AUDIENCE = "basecamp-client-api"
-PASSWORD = "sentier-du-mont-blanc"  # noqa: S105
+PASSWORD = "sentier-du-mont-blanc"
 EMAIL = "camille@example.com"
 CHEAP_ARGON2 = Argon2(time_cost=1, memory_cost=8, parallelism=1)
 

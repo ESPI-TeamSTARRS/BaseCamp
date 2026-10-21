@@ -9,7 +9,7 @@ from app.login.domain.enums.token_rejection import TokenRejection
 from app.login.domain.exceptions.access_token_rejected_error import AccessTokenRejectedError
 from app.login.domain.interfaces.access_token_verifier import AccessTokenVerifier
 from app.login.infrastructure.clients.ed25519_key_ring import Ed25519KeyRing
-from app.login.infrastructure.clients.jwt_access_token_signer import ALGORITHM, TOKEN_USE_ACCESS
+from app.login.infrastructure.clients.jwt_access_token_signer import ALGORITHM, TOKEN_USE_CLIENT
 
 MAX_TOKEN_LENGTH = 4096
 REQUIRED_CLAIMS = ["iss", "aud", "sub", "roles", "token_use", "iat", "exp", "jti"]
@@ -53,7 +53,7 @@ class JwtAccessTokenVerifier(AccessTokenVerifier):
             )
         except (jwt.PyJWTError, ValueError, UnicodeError):
             raise self._rejected(TokenRejection.INVALID) from None
-        if payload.get("token_use") != TOKEN_USE_ACCESS:
+        if payload.get("token_use") != TOKEN_USE_CLIENT:
             raise self._rejected(TokenRejection.INVALID)
         return payload
 

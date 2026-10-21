@@ -10,7 +10,10 @@ from app.login.application.get_current_account import GetCurrentAccountUseCase
 from app.login.application.get_public_keys import GetPublicKeysUseCase
 from app.login.application.login_account import LoginAccountUseCase
 from app.login.infrastructure.clients.argon2_password_verifier import Argon2PasswordVerifier
-from app.login.infrastructure.clients.ed25519_key_ring import Ed25519KeyRing
+from app.login.infrastructure.clients.ed25519_key_ring import (
+    Ed25519KeyRing,
+    LazyEd25519KeyRing,
+)
 from app.login.infrastructure.clients.hmac_email_fingerprinter import HmacEmailFingerprinter
 from app.login.infrastructure.clients.jwt_access_token_signer import JwtAccessTokenSigner
 from app.login.infrastructure.clients.jwt_access_token_verifier import JwtAccessTokenVerifier
@@ -19,15 +22,16 @@ from app.login.infrastructure.clients.secure_refresh_token_generator import (
 )
 from app.login.infrastructure.clients.system_clock import SystemClock
 from app.login.infrastructure.repositories.sqlalchemy_unit_of_work import SqlAlchemyUnitOfWork
+from app.service_token.infrastructure.clients.ed25519_key_store import Ed25519KeyStore
 
 
 def build_key_ring(settings: Settings) -> Ed25519KeyRing:
-    """Cle lue dans le secret monte ; en dev et local seulement, une cle ephemere sans fichier."""
-    if not settings.jwt_private_key_file:
-        return Ed25519KeyRing.generate()
+    """Meme cle privee (secret monte) que les jetons de service, lue au premier usage."""
+    key_store = Ed25519KeyStore(settings.jwt_private_key_file, settings.jwt_public_key_file)
     previous = settings.jwt_previous_public_keys_dir
-    return Ed25519KeyRing.from_files(
-        Path(settings.jwt_private_key_file), Path(previous) if previous else None
+    previous_dir = Path(previous) if previous else None
+    return LazyEd25519KeyRing(
+        lambda: Ed25519KeyRing.from_pem(key_store.private_key_pem, previous_dir)
     )
 
 

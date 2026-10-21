@@ -12,7 +12,7 @@ from app.login.infrastructure.clients.secure_refresh_token_generator import (
 )
 from app.login.infrastructure.clients.system_clock import SystemClock
 
-PASSWORD = "sentier-du-mont-blanc"  # noqa: S105
+PASSWORD = "sentier-du-mont-blanc"
 CHEAP = Argon2(time_cost=1, memory_cost=8, parallelism=1)
 
 
