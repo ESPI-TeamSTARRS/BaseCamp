@@ -21,6 +21,8 @@ export default defineConfig({
         'src/lib/cart-quote.ts',
         'src/lib/order-form.ts',
         'src/lib/place-order.ts',
+        'src/lib/account-api.ts',
+        'src/lib/registration-flow.ts',
       ],
       thresholds: { lines: 80, functions: 80, branches: 80, statements: 80 },
     },
