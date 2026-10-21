@@ -50,6 +50,32 @@ class Settings(BaseSettings):
     access_token_ttl_seconds: int = Field(default=900, gt=0)
     refresh_token_ttl_seconds: int = Field(default=604800, gt=0)
 
+    # Verrouillage progressif (WORK-37) : `lockout_max_failures` echecs en `lockout_window_seconds`
+    # verrouillent le sujet; les durees (secondes, separees par des virgules) forment l'echelle des
+    # recidives et la derniere est le plafond. Oublie apres `lockout_memory_seconds` sans verrou.
+    lockout_max_failures: int = Field(default=5, ge=1)
+    lockout_window_seconds: int = Field(default=900, gt=0)
+    lockout_durations_seconds: str = "900,1800,3600"
+    lockout_memory_seconds: int = Field(default=86400, gt=0)
+
+    @property
+    def lockout_durations(self) -> tuple[int, ...]:
+        return tuple(
+            int(part) for part in self.lockout_durations_seconds.split(",") if part.strip()
+        )
+
+    @model_validator(mode="after")
+    def _check_lockout_durations(self) -> "Settings":
+        try:
+            durations = self.lockout_durations
+        except ValueError:
+            raise ValueError(
+                "APP_LOCKOUT_DURATIONS_SECONDS must be comma-separated integers"
+            ) from None
+        if not durations or any(value <= 0 for value in durations):
+            raise ValueError("APP_LOCKOUT_DURATIONS_SECONDS needs at least one positive duration")
+        return self
+
     @model_validator(mode="after")
     def _require_pseudonym_key_outside_development(self) -> "Settings":
         if self.environment not in DEVELOPMENT_ENVIRONMENTS and not self.log_pseudonym_key:

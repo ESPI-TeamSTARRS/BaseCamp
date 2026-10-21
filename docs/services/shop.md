@@ -87,6 +87,7 @@ Les autres routes métier s'ajoutent par tranche et se documentent ici.
 - Une commande payée correspond à exactement une transaction.
 - Seul le résultat du fournisseur de paiement marque une commande payée; le client n'envoie qu'une méthode de test, jamais un montant ni une donnée de carte.
 - Une commande payée ou expirée ne peut plus être payée (409).
+- Une commande payée n'expire jamais; le stock d'une commande expirée est rendu une seule fois (réservation « libérée »), même si le traitement est rejoué ou lancé en parallèle.
 - Le stock ne devient jamais négatif (contrainte en base et dans l'entité).
 - Les prix sont des entiers en centimes, jamais des flottants; le front convertit pour l'affichage.
 - Un produit à stock 0 est « rupture » et ne peut pas être commandé.
@@ -101,6 +102,14 @@ Les autres routes métier s'ajoutent par tranche et se documentent ici.
 - Nom et prix unitaire des lignes sont figés à la commande (`order_lines`) : un changement de catalogue ne modifie jamais une commande existante.
 - Une réservation (`stock_reservations.status = reserved`) est liée à une commande; sa libération et le paiement relèvent du ticket de paiement.
 
+## Expiration des commandes impayées
+Une commande « en attente de paiement » depuis plus de `APP_ORDER_EXPIRATION_MINUTES` (30 par défaut) passe à « expirée » et ses réservations de stock sont libérées : le stock redevient disponible. Le délai est strict (exactement 30 minutes n'expire pas) et l'horloge est injectée dans le cas d'usage (`ExpireUnpaidOrdersUseCase`), ce qui rend le comportement testable sans attente.
+
+- **Sans état en mémoire** : chaque passage relit la base. Un lot (100 commandes) est une transaction; les commandes sont lues avec `SELECT … FOR UPDATE SKIP LOCKED` : une commande en cours de paiement (verrou tenu par le paiement) est ignorée, une commande payée n'est jamais sélectionnée, et plusieurs instances se départagent sans double libération.
+- **Rejouable** : seules les réservations « réservées » sont rendues puis marquées « libérées »; un second passage ne change rien.
+- **Paiement tardif** : `POST /orders/{id}/pay` et `/pay/confirm` sur une commande expirée répondent `409 {"detail": "Commande expiree."}` et émettent `order.payment_rejected` (`order_expired`).
+- **Déclenchement** : `python -m app.order_expiration --once` (un passage, code de sortie 1 en cas d'échec) ou `--every 60` (boucle sans état, un passage par minute; une panne est journalisée et n'arrête pas la boucle). Sur la pile de développement, le service `shop-expiration` de `docker-compose.yml` exécute la boucle. En production, le même service ou une tâche planifiée (cron, minuteur systemd) doit lancer cette commande dans l'image `shop` : le déploiement s'en charge (`deploy/`).
+
 ## Configuration
 Variables d'environnement préfixées `APP_` (voir `.env.example` à la racine) :
 
@@ -112,6 +121,7 @@ Variables d'environnement préfixées `APP_` (voir `.env.example` à la racine) 
 | `APP_DB_NAME` / `APP_DB_USER` | `shop` / `shop` | base et rôle propres à `shop` |
 | `APP_DB_PASSWORD` | vide | mot de passe du rôle (fourni par l'environnement, jamais versionné) |
 | `APP_MEDIA_BASE_URL` | `/media` | préfixe public des images du catalogue |
+| `APP_ORDER_EXPIRATION_MINUTES` | `30` | délai au bout duquel une commande impayée expire et rend son stock |
 | `APP_PAYMENT_PROVIDER` | `http` | fournisseur de paiement : `http` (service `payment`) ou `simulated` (sans réseau ni clé) |
 | `APP_PAYMENT_URL` | `http://payment:8000` | adresse interne de `payment` |
 | `APP_PAYMENT_SERVICE_TOKEN` | vide | jeton de service de `shop` auprès de `payment` (alimenté par `PAYMENT_SERVICE_TOKEN_SHOP`, jamais versionné) |
@@ -141,6 +151,9 @@ Format et règles communes : [journalisation métier](../development/logging.md)
 | `order.payment_failed` | denied | `provider_declined` | ressource `order` (numéro); `attempt` |
 | `order.payment_rejected` | denied | `order_not_found`, `order_already_paid`, `order_expired`, `no_pending_payment` | ressource `order` (numéro) sauf `order_not_found`; couvre aussi un paiement reçu après expiration |
 | `order.payment_unavailable` | error | `payment_unavailable` | fournisseur arrêté, injoignable ou saturé |
+| `order.expired` | success | | ressource `order` (numéro); `released_units`, `line_count`, `age_minutes` |
+| `order.expiration_completed` | success | | un par passage qui a expiré au moins une commande : `expired_orders`, `released_units` |
+| `order.expiration_failed` | error | `expiration_error` | un passage a échoué (base arrêtée…); le traitement continue au passage suivant |
 | `pay.payment_started` | success | | ressource `payment_intent` (id), `amount_cents`, `currency` |
 | `pay.payment_rejected` | denied | `insufficient_stock`, `payment_conflict`, `payment_refused` | refus avant ou par `payment` |
 | `pay.payment_unavailable` | error | `payment_unavailable` | `payment` arrêté, injoignable ou saturé (503 renvoyé) |
@@ -161,6 +174,8 @@ En Docker Compose, `shop-migrate` applique les migrations avant le démarrage de
 La migration `0003` crée `orders`, `order_lines` (prix figés en centimes) et `stock_reservations`, avec clés étrangères, unicité de la clé d'idempotence et contraintes de montants et de pays. Elle n'ajoute que des tables : l'ancienne version du code tourne sur le schéma migré, ce qui garde le retour arrière automatique sûr (voir `test_migrations_additive.unit.py`, qui impose la règle à toute migration après la 0002).
 
 La migration `0004` ajoute les tables `payment_attempts` (une ligne par tentative de paiement : intention, référence unique, statut) et `simulated_payment_intents` (état du fournisseur simulé), et **élargit** la contrainte `ck_orders_status` à `pending_payment`, `paid`, `expired`. L'ancien code n'écrit que `pending_payment` et reste valide sur le schéma migré. Limite assumée : il ne sait pas relire une commande déjà payée ou expirée (uniquement en rejouant la clé d'idempotence de sa création). `test_migrations_additive.unit.py` n'autorise ce remplacement que pour les contraintes de statut listées.
+
+La migration `0005` élargit `ck_stock_reservations_status` à `reserved`, `released` (libération du stock des commandes expirées). Aucune table ni colonne ajoutée; l'ancien code n'écrit que `reserved`.
 
 La migration `0002` crée la table `products` (contraintes : prix > 0, stock ≥ 0, note 0 à 5, catégorie connue) et y charge le jeu de données initial : 15 produits, 3 par catégorie, dont un en rupture et un aux dernières pièces.
 

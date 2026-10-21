@@ -2,6 +2,7 @@ from uuid import uuid4
 
 from app.core.events.business_event import BusinessEvent
 from app.core.events.business_event_logger import BusinessEventLogger
+from app.lockout.application.lockout_service import LockoutService
 from app.login.application import login_events as catalog
 from app.login.application.invalid_credentials_error import InvalidCredentialsError
 from app.login.application.login_result import LoginResult
@@ -20,6 +21,10 @@ class LoginAccountUseCase:
     """Connexion sans enumeration : email inconnu, mauvais mot de passe et compte desactive
     donnent la meme erreur et coutent une verification argon2id chacun. Le motif interne
     n'existe que dans l'evenement `auth.login_failed` (attribut `cause`).
+
+    Le verrouillage progressif (`LockoutService`, etape `password`) est cle sur l'empreinte de
+    l'adresse, qu'elle soit connue ou non : un sujet verrouille recoit la meme reponse generique,
+    meme avec le bon mot de passe, et paie la meme verification argon2id.
     """
 
     def __init__(
@@ -31,6 +36,7 @@ class LoginAccountUseCase:
         clock: Clock,
         events: BusinessEventLogger,
         fingerprinter: EmailFingerprinter,
+        lockout: LockoutService,
         access_ttl_seconds: int,
         refresh_ttl_seconds: int,
     ) -> None:
@@ -41,16 +47,24 @@ class LoginAccountUseCase:
         self._clock = clock
         self._events = events
         self._fingerprinter = fingerprinter
+        self._lockout = lockout
         self._access_ttl = access_ttl_seconds
         self._refresh_ttl = refresh_ttl_seconds
 
     def execute(self, email: str, password: str, client_ip: str | None = None) -> LoginResult:
         address = email.strip().lower()
         account = self._authenticate(address, password, client_ip)
+        self._lockout.record_success(
+            catalog.STEP_PASSWORD, self._fingerprinter.fingerprint(address)
+        )
         return self._open_session(account, password, address)
 
     def _authenticate(self, address: str, password: str, client_ip: str | None) -> Account:
         """Toujours exactement une verification argon2id, quelle que soit l'issue."""
+        subject = self._fingerprinter.fingerprint(address)
+        if self._lockout.check(catalog.STEP_PASSWORD, subject, self._clock.now()).locked:
+            self._verifier.verify_decoy(password)
+            raise self._refuse(address, None, catalog.CAUSE_ACCOUNT_LOCKED, client_ip)
         with self._unit_of_work() as work:
             account = work.accounts.find_by_email(address)
         if account is None:
@@ -65,6 +79,10 @@ class LoginAccountUseCase:
     def _refuse(
         self, address: str, account: Account | None, cause: str, client_ip: str | None
     ) -> InvalidCredentialsError:
+        if cause != catalog.CAUSE_ACCOUNT_LOCKED:
+            self._lockout.record_failure(
+                catalog.STEP_PASSWORD, self._fingerprinter.fingerprint(address), self._clock.now()
+            )
         self._events.log(
             BusinessEvent.denied(
                 catalog.LOGIN_FAILED,
@@ -72,7 +90,11 @@ class LoginAccountUseCase:
                 resource_type=catalog.RESOURCE_ACCOUNT,
                 resource_id=str(account.id) if account else None,
                 client_ip=client_ip,
-                attributes={"email_hash": self._fingerprinter.fingerprint(address), "cause": cause},
+                attributes={
+                    "email_hash": self._fingerprinter.fingerprint(address),
+                    "cause": cause,
+                    "step": catalog.STEP_PASSWORD,
+                },
             )
         )
         return InvalidCredentialsError()
@@ -106,5 +128,6 @@ class LoginAccountUseCase:
             attributes={
                 "email_hash": self._fingerprinter.fingerprint(address),
                 "hash_upgraded": upgraded,
+                "step": catalog.STEP_PASSWORD,
             },
         )

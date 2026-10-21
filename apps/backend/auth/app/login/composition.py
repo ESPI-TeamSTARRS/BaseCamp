@@ -6,6 +6,7 @@ from sqlalchemy import Engine
 from app.core.config import Settings
 from app.core.events.business_event_logger import BusinessEventLogger
 from app.core.logging.email_pseudonymizer import build_pseudonymizer
+from app.lockout.composition import build_lockout_service
 from app.login.application.authorize_request import AuthorizeRequestUseCase
 from app.login.application.get_current_account import GetCurrentAccountUseCase
 from app.login.application.get_public_keys import GetPublicKeysUseCase
@@ -56,6 +57,7 @@ def wire_login(
         clock,
         events,
         HmacEmailFingerprinter(build_pseudonymizer(settings.log_pseudonym_key)),
+        build_lockout_service(settings, engine, events),
         settings.access_token_ttl_seconds,
         settings.refresh_token_ttl_seconds,
     )

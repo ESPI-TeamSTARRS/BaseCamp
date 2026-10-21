@@ -7,6 +7,11 @@ from fastapi import FastAPI
 from sqlalchemy import Engine, text
 
 from app.core.events.business_event_logger import BusinessEventLogger
+from app.lockout.__tests__.fakes import FIVE_IN_FIFTEEN
+from app.lockout.application.lockout_service import LockoutService
+from app.lockout.infrastructure.repositories.sqlalchemy_lockout_unit_of_work import (
+    SqlAlchemyLockoutUnitOfWork,
+)
 from app.login.__tests__.fakes import FakeClock, FakeEmailFingerprinter
 from app.login.__tests__.schema import insert_user, migrated_engine
 from app.login.application.authorize_request import AuthorizeRequestUseCase
@@ -49,6 +54,9 @@ class LoginStack:
             self.clock,
             events,
             FakeEmailFingerprinter(),
+            LockoutService(
+                lambda: SqlAlchemyLockoutUnitOfWork(self.engine), FIVE_IN_FIFTEEN, events
+            ),
             900,
             604800,
         )

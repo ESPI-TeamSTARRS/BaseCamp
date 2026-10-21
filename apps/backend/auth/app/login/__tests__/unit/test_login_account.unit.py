@@ -2,6 +2,8 @@ import pytest
 
 from app.core.__tests__.in_memory_business_event_logger import InMemoryBusinessEventLogger
 from app.core.events.outcome import Outcome
+from app.lockout.__tests__.fakes import FIVE_IN_FIFTEEN, FakeLockoutUnitOfWork, LockoutStore
+from app.lockout.application.lockout_service import LockoutService
 from app.login.__tests__.fakes import (
     ACCOUNT_SECRET,
     EMAIL,
@@ -29,6 +31,7 @@ class Setup:
         self.signer = FakeAccessTokenSigner()
         self.clock = FakeClock()
         self.events = InMemoryBusinessEventLogger()
+        self.lockouts = LockoutStore()
         self.use_case = LoginAccountUseCase(
             lambda: FakeUnitOfWork(self.store),
             self.verifier,
@@ -37,6 +40,9 @@ class Setup:
             self.clock,
             self.events,
             FakeEmailFingerprinter(),
+            LockoutService(
+                lambda: FakeLockoutUnitOfWork(self.lockouts), FIVE_IN_FIFTEEN, self.events
+            ),
             ACCESS_TTL,
             REFRESH_TTL,
         )
