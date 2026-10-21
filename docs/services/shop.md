@@ -12,6 +12,7 @@ Catalogue, commandes et stock. Demande les paiements au service [payment](paymen
 | GET | `/health/ready` | readiness : 200 si la base répond, **503** sinon (corps `{"service", "status": "up" \| "down"}`) |
 | POST | `/cart/quote` | devis d'un panier calculé par le serveur (voir ci-dessous) |
 | POST | `/orders` | crée une commande « en attente de paiement » (voir ci-dessous) |
+| POST | `/orders/lookup` | retrouve une commande par numéro et email (suivi, voir ci-dessous) |
 | GET | `/products` | catalogue paginé, filtrable par catégorie (voir ci-dessous) |
 | GET | `/products/{slug}` | fiche détaillée d'un produit |
 | POST | `/pay` | démarre le paiement d'un panier : montant recalculé par le serveur, intention créée dans `payment` (voir ci-dessous) |
@@ -47,6 +48,13 @@ Réponse : `id`, `number` (`BC-` + 10 caractères, non séquentiel), `status` (`
 | 422 | corps invalide, produit inconnu, pays hors liste (`FR`, `BE`, `CH`, `LU`, `DE`, `ES`, `IT`), clé réutilisée avec un autre contenu |
 
 Les prix sont relus en base sous verrou et la livraison suit la règle du devis (5,90 € sous 80 €). Les messages d'erreur sont fixes : aucune valeur reçue n'est reflétée. La passerelle limite `/api/shop/orders` à 10 requêtes par minute et par adresse.
+
+### `POST /orders/lookup`
+Suivi d'une commande par son numéro et l'email de la commande. Corps strict : `{"orderNumber": "BC-XXXXXXXXXX", "email": "…"}` (le numéro doit avoir le format `BC-` + 10 caractères majuscules ou chiffres, sinon `422` assaini). Réponse `200` : `number`, `status` (`pending_payment`, `paid`, `expired`), `lines` (`name`, `unit_price_cents`, `quantity`, `line_total_cents`, tels que figés à la commande), `subtotal_cents`, `shipping_cents`, `total_cents`, `created_at`. Ni l'email ni l'adresse ne sont renvoyés. L'email est comparé sans tenir compte de la casse ni des espaces, en temps constant.
+
+**Anti-énumération** : un numéro inconnu et un email erroné donnent exactement la même réponse, `404 {"detail": "Commande introuvable."}` (même corps, mêmes en-têtes), et le lecteur fait le même nombre de requêtes dans les deux cas. Seuls les logs internes distinguent `order_not_found` de `email_mismatch`, pour repérer une tentative d'énumération. La valeur reçue n'est jamais reflétée.
+
+**Limitation de débit** : la route est sous la règle de la passerelle `/api/shop/orders` (10 requêtes par minute et par adresse, rafale de 5). Un palier plus strict propre au suivi viendra avec le ticket de limitation de débit de la passerelle (S11); il ne demande aucune modification de `shop`.
 
 ### `POST /pay`
 Corps strict : `{"order_reference", "lines": [{"productId", "quantity"}]}` (aucun montant : le total est celui du devis serveur, livraison comprise) et en-tête `Idempotency-Key` (8 à 255 caractères, transmise à `payment`). Réponse `201` : `{payment_intent_id, status, amount_cents, currency}`. Panier invalide ou stock insuffisant : `422`; refus métier de `payment` : `409` (commande déjà payée) ou `422`, message fixe `{"detail": "Paiement refuse."}`.
@@ -104,6 +112,8 @@ Format et règles communes : [journalisation métier](../development/logging.md)
 | `stock.insufficient` | denied | `insufficient_stock` | ressource `product` (id); `email_hash` |
 | `order.rejected` | denied | `country_not_supported`, `invalid_cart`, `quantity_out_of_range`, `duplicate_product`, `product_not_found`, `idempotency_key_reused` | `email_hash` (jamais la clé d'idempotence, l'email ni l'adresse) |
 | `cart.quote_rejected` | denied | `invalid_cart` (nombre de lignes), `quantity_out_of_range`, `duplicate_product`, `product_not_found` | |
+| `order.looked_up` | success | | ressource `order` (numéro); `status` |
+| `order.lookup_denied` | denied | `order_not_found`, `email_mismatch` | `email_hash` du demandeur; ressource `order` seulement si le numéro existe (jamais l'email reçu) |
 | `pay.payment_started` | success | | ressource `payment_intent` (id), `amount_cents`, `currency` |
 | `pay.payment_rejected` | denied | `insufficient_stock`, `payment_conflict`, `payment_refused` | refus avant ou par `payment` |
 | `pay.payment_unavailable` | error | `payment_unavailable` | `payment` arrêté, injoignable ou saturé (503 renvoyé) |
