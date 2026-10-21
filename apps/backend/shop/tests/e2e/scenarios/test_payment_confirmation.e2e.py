@@ -17,12 +17,14 @@ import subprocess
 import time
 import uuid
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
 
 BASE_URL = os.environ.get("E2E_BASE_URL", "")
+REPO_ROOT = Path(__file__).resolve().parents[6]  # COMPOSE_FILE est relatif à la racine du dépôt
 MAILPIT_URL = os.environ.get("E2E_MAILPIT_URL", "")
 ORDERS_PATH = "/api/shop/orders"
 PRODUCT = "boussole-orientation-pro"  # 29,00 EUR, gros stock
@@ -168,6 +170,7 @@ def _compose(*args: str, timeout: int = 60) -> str:
         text=True,
         timeout=timeout,
         check=False,
+        cwd=REPO_ROOT,
     )
     assert result.returncode == 0, result.stderr[-300:]
     return result.stdout
