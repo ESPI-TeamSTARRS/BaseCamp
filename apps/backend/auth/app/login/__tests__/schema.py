@@ -1,4 +1,4 @@
-"""Schema des tests d'integration : les vraies migrations (0004, 0007 puis 0008) sur SQLite en memoire."""
+"""Schema des tests d'integration : les vraies migrations (0004, 0007, 0008 puis 0009) sur SQLite en memoire."""
 
 import importlib.util
 from datetime import datetime
@@ -32,6 +32,7 @@ def migrated_engine() -> Engine:
         load_migration("0004_users_et_verification").upgrade()
         load_migration("0007_login").upgrade()
         load_migration("0008_refresh_rotation").upgrade()
+        load_migration("0009_login_lockouts").upgrade()
     return engine
 
 

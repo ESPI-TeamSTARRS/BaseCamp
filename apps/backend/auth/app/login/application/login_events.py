@@ -15,8 +15,13 @@ REASON_REFRESH_REUSED = "refresh_token_reused"
 CAUSE_UNKNOWN_ACCOUNT = "unknown_account"
 CAUSE_WRONG_PASSWORD = "wrong_password"  # noqa: S105
 CAUSE_ACCOUNT_DISABLED = "account_disabled"
+CAUSE_ACCOUNT_LOCKED = "account_locked"
 CAUSE_UNKNOWN_TOKEN = "unknown_token"  # noqa: S105
 CAUSE_EXPIRED_TOKEN = "expired_token"  # noqa: S105
+
+# Etape du parcours de connexion (verrouillage et journaux) : `password` aujourd'hui; un parcours en
+# plusieurs temps ajoutera ses etapes sans changer le schema des evenements.
+STEP_PASSWORD = "password"  # noqa: S105
 
 RESOURCE_ACCOUNT = "account"
 RESOURCE_ACCESS_TOKEN = "access_token"  # noqa: S105

@@ -71,7 +71,7 @@ Le futur changement de mot de passe depuis « mon compte » réutilisera le mêm
 - **Anti-énumération** : email inconnu, mauvais mot de passe et compte désactivé donnent la même réponse (statut, corps, en-têtes hors `X-Correlation-ID`) et coûtent chacun **exactement une vérification argon2id** (un hachage factice, calculé au démarrage avec les mêmes paramètres, sert à l'email inconnu; le compte désactivé est vérifié avec le vrai hachage avant d'être refusé). Le motif réel n'existe que dans le journal (`attributes.cause`).
 - **Ré-hachage** : après une connexion réussie, si le hachage stocké a été produit avec d'autres paramètres argon2id que ceux en vigueur (`check_needs_rehash`), le mot de passe est ré-haché et remplacé dans la même transaction que le jeton de rafraîchissement.
 - Compte « désactivé » : `users.disabled_at` non nul. Il refuse la connexion et invalide aussitôt `/me` (un jeton déjà émis reste valide chez `shop` et `payment` jusqu'à son expiration, 15 minutes au plus).
-- Le verrouillage progressif (A6) n'est pas là : seule la limitation de débit de la passerelle protège du brute-force pour l'instant.
+- **Verrouillage progressif** : voir « Verrouillage progressif » ci-dessous (défaut : 5 échecs en 15 min verrouillent 15 min, puis 30 et 60 min en cas de récidive). La passerelle limite en plus le débit par IP.
 
 ### Rafraîchissement et déconnexion (`POST /refresh`, `POST /logout`)
 - **Rotation** : le jeton présenté est consommé par un seul `UPDATE ... WHERE used_at IS NULL AND expires_at > now RETURNING` atomique, puis un nouveau jeton (256 bits, durée de 7 jours neuve) est émis dans la même famille avec un nouveau jeton d'accès (15 minutes). L'ancien ne sert plus. Deux rafraîchissements simultanés avec le même jeton : **un seul réussit**, les autres reçoivent 401 (test d'intégration à threads et scénario e2e sur Postgres).
@@ -81,6 +81,15 @@ Le futur changement de mot de passe depuis « mon compte » réutilisera le mêm
 - **Déconnexion** : supprime la famille du jeton présenté (même si ce jeton a déjà été remplacé), efface le cookie, répond 204 dans tous les cas. Le jeton d'accès déjà émis reste valide jusqu'à son expiration (15 minutes au plus). Hors périmètre : « déconnecter tous mes appareils ».
 - **Réinitialisation du mot de passe** : elle supprime tous les jetons de rafraîchissement du compte, toutes familles confondues.
 - Les lignes antérieures à la rotation n'ont ni famille ni `used_at` : un tel jeton forme sa propre famille et est consommable normalement.
+
+### Verrouillage progressif (tranche `lockout`)
+Composant **indépendant de la connexion** (domaine, port `LockoutRepository`, service `LockoutService`), appelable depuis n'importe quelle étape d'un parcours : `check(scope, subject, now)` avant de vérifier, `record_failure(...)` après un échec, `record_success(...)` après un succès. `scope` est un libellé libre (l'étape : `password` aujourd'hui; `identifier` ou `face` pour un futur parcours de connexion en plusieurs temps) et `subject` une empreinte opaque, jamais une adresse. Aucun seuil n'est codé dans la tranche `login`.
+
+- **Politique** (`LockoutPolicy`, lue de la configuration) : `max_failures` échecs dans `window` verrouillent le sujet; la durée suit l'échelle `durations` (1er verrou, 2e en cas de récidive, …) et **la dernière durée est le plafond** : un attaquant ne peut jamais verrouiller plus longtemps. L'échelle est oubliée après `memory` sans nouveau verrou. Exemples : défaut `5 / 15 min / 15-30-60 min`; « un nouvel essai puis 5 minutes » = `APP_LOCKOUT_MAX_FAILURES=2`, `APP_LOCKOUT_DURATIONS_SECONDS=300`.
+- **Réponse** : un sujet verrouillé reçoit **exactement la réponse générique 401** (statut, corps, en-têtes, sans `Retry-After` ni cookie), **même avec le bon mot de passe**, et paie la même vérification argon2id. Le verrou est clé sur l'empreinte de l'adresse : une adresse inconnue se verrouille comme une adresse connue (rien ne trahit l'existence d'un compte). Un échec pendant un verrou ne compte pas et ne le prolonge pas; un succès remet le compteur et l'échelle à zéro.
+- **Stockage** : table `login_lockouts` (`scope`, `subject`, `failures`, `window_started_at`, `level`, `locked_until`, `updated_at`), donc il survit à un redémarrage et se partage entre instances. Chaque échec s'exécute dans une transaction qui verrouille la ligne du sujet (`SELECT ... FOR UPDATE` après un `INSERT ... ON CONFLICT DO NOTHING`) : des échecs simultanés ne se perdent pas. Les lignes inactives depuis plus de `memory` sont purgées à chaque échec (la table ne grossit pas indéfiniment sous un tir d'adresses inconnues).
+- **Journaux** : `auth.lockout_triggered` (une fois, au moment du verrou) et les événements `login` portent l'attribut `step` (étape), sans changer le schéma pour de futures étapes.
+- **Passerelle** : Traefik répond 429 avec `Retry-After` au-delà du débit par IP réelle (`/login` et `/register` partagent 60/min, rafale de 30; `/password/forgot` 20/min, rafale de 10); `X-Forwarded-For` est ignoré (clé = adresse de connexion); corps > 1 Mio : 413; délais d'expiration vers les services définis. Scénarios `test_zy_lockout.e2e.py` et `test_zz_gateway_protection.e2e.py` (placés en dernier : ils consomment le seuil par IP de la passerelle) (429, en-tête forgé, 413, 200 tentatives parallèles avec `/health` à 200 et p95 < 200 ms).
 
 ### Jetons d'accès clients
 JWT signé **EdDSA (Ed25519)** avec la même clé que les jetons de service, en-tête `{"alg":"EdDSA","typ":"JWT","kid":"<empreinte RFC 7638 de la clé publique>"}`.
@@ -116,7 +125,7 @@ Les jetons de l'ancienne clé restent valides jusqu'à leur expiration (test d'i
 3. Après 15 minutes (durée d'un jeton d'accès) plus la durée de cache du JWKS, retirer l'ancienne clé publique.
 
 ## Tables
-Migrations `0004_users_et_verification` (down_revision `0003`), `0006_reinitialisation_mot_de_passe` (down_revision `0004`) puis `0007_login` (down_revision `0006`) et `0008_refresh_rotation` (down_revision `0007`, deux colonnes nullables et un index, rien de supprimé ni renommé : l'ancienne version continue de fonctionner). La 0006 est additive : trois tables, rien de modifié ni supprimé. La 0007 l'est aussi (expand/contract) : une colonne nullable et une table, rien n'est supprimé ni renommé.
+Migrations `0004_users_et_verification` (down_revision `0003`), `0006_reinitialisation_mot_de_passe` (down_revision `0004`) puis `0007_login` (down_revision `0006`), `0009_login_lockouts` (down_revision `0008`, table nouvelle, rien de modifié) et `0008_refresh_rotation` (down_revision `0007`, deux colonnes nullables et un index, rien de supprimé ni renommé : l'ancienne version continue de fonctionner). La 0006 est additive : trois tables, rien de modifié ni supprimé. La 0007 l'est aussi (expand/contract) : une colonne nullable et une table, rien n'est supprimé ni renommé.
 
 | Table | Colonnes |
 |---|---|
@@ -217,6 +226,9 @@ Les émissions, refus et limitations sont journalisés via le port `BusinessEven
 | `APP_JWT_PREVIOUS_PUBLIC_KEYS_DIR` | dossier facultatif de clés publiques PEM précédentes, publiées et acceptées pendant une rotation |
 | `APP_ACCESS_TOKEN_TTL_SECONDS` | durée du jeton d'accès client (défaut 900, strictement positive) |
 | `APP_REFRESH_TOKEN_TTL_SECONDS` | durée du jeton de rafraîchissement et du cookie (défaut 604800, 7 jours) |
+| `APP_LOCKOUT_MAX_FAILURES`, `APP_LOCKOUT_WINDOW_SECONDS` | échecs qui verrouillent et fenêtre de comptage (défaut 5 et 900) |
+| `APP_LOCKOUT_DURATIONS_SECONDS` | échelle des durées de verrou en secondes, séparées par des virgules; la dernière est le plafond (défaut `900,1800,3600`) |
+| `APP_LOCKOUT_MEMORY_SECONDS` | durée sans verrou après laquelle l'échelle repart du premier palier (défaut 86400) |
 | `APP_SERVICE_TOKEN_RATE_LIMIT_PER_MINUTE` | demandes de jeton par client et par minute (défaut 60) |
 | `APP_SERVICE_CLIENTS`, `APP_SERVICE_CLIENT_SECRET_<CLIENT>[_PREVIOUS]` | lus par la commande d'amorçage uniquement |
 | `APP_LOG_PSEUDONYM_KEY` | clé HMAC des empreintes d'email dans les logs; obligatoire hors `dev` et `local` |
@@ -274,12 +286,13 @@ La tranche `login` émet (mêmes règles : email seulement en `email_hash`, jama
 
 | Événement | Outcome | Reason | Ressource et attributs |
 |---|---|---|---|
-| `auth.login_succeeded` | success | | `account` + id, acteur `user` + id; `email_hash`, `hash_upgraded` (le hachage a été ré-haché) |
-| `auth.login_failed` | denied | `invalid_credentials` | `account` (+ id si le compte existe); `client_ip`; `email_hash`; `cause` interne : `unknown_account`, `wrong_password` ou `account_disabled` |
+| `auth.login_succeeded` | success | | `account` + id, acteur `user` + id; `email_hash`, `hash_upgraded` (le hachage a été ré-haché), `step` |
+| `auth.login_failed` | denied | `invalid_credentials` | `account` (+ id si le compte existe); `client_ip`; `email_hash`; `cause` interne : `unknown_account`, `wrong_password`, `account_disabled` ou `account_locked`; `step` |
 | `auth.token_refreshed` | success | | `account` + id, acteur `user` + id; `client_ip` |
 | `auth.refresh_rejected` | denied | `invalid_refresh_token` | `refresh_token`; `client_ip`; `cause` interne : `unknown_token`, `expired_token` ou `account_disabled`; `account_id` quand il est connu. Le jeton n'est jamais journalisé |
 | `auth.refresh_reuse_detected` | denied | `refresh_token_reused` | `account` + id; `client_ip`. Toute la famille a été révoquée |
 | `auth.logout_completed` | success | | `account` + id, acteur `user` + id; `sessions_revoked` (jetons supprimés). Rien n'est émis si le jeton est absent ou inconnu |
+| `auth.lockout_triggered` | denied | `too_many_failures` | `lockout_subject`; `step`, `subject_hash` (empreinte), `level` (rang du verrou), `locked_seconds`. Émis une fois, quand le verrou se pose |
 | `auth.token_rejected` | denied | `expired`, `invalid`, `revoked` | `access_token`; acteur `user` + id pour `revoked` (compte inconnu ou désactivé). Émis par `/me` : le jeton n'est jamais journalisé |
 
 `client_ip` vient de `X-Forwarded-For` posé par la passerelle, accepté seulement s'il s'agit d'une adresse IP valide (sinon l'adresse de la connexion).
@@ -288,7 +301,6 @@ Catalogue cible des prochains tickets d'auth (même règles) :
 
 | Événement | Outcome | Reason |
 |---|---|---|
-| `auth.login_failed` | denied | `account_locked` (A6, avec `client_ip`) |
 | `auth.token_refreshed` | success | |
 | `auth.logout` | success | |
 | `auth.password_changed` | success | |
