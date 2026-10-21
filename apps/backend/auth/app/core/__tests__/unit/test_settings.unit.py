@@ -141,3 +141,42 @@ class TestSettingsClientTokens:
 
         with pytest.raises(ValueError, match="greater than 0"):
             Settings()
+
+
+class TestSettingsLockout:
+    def test_the_lockout_has_the_ticket_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for name in ("MAX_FAILURES", "WINDOW_SECONDS", "DURATIONS_SECONDS", "MEMORY_SECONDS"):
+            monkeypatch.delenv(f"APP_LOCKOUT_{name}", raising=False)
+
+        settings = Settings()
+
+        assert settings.lockout_max_failures == 5
+        assert settings.lockout_window_seconds == 900
+        assert settings.lockout_durations == (900, 1800, 3600)
+        assert settings.lockout_memory_seconds == 86400
+
+    def test_the_policy_is_read_from_the_environment(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("APP_LOCKOUT_MAX_FAILURES", "2")
+        monkeypatch.setenv("APP_LOCKOUT_WINDOW_SECONDS", "300")
+        monkeypatch.setenv("APP_LOCKOUT_DURATIONS_SECONDS", "300")
+
+        settings = Settings()
+
+        assert (settings.lockout_max_failures, settings.lockout_window_seconds) == (2, 300)
+        assert settings.lockout_durations == (300,)
+
+    @pytest.mark.parametrize("value", ["", "abc", "900,-1", "0", "900,,x"])
+    def test_invalid_durations_are_refused(
+        self, monkeypatch: pytest.MonkeyPatch, value: str
+    ) -> None:
+        monkeypatch.setenv("APP_LOCKOUT_DURATIONS_SECONDS", value)
+
+        with pytest.raises(ValueError, match="APP_LOCKOUT_DURATIONS_SECONDS"):
+            Settings()
+
+    @pytest.mark.parametrize("name", ["MAX_FAILURES", "WINDOW_SECONDS", "MEMORY_SECONDS"])
+    def test_thresholds_must_be_positive(self, monkeypatch: pytest.MonkeyPatch, name: str) -> None:
+        monkeypatch.setenv(f"APP_LOCKOUT_{name}", "0")
+
+        with pytest.raises(ValueError, match=r"greater than"):
+            Settings()
