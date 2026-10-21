@@ -15,6 +15,7 @@ Tranches verticales Clean Architecture (`domain / application / infrastructure /
 | `service_token` | jetons de service : émission (`IssueServiceTokenUseCase`), vérification (`VerifyTokenUseCase`), amorçage des clients, limitation de débit par client, `Ed25519KeyStore` (lecture des clés montées) |
 | `registration` | inscription et vérification d'email : `RegisterAccountUseCase`, `VerifyEmailUseCase`, `PasswordPolicy`, `EmailAddress`, dépôts SQLAlchemy dans une unité de travail, hachage argon2id, envoi SMTP |
 | `password_reset` | réinitialisation du mot de passe : `RequestPasswordResetUseCase`, `ResetPasswordUseCase`, port `SessionRevoker` (supprime les jetons de rafraîchissement), limite par adresse en base; réutilise le domaine de `registration` (`PasswordPolicy`, `EmailAddress`, horloge, jetons, hachage) |
+| `observability` | signaux de détection : `RecordRequestUseCase` (une ligne de journal et les compteurs par requête), `RenderMetricsUseCase` (`/metrics`), `CountingEventLogger` (compte chaque événement métier en même temps qu'il le journalise), lecture des verrous actifs en base |
 | `login` | connexion et jetons d'accès clients : `LoginAccountUseCase`, `GetCurrentAccountUseCase`, `GetPublicKeysUseCase`, trousseau Ed25519 (`Ed25519KeyRing`, `LazyEd25519KeyRing`), signature et vérification JWT (`JwtAccessTokenSigner`, `JwtAccessTokenVerifier`), vérificateur argon2id avec hachage factice, dépôts SQLAlchemy |
 
 | `admin` | administration des comptes par un opérateur : `ListAccountsUseCase`, `ChangeAccountStatusUseCase` (désactiver, réactiver), `CreateOperatorUseCase` (commande d'exploitation seulement); lit et écrit un sous-ensemble de `users` avec sa propre base SQLAlchemy et supprime les `refresh_tokens` du compte désactivé; réutilise `PasswordPolicy`, le hachage et l'horloge de `registration` |
@@ -25,6 +26,7 @@ Les autres tranches métier (par exemple « déconnecter tous mes appareils ») 
 | Méthode | Route | Description |
 |---|---|---|
 | GET | `/health` | liveness : 200 tant que le processus répond |
+| GET | `/metrics` | métriques Prometheus, **réseau interne seulement** (voir « Signaux de détection »); 404 derrière un proxy; absente d'OpenAPI |
 | GET | `/health/ready` | readiness : 200 si la base répond, 503 sinon |
 | POST | `/internal/token` | jeton de service (réseau interne seulement, voir plus bas) |
 | POST | `/register` | inscription `{email, password}` : 202 et message neutre, identique que l'adresse soit libre ou déjà inscrite; 422 assaini si la saisie est invalide |
@@ -319,16 +321,66 @@ La tranche `admin` et la garde `require_role` émettent :
 | `auth.operator_created` | success ou denied | `weak_password` (attribut `rule`), `operator_exists` | cible `account` + id (succès), acteur `cli` |
 | `auth.access_denied` | denied | `role_required` | acteur `user` + id; `required` (rôles exigés) |
 
-Catalogue cible des prochains tickets d'auth (même règles) :
-
-| Événement | Outcome | Reason |
-|---|---|---|
-| `auth.token_refreshed` | success | |
-| `auth.logout` | success | |
-| `auth.password_changed` | success | |
-
-
 Avant l'authentification, l'acteur est inconnu : seul `email_hash` identifie la tentative.
 
+## Signaux de détection
+Les autres équipes (remédiation, détection) lisent deux sources, sans rien configurer côté `auth` : le **journal JSON** (sortie standard) et `GET /metrics`. Collecte, agrégation et tableaux de bord sont hors périmètre.
+
+### Journal
+- Une ligne JSON par événement métier (schéma commun `docs/development/log-event.schema.json`) **et une ligne par requête terminée** : `service.request_completed` avec `attributes.route` (le **gabarit** de la route, par exemple `/admin/users/{account_id}/disable`, jamais le chemin réel), `attributes.method`, `attributes.status`, `duration_ms`, `outcome` (`success` sous 400, `denied` en 4xx, `error` en 5xx) et `reason` `http_<statut>` hors succès. Les sondes réussies (`/health`, `/health/ready`, `/metrics`) sont comptées mais pas journalisées.
+- **`request_id`** : c'est le `correlation_id` de chaque ligne, repris de `X-Correlation-ID` (s'il est valide) ou généré, et renvoyé dans la réponse; il relie la ligne de requête et les événements qu'elle a produits.
+- Ni adresse email (seulement `email_hash`, HMAC), ni mot de passe, ni jeton, ni cookie, ni secret, ni clé : le test `test_audit_log.integ.py` rejoue connexion, échec, rafraîchissement, réinitialisation et jeton de service puis cherche ces valeurs dans toute la sortie et dans `/metrics`.
+
+Événements demandés par le ticket et leur nom publié (les noms déjà publiés ne sont pas renommés) :
+
+| Signal attendu | Événement publié | Motif / attributs utiles |
+|---|---|---|
+| `login_succeeded` | `auth.login_succeeded` | `step` |
+| `login_failed` | `auth.login_failed` (denied) | `cause` : `unknown_account`, `wrong_password`, `account_disabled`, `account_locked`; `step`; `client_ip` |
+| `account_locked` | `auth.lockout_triggered` (denied, `too_many_failures`) | `step`, `level`, `locked_seconds`; un essai pendant le verrou donne `auth.login_failed` avec `cause=account_locked` |
+| `refresh_reuse_detected` | `auth.refresh_reuse_detected` (denied) | acteur : compte; la famille entière est révoquée |
+| `password_reset_requested` / `password_reset_completed` | `auth.password_reset_requested` / `auth.password_reset_completed` | `sessions_revoked` à la fin |
+| `service_token_issued` / `service_token_denied` | `auth.service_token_issued` / `auth.service_token_denied` | `resource_id` : client; motif fermé; `auth.service_rate_limited` en plus |
+| `admin_action` | `auth.account_disabled`, `auth.account_enabled`, `auth.accounts_listed`, `auth.admin_action_refused`, `auth.operator_created` | acteur (qui), cible (quoi), horodatage (quand) |
+
+### `GET /metrics`
+Format texte Prometheus 0.0.4, pour un collecteur placé sur le réseau interne (`http://auth:8000/metrics`). **Aucune authentification, aucune exposition publique** :
+- Traefik exclut `/api/auth/metrics` du routeur `auth` (`infra/traefik/dynamic.yml` et `deploy/traefik/dynamic.prod.yml`, comme `/api/auth/internal`); le test `test_metrics_isolation.unit.py` fige cette règle et `test_metrics.e2e.py` vérifie sur la pile que la passerelle ne sert rien.
+- Défense en profondeur : une demande qui porte un en-tête de proxy (`X-Forwarded-For`, `X-Forwarded-Host`, `X-Forwarded-Proto`, `Forwarded`, `X-Real-Ip`) reçoit 404 et journalise `service.metrics_refused`.
+
+Les libellés sont une **liste fermée** : `route` (gabarit ou `unmatched`), `method` (liste fermée, sinon `OTHER`), `status`, `le`, `event`, `outcome`, `reason`, `cause`, `step`, `client` (client de service **connu** de la configuration, sinon `unknown` : un identifiant saisi par un attaquant ne devient jamais un libellé).
+
+| Série | Type | Libellés | Origine |
+|---|---|---|---|
+| `auth_http_requests_total` | counter | `route`, `method`, `status` | processus |
+| `auth_http_request_duration_seconds` | histogram | `route`, `method` (+ `le`) | processus; seaux 5 ms à 10 s |
+| `auth_events_total` | counter | `event`, `outcome`, `reason` | processus : les mêmes événements que le journal |
+| `auth_login_failures_total` | counter | `cause` | processus (`auth.login_failed`) |
+| `auth_lockouts_triggered_total` | counter | `step` | processus (`auth.lockout_triggered`) |
+| `auth_refresh_reuse_detected_total` | counter | | processus (`auth.refresh_reuse_detected`) |
+| `auth_service_token_denied_total` | counter | `client` | processus (`auth.service_token_denied`) |
+| `auth_service_token_rate_limited_total` | counter | `client` | processus (`auth.service_rate_limited`) |
+| `auth_active_lockouts` | gauge | `step` | base : sujets verrouillés à cet instant (`login_lockouts.locked_until > now`) |
+| `auth_state_up` | gauge | | 1 si l'état a pu être lu en base pendant cette collecte, 0 sinon (la série `auth_active_lockouts` est alors **absente**, pas à zéro) |
+
+Les compteurs sont **par processus** (aucun état partagé en mémoire entre instances) : la collecte additionne les instances et gère un compteur qui repart de zéro au redémarrage. Seuls les verrous actifs sont lus en base, donc partagés entre instances.
+
+### Seuils conseillés
+Valeurs de départ à ajuster avec les équipes de détection; elles supposent le défaut de verrouillage (5 échecs en 15 min) et le seuil par IP de la passerelle (60/min).
+
+| Signal | Condition conseillée | Lecture |
+|---|---|---|
+| Bourrage d'identifiants | `increase(auth_login_failures_total{cause="unknown_account"}[10m])` > 100 | beaucoup d'adresses inconnues : essai de listes d'identifiants |
+| Force brute sur un compte | `increase(auth_lockouts_triggered_total[15m])` ≥ 5, ou `auth_active_lockouts` > 10 | plusieurs comptes verrouillés en même temps (un verrou isolé est normal) |
+| Réutilisation de jeton | `increase(auth_refresh_reuse_detected_total[1h])` ≥ 1 | jeton de rafraîchissement volé ou rejoué : **alerte immédiate**; plus de 3 par heure et par client = suspect (deux onglets simultanés en produisent rarement) |
+| Jetons de service refusés | `increase(auth_service_token_denied_total{client!="unknown"}[5m])` ≥ 3, ou tout `client="unknown"` | un client connu avec un mauvais secret, ou un identifiant inconnu : secret périmé ou sondage |
+| Limite de débit des clients de service | `increase(auth_service_token_rate_limited_total[5m])` > 0 | client en boucle |
+| Rafale sur la passerelle | part de `auth_http_requests_total{status="429"}` > 5 % sur 5 min | débit par IP atteint (voir aussi les journaux de Traefik) |
+| Erreurs serveur | `rate(auth_http_requests_total{status=~"5.."}[5m])` > 0 pendant 5 min | défaut du service ou de sa base |
+| Latence | `histogram_quantile(0.95, rate(auth_http_request_duration_seconds_bucket[5m]))` > 0,5 s sur `/login` | le hachage argon2id est coûteux : au-delà, saturation |
+| Base illisible | `auth_state_up == 0` pendant 2 min | les verrous actifs ne sont plus mesurables |
+| Actions d'administration | toute ligne `auth.account_disabled` ou `auth.operator_created` hors changement planifié | audit : qui a désactivé quoi |
+| Collecte détournée | toute ligne `service.metrics_refused` | quelqu'un a routé `auth` d'une façon qui expose `/metrics` |
+
 ## Tests
-`uv run poe test` (unit et integ, couverture ≥ 80 %); `uv run poe test:e2e` sur la pile lancée (`E2E_BASE_URL`, `http://127.0.0.1:8080` par défaut); les scénarios de jetons de service appellent `auth` depuis le conteneur `shop` (réseau `app`, `docker compose exec`) et lisent le secret du client `shop` dans `AUTH_SERVICE_CLIENT_SECRET_SHOP` ou `.env`. Les scénarios d'inscription et de réinitialisation lisent les emails dans Mailpit via `E2E_MAILPIT_URL` (ignorés sans cette variable); `E2E_CHECK_LOGS=1` ajoute le contrôle des journaux des conteneurs (`docker compose logs`, lancé depuis la racine du dépôt) : ni mot de passe, ni jeton, ni adresse. Les scénarios de connexion (`test_login.e2e.py`) créent leur compte par `/register`, vérifient la signature des jetons avec le JWKS publié par la passerelle, les 401 génériques et un temps de réponse comparable; avec `E2E_CHECK_LOGS=1`, ils désactivent un compte par `docker compose exec postgres-auth psql` et contrôlent aussi les journaux (ni jeton d'accès, ni cookie de rafraîchissement, ni clé privée). Les scénarios de rafraîchissement (`test_refresh.e2e.py`) passent le cookie `Secure` à la main (pile en http) et couvrent la rotation, le rejeu, l'en-tête anti-CSRF, la déconnexion idempotente et huit rafraîchissements simultanés avec le même jeton (un seul réussit). Les scénarios d'administration (`test_admin.e2e.py`, `E2E_CHECK_LOGS=1`) créent l'opérateur par `docker compose exec auth python -m app.admin.create_operator` puis vérifient 401, 403, la liste, la désactivation (le compte ne peut plus se connecter) et le refus de l'auto-désactivation.
+`uv run poe test` (unit et integ, couverture ≥ 80 %); `uv run poe test:e2e` sur la pile lancée (`E2E_BASE_URL`, `http://127.0.0.1:8080` par défaut); les scénarios de jetons de service appellent `auth` depuis le conteneur `shop` (réseau `app`, `docker compose exec`) et lisent le secret du client `shop` dans `AUTH_SERVICE_CLIENT_SECRET_SHOP` ou `.env`. Les scénarios d'inscription et de réinitialisation lisent les emails dans Mailpit via `E2E_MAILPIT_URL` (ignorés sans cette variable); `E2E_CHECK_LOGS=1` ajoute le contrôle des journaux des conteneurs (`docker compose logs`, lancé depuis la racine du dépôt) : ni mot de passe, ni jeton, ni adresse. Les scénarios de connexion (`test_login.e2e.py`) créent leur compte par `/register`, vérifient la signature des jetons avec le JWKS publié par la passerelle, les 401 génériques et un temps de réponse comparable; avec `E2E_CHECK_LOGS=1`, ils désactivent un compte par `docker compose exec postgres-auth psql` et contrôlent aussi les journaux (ni jeton d'accès, ni cookie de rafraîchissement, ni clé privée). Les scénarios de rafraîchissement (`test_refresh.e2e.py`) passent le cookie `Secure` à la main (pile en http) et couvrent la rotation, le rejeu, l'en-tête anti-CSRF, la déconnexion idempotente et huit rafraîchissements simultanés avec le même jeton (un seul réussit). Les scénarios d'administration (`test_admin.e2e.py`, `E2E_CHECK_LOGS=1`) créent l'opérateur par `docker compose exec auth python -m app.admin.create_operator` puis vérifient 401, 403, la liste, la désactivation (le compte ne peut plus se connecter) et le refus de l'auto-désactivation. `test_metrics.e2e.py` lit `/metrics` depuis le conteneur `auth` (`docker compose exec`), vérifie que la passerelle ne le sert pas (`/api/auth/metrics`, `/metrics`) et que les en-têtes de proxy donnent 404. Tests de signaux : `app/observability/__tests__` (compteurs, histogramme, format, journal de requête validé contre le schéma, absence de donnée sensible, refus derrière un proxy, état lu en base, isolation statique de la configuration Traefik).
