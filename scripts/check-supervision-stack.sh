@@ -1,7 +1,7 @@
 #!/bin/sh
 # Verifie le raccordement a la supervision sur la pile en cours (deja lancee avec la surcouche).
 # Usage :
-#   docker network create --internal "$SUPERVISION_NETWORK"      # defaut : supervision
+#   docker network create --internal "$SUPERVISION_NETWORK"; docker network create --internal "$SUPERVISION_PAYMENT_NETWORK"   # crees par l'agent en vrai
 #   docker compose -f docker-compose.yml -f docker-compose.supervision.yml up -d --wait ...
 #   COMPOSE_FILE=docker-compose.yml:docker-compose.supervision.yml sh scripts/check-supervision-stack.sh
 set -eu

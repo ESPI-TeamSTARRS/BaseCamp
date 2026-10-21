@@ -47,8 +47,10 @@ jobs:
           BASECAMP_DOMAIN=basecamp.example.test \
           docker compose -f deploy/docker-compose.prod.yml -f deploy/docker-compose.supervision.prod.yml \
             --env-file deploy/prod.env.example config -q
-      - name: Reseau externe de supervision (interne, comme en production)
-        run: docker network create --internal "$SUPERVISION_NETWORK"
+      - name: Reseaux externes de supervision (internes, crees en production par l'agent)
+        run: |
+          docker network create --internal "$SUPERVISION_NETWORK"
+          docker network create --internal "$SUPERVISION_PAYMENT_NETWORK"
       - name: Pile minimale avec la surcouche (Traefik, front, shop, auth, payment, exporters) healthy
         run: |
           docker compose up -d --build --wait --wait-timeout 300 \
@@ -70,4 +72,4 @@ jobs:
         if: always()
         run: |
           docker compose down -v
-          docker network rm "$SUPERVISION_NETWORK" || true
+          docker network rm "$SUPERVISION_NETWORK" "$SUPERVISION_PAYMENT_NETWORK" || true

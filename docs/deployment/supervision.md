@@ -12,7 +12,7 @@ La supervision (Prometheus, Loki, Grafana…) vit dans le dépôt **Supervision*
 | Élément | Rôle |
 |---|---|
 | Réseau externe `supervision` | rejoint par `traefik` (métriques sur `:9100`), `shop` et `auth` (sondes `/health`) et les trois exporters Postgres |
-| Réseau `supervision-payment` (interne, créé par la pile) | rejoint par `payment` et par la sonde du dépôt Supervision, rien d'autre : `payment-net` reste fermé et le front n'atteint toujours pas `payment` |
+| Réseau externe `supervision-payment` (interne à Docker) | rejoint par `payment` et par la sonde du dépôt Supervision, rien d'autre : `payment-net` reste fermé et le front n'atteint toujours pas `payment` |
 | `pg-exporter-shop`, `-auth`, `-payment` | exporters Postgres (`:9187`) en lecture seule, chacun sur le réseau de données de sa base et sur `supervision` |
 | Rôle Postgres `monitoring` | `pg_monitor` + `default_transaction_read_only`, 5 connexions max, connecté à la base `postgres` de l'instance : statistiques, aucune lecture des tables |
 
@@ -22,11 +22,11 @@ Variables (modèles : `.env.example`, `deploy/prod.env.example`) : `MONITORING_D
 
 ## Mise en route
 
-1. Créer le réseau, de préférence **interne** pour que ni les services ni les exporters n'en tirent un accès sortant : `docker network create --internal supervision`.
+1. **Démarrer d'abord l'agent** du dépôt Supervision (`compose.agent.yaml`, sur la VM de l'application) : c'est lui qui crée les réseaux `supervision` et `supervision-payment` (le second interne, sans accès sortant). La surcouche les rejoint en `external: true` et refuse de démarrer s'ils n'existent pas. En local sans agent : `docker network create --internal supervision` et idem pour `supervision-payment`.
 2. Ajouter les trois mots de passe `MONITORING_DB_PASSWORD_*` au `.env` de la pile.
 3. **Bases déjà en service** : créer le rôle `monitoring` (section suivante) avant ou juste après le démarrage.
 4. Lancer la pile avec les deux fichiers (`up -d --wait`). Les exporters sont « healthy » même si le rôle manque encore : la santé de la base se lit dans la métrique `pg_up` (0 tant que le rôle n'existe pas).
-5. Démarrer ensuite la pile Supervision, qui déclare `supervision` et `supervision-payment` en réseaux externes (la pile applicative doit donc être démarrée d'abord).
+5. Les cibles des exporters et des sondes configurées côté agent doivent reprendre les alias ci-dessus (`basecamp-pg-exporter-*:9187`, `basecamp-shop:8000`…). Aucun mot de passe n'est requis entre l'agent et Loki : la protection repose sur l'adresse d'écoute et `ufw`.
 
 ## Créer le rôle sur une base existante
 

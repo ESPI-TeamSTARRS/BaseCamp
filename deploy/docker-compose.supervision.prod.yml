@@ -103,11 +103,11 @@ services:
       payment-db: { condition: service_healthy }
 
 networks:
-  # Cree par le depot Supervision (docker network create --internal supervision).
+  # Crees par l'agent du depot Supervision (compose.agent.yaml), qui doit donc demarrer avant la pile.
   supervision:
     name: ${SUPERVISION_NETWORK:-supervision}
     external: true
-  # Cree par cette pile ; la sonde de payment (depot Supervision) le rejoint en reseau externe.
+  # Cree lui aussi par l'agent du depot Supervision (reseau interne, payment et la sonde seulement).
   supervision-payment:
     name: ${SUPERVISION_PAYMENT_NETWORK:-supervision-payment}
-    internal: true
+    external: true

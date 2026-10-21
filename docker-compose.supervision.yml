@@ -1,13 +1,13 @@
 # Surcouche de SUPERVISION de la pile de developpement (a ajouter avec -f, seulement quand on supervise) :
 #
-#   docker network create --internal supervision      # une fois ; cree par le depot Supervision
+#   (l'agent du depot Supervision cree les reseaux `supervision` et `supervision-payment` : le demarrer avant)
 #   docker compose -f docker-compose.yml -f docker-compose.supervision.yml up -d --build --wait
 #
 # Elle ne modifie aucun service existant : elle les raccorde au reseau externe `supervision` et
 # ajoute trois exporters Postgres en lecture seule. Voir docs/deployment/supervision.md.
 #   supervision          (externe) : traefik (metriques :9100), shop et auth (sondes /health),
 #                        exporters Postgres. Ne contient ni payment, ni front, ni les bases.
-#   supervision-payment  (interne) : payment et la sonde du depot Supervision, rien d'autre.
+#   supervision-payment  (externe, interne a Docker) : payment et la sonde du depot Supervision, rien d'autre.
 #                        Evite d'ouvrir payment-net : le front et la supervision generale
 #                        n'atteignent toujours pas payment (scripts/check-payment-isolation.sh).
 # Cibles de scrape stables : basecamp-shop, basecamp-auth, basecamp-payment, basecamp-traefik,
@@ -106,11 +106,11 @@ services:
       payment-db: { condition: service_healthy }
 
 networks:
-  # Cree par le depot Supervision (docker network create --internal supervision).
+  # Crees par l'agent du depot Supervision (compose.agent.yaml), qui doit donc demarrer avant la pile.
   supervision:
     name: ${SUPERVISION_NETWORK:-supervision}
     external: true
-  # Cree par cette pile ; la sonde de payment (depot Supervision) le rejoint en reseau externe.
+  # Cree lui aussi par l'agent du depot Supervision (reseau interne, payment et la sonde seulement).
   supervision-payment:
     name: ${SUPERVISION_PAYMENT_NETWORK:-supervision-payment}
-    internal: true
+    external: true
