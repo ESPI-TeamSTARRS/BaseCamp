@@ -32,7 +32,9 @@ def client() -> Iterator[TestClient]:
     Base.metadata.create_all(engine)
     application = create_app()
     settings = Settings(service_tokens={"shop": TOKEN, "admin": OTHER_TOKEN})
-    application.state.intent_services = build_intent_services(engine, settings)
+    application.state.intent_services = build_intent_services(
+        engine, settings, application.state.events
+    )
     with TestClient(application) as test_client:
         yield test_client
 

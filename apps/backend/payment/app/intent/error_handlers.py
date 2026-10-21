@@ -1,9 +1,12 @@
+from collections.abc import Awaitable, Callable
 from typing import cast
 
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from app.core.events.business_event import BusinessEvent
+from app.core.events.business_event_logger import BusinessEventLogger
 from app.intent.domain.exceptions.amount_exceeds_limit_error import AmountExceedsLimitError
 from app.intent.domain.exceptions.duplicate_order_reference_error import (
     DuplicateOrderReferenceError,
@@ -16,7 +19,17 @@ def _json(status_code: int, detail: str) -> JSONResponse:
     return JSONResponse(status_code=status_code, content={"detail": detail})
 
 
-async def _validation_error(_: Request, error: Exception) -> JSONResponse:
+def _validation_error(
+    events: BusinessEventLogger,
+) -> Callable[[Request, Exception], Awaitable[JSONResponse]]:
+    async def handler(_: Request, error: Exception) -> JSONResponse:
+        events.log(BusinessEvent.denied("service.request_rejected", "invalid_request"))
+        return _validation_response(error)
+
+    return handler
+
+
+def _validation_response(error: Exception) -> JSONResponse:
     """422 assaini : seuls le champ et le code d'erreur sont renvoyés, jamais la valeur reçue."""
     validation_error = cast(RequestValidationError, error)
     fields = [
@@ -45,8 +58,8 @@ async def _not_found(_: Request, __: Exception) -> JSONResponse:
     return _json(status.HTTP_404_NOT_FOUND, "Not found")
 
 
-def register_error_handlers(application: FastAPI) -> None:
-    application.add_exception_handler(RequestValidationError, _validation_error)
+def register_error_handlers(application: FastAPI, events: BusinessEventLogger) -> None:
+    application.add_exception_handler(RequestValidationError, _validation_error(events))
     application.add_exception_handler(IdempotencyKeyReusedError, _key_reused)
     application.add_exception_handler(AmountExceedsLimitError, _amount_too_high)
     application.add_exception_handler(DuplicateOrderReferenceError, _duplicate_order)

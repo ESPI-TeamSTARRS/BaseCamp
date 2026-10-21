@@ -53,6 +53,21 @@ Variables d'environnement préfixées `APP_` (voir `.env.example` à la racine) 
 | `APP_DB_NAME` / `APP_DB_USER` | `shop` / `shop` | base et rôle propres à `shop` |
 | `APP_DB_PASSWORD` | vide | mot de passe du rôle (fourni par l'environnement, jamais versionné) |
 | `APP_MEDIA_BASE_URL` | `/media` | préfixe public des images du catalogue |
+| `APP_LOG_PSEUDONYM_KEY` | vide | clé HMAC des empreintes d'email dans les logs; obligatoire hors `dev` et `local` |
+
+## Événements métier
+Format et règles communes : [journalisation métier](../development/logging.md). Chaque ligne JSON porte le `correlation_id` (en-tête `X-Correlation-ID` repris ou généré).
+
+| Événement | Outcome | Reason | Attributs |
+|---|---|---|---|
+| `catalog.products_listed` | success | | `category` (si filtre), `page`, `page_size`, `total` |
+| `catalog.query_rejected` | denied | `invalid_query` | |
+| `catalog.product_viewed` | success | | ressource `product` (id) |
+| `catalog.product_not_found` | denied | `product_not_found` | ressource `product` (sans identifiant : le slug demandé n'est pas journalisé) |
+| `cart.quoted` | success | | `line_count`, `total_cents` |
+| `cart.quote_rejected` | denied | `invalid_cart` (nombre de lignes), `quantity_out_of_range`, `duplicate_product`, `product_not_found` | |
+| `service.request_rejected` | denied | `invalid_request` | requête rejetée par la validation, sans la valeur reçue |
+| `service.unhandled_error` | error | `internal_error` | |
 
 ## Base de données et migrations
 Postgres via SQLAlchemy (pilote `psycopg`). Les migrations sont gérées par Alembic (`apps/backend/shop/alembic/`, URL lue dans `APP_DB_*`).

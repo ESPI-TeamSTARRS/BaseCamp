@@ -1,3 +1,5 @@
+import sys
+
 from fastapi import FastAPI
 from sqlalchemy import create_engine
 
@@ -14,6 +16,8 @@ from app.catalog.infrastructure.repositories.sqlalchemy_product_repository impor
 from app.catalog.presentation.router import router as catalog_router
 from app.core.config import Settings
 from app.core.errors import register_error_handlers
+from app.core.logging.correlation_id_middleware import CorrelationIdMiddleware
+from app.core.logging.structlog_business_event_logger import StructlogBusinessEventLogger
 from app.health.application.get_readiness import GetReadinessUseCase
 from app.health.infrastructure.clients.sqlalchemy_database_probe import SqlAlchemyDatabaseProbe
 from app.health.presentation.router import router as health_router
@@ -28,16 +32,23 @@ def create_app() -> FastAPI:
         pool_pre_ping=True,
         connect_args={"connect_timeout": DB_CONNECT_TIMEOUT_SECONDS},
     )
+    events = StructlogBusinessEventLogger(settings.service_name, sys.stdout)
     application = FastAPI(title="basecamp-shop")
+    application.add_middleware(CorrelationIdMiddleware)
+    application.state.events = events
     application.state.readiness_use_case = GetReadinessUseCase(
         settings.service_name, SqlAlchemyDatabaseProbe(engine)
     )
     application.state.list_products_use_case = ListProductsUseCase(
-        SqlAlchemyProductRepository(engine)
+        SqlAlchemyProductRepository(engine), events
     )
-    application.state.get_product_use_case = GetProductUseCase(SqlAlchemyProductRepository(engine))
-    application.state.quote_cart_use_case = QuoteCartUseCase(SqlAlchemyCartProductReader(engine))
-    register_error_handlers(application)
+    application.state.get_product_use_case = GetProductUseCase(
+        SqlAlchemyProductRepository(engine), events
+    )
+    application.state.quote_cart_use_case = QuoteCartUseCase(
+        SqlAlchemyCartProductReader(engine), events
+    )
+    register_error_handlers(application, events)
     application.include_router(health_router)
     application.include_router(catalog_router)
     application.include_router(cart_router)

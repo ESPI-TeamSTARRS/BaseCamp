@@ -1,0 +1,130 @@
+# GENERE A PARTIR DE infra/traefik/dynamic.yml (seul le limiteur de debit differe, voir plus bas).
+# Le test scripts/deploy/test_compose_prod.py verifie que les routeurs restent identiques.
+# Routage et protections de la passerelle (provider "file" : pas d'acces a la socket Docker).
+# Aucun secret ici. Les delais d'expiration des connexions entrantes sont dans docker-compose.yml
+# (entrypoints.web.transport.respondingTimeouts), ceux vers les services dans serversTransports.
+http:
+  routers:
+    shop-orders:
+      # Limitation de debit stricte sur les commandes (ancien checkout : 10/min).
+      rule: "PathPrefix(`/api/shop/orders`)"
+      entryPoints: [web]
+      middlewares: [orders-rate-limit, body-limit, security-headers, strip-api-shop]
+      service: shop
+      priority: 200
+    shop:
+      rule: "PathPrefix(`/api/shop`)"
+      entryPoints: [web]
+      middlewares: [body-limit, security-headers, strip-api-shop]
+      service: shop
+      priority: 100
+    media:
+      # Images du catalogue : lecture seule (GET/HEAD) du bucket product-images via le filer.
+      rule: "PathPrefix(`/media/`) && (Method(`GET`) || Method(`HEAD`))"
+      entryPoints: [web]
+      middlewares: [media-path, security-headers]
+      service: media
+      priority: 150
+    auth:
+      # Les routes /internal/* ne sont jamais exposees : elles sortent du routeur.
+      rule: "PathPrefix(`/api/auth`) && !PathPrefix(`/api/auth/internal`)"
+      entryPoints: [web]
+      middlewares: [body-limit, security-headers, strip-api-auth]
+      service: auth
+      priority: 100
+    front:
+      rule: "PathPrefix(`/`)"
+      entryPoints: [web]
+      middlewares: [security-headers]
+      service: front
+      priority: 1
+
+  middlewares:
+    media-path:
+      replacePathRegex:
+        regex: "^/media/(.*)"
+        replacement: "/buckets/product-images/$1"
+    strip-api-shop:
+      stripPrefix:
+        prefixes: ["/api/shop"]
+    strip-api-auth:
+      stripPrefix:
+        prefixes: ["/api/auth"]
+
+    orders-rate-limit:
+      # PRODUCTION : la requete arrive via Cloudflare puis le Traefik du serveur, donc X-Forwarded-For
+      # vaut "client, <Cloudflare>, <proxy Docker>". La cle du limiteur est la premiere adresse
+      # (en partant de la droite) qui n'est ni un reseau Docker ni une plage Cloudflare : le vrai
+      # client. Sans cela, tous les clients partageraient la limite du proxy.
+      # Les plages Cloudflare sont publiques (https://www.cloudflare.com/ips/) : a tenir a jour.
+      rateLimit:
+        average: 10
+        period: 1m
+        burst: 5
+        sourceCriterion:
+          ipStrategy:
+            excludedIPs:
+              - 172.16.0.0/12
+              - 173.245.48.0/20
+              - 103.21.244.0/22
+              - 103.22.200.0/22
+              - 103.31.4.0/22
+              - 141.101.64.0/18
+              - 108.162.192.0/18
+              - 190.93.240.0/20
+              - 188.114.96.0/20
+              - 197.234.240.0/22
+              - 198.41.128.0/17
+              - 162.158.0.0/15
+              - 104.16.0.0/13
+              - 104.24.0.0/14
+              - 172.64.0.0/13
+              - 131.0.72.0/22
+              - 2400:cb00::/32
+              - 2606:4700::/32
+              - 2803:f800::/32
+              - 2405:b500::/32
+              - 2405:8100::/32
+              - 2a06:98c0::/29
+              - 2c0f:f248::/32
+
+    body-limit:
+      buffering:
+        maxRequestBodyBytes: 1048576 # 1 Mio -> 413 au-dela
+
+    security-headers:
+      headers:
+        forceSTSHeader: true # actif aussi en HTTP local; en production, derriere TLS
+        stsSeconds: 63072000
+        stsIncludeSubdomains: true
+        contentTypeNosniff: true
+        frameDeny: true
+        referrerPolicy: strict-origin-when-cross-origin
+
+  serversTransports:
+    default:
+      forwardingTimeouts:
+        dialTimeout: 5s
+        responseHeaderTimeout: 30s
+        idleConnTimeout: 60s
+
+  services:
+    media:
+      loadBalancer:
+        servers:
+          - url: "http://seaweedfs:8888"
+    shop:
+      loadBalancer:
+        serversTransport: default
+        servers:
+          - url: "http://shop:8000"
+    auth:
+      loadBalancer:
+        serversTransport: default
+        servers:
+          - url: "http://auth:8000"
+    front:
+      loadBalancer:
+        serversTransport: default
+        servers:
+          - url: "http://front:3000"

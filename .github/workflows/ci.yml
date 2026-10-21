@@ -7,8 +7,11 @@ name: CI
 
 on:
   push:
+    # Sur main, la CI est jouee par release.yml (appel de ce workflow) avant le calcul des versions.
+    branches-ignore: [main]
   pull_request:
     branches: [main]
+  workflow_call:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -66,8 +69,7 @@ jobs:
       - name: Tests + couverture (seuil 80 %)
         run: npm run test:coverage
       - name: Securite des dependances
-        # Non bloquant tant que Next.js 14 n'est pas monte de version (CVE connues).
-        continue-on-error: true
+        # Bloquant : aucune vulnerabilite critique ou elevee toleree dans les dependances de production.
         run: npm run security
       - name: Build
         run: npm run build
@@ -181,10 +183,22 @@ jobs:
         if: always()
         run: docker compose down -v
 
+  deploy-rollback:
+    name: deploy-rollback
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      # Aucune dependance Python a installer : le script n'utilise que la bibliotheque standard.
+      - name: Bascule et retour arriere de scripts/deploy.sh (panne volontaire)
+        run: bash scripts/deploy/test-deploy.sh
+
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [backend, frontend, secrets-scan, tools, stack-e2e]
+    needs: [backend, frontend, secrets-scan, tools, stack-e2e, deploy-rollback]
     runs-on: ubuntu-latest
     permissions: {}
     steps:

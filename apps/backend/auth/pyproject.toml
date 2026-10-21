@@ -17,6 +17,8 @@ dependencies = [
 [dependency-groups]
 dev = [
     "httpx>=0.27.0",
+    "jsonschema>=4.23.0",
+    "types-jsonschema>=4.23.0",
     "mypy>=1.11.0",
     "pip-audit>=2.7.3",
     "poethepoet>=0.29.0",
@@ -99,3 +101,18 @@ check           = ["quality", "security", "test"]
 fix             = ["lint:fix", "format"]
 "pre-commit"    = ["lint", "format:check"]
 "pre-push"      = ["typecheck", "test:unit"]
+
+# Versionnement semver (python-semantic-release) : voir docs/development/versioning.md.
+# Le parseur monorepo ne retient que les commits qui touchent ce dossier (lancer depuis ce dossier).
+[tool.semantic_release]
+tag_format = "auth-v{version}"
+version_toml = ["pyproject.toml:project.version"]
+allow_zero_version = true
+major_on_zero = false
+commit_parser = "conventional-monorepo"
+
+[tool.semantic_release.commit_parser_options]
+path_filters = ["."]
+
+[tool.semantic_release.branches.main]
+match = "main"

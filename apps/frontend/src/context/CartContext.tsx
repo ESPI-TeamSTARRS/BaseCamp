@@ -41,12 +41,14 @@ function isFullProduct(product: Product | CartProduct): product is Product {
 export function CartProvider({ children }: { children: ReactNode }) {
   const [lines, setLines] = useState<CartLine[]>([]);
   const [isOpen, setIsOpen] = useState(false);
-  const [quote, setQuote] = useState<CartQuote | null>(null);
-  const [quoteStatus, setQuoteStatus] = useState<QuoteStatus>('idle');
+  const [fetchedQuote, setQuote] = useState<CartQuote | null>(null);
+  const [fetchedStatus, setQuoteStatus] = useState<QuoteStatus>('idle');
 
   useEffect(() => {
     try {
       const stored = window.localStorage.getItem(STORAGE_KEY);
+      // Lecture après montage (évite l'écart d'hydratation SSR) : synchronisation avec un système externe.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (stored) setLines(sanitizeStoredLines(JSON.parse(stored)));
     } catch {
       // stockage indisponible ou corrompu : le panier reste simplement vide pour cette session
@@ -64,11 +66,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
   // Chaque modification du panier redemande le devis au serveur (la dernière réponse l'emporte).
   useEffect(() => {
     let cancelled = false;
-    if (lines.length === 0) {
-      setQuote(null);
-      setQuoteStatus('idle');
-      return;
-    }
+    if (lines.length === 0) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setQuoteStatus('loading');
     fetchCartQuote(lines).then((result) => {
       if (cancelled) return;
@@ -83,6 +82,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, [lines]);
+
+  // Panier vide : aucun devis, quel que soit le dernier état reçu.
+  const quote = lines.length === 0 ? null : fetchedQuote;
+  const quoteStatus: QuoteStatus = lines.length === 0 ? 'idle' : fetchedStatus;
 
   const addItem = useCallback((product: Product | CartProduct, quantity = 1) => {
     if (product.availability === 'out_of_stock') return;

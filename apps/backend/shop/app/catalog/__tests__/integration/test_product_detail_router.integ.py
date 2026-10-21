@@ -6,6 +6,7 @@ from app.catalog.__tests__.product_factory import make_product
 from app.catalog.application.get_product import GetProductUseCase
 from app.catalog.domain.entities.product import Product
 from app.catalog.domain.interfaces.product_lookup import ProductLookup
+from app.core.__tests__.in_memory_business_event_logger import InMemoryBusinessEventLogger
 from app.main import create_app
 
 
@@ -20,7 +21,7 @@ class InMemoryProductLookup(ProductLookup):
 async def _get(path: str) -> tuple[int, Any]:
     application = create_app()
     application.state.get_product_use_case = GetProductUseCase(
-        InMemoryProductLookup([make_product("tente-a", stock=3)])
+        InMemoryProductLookup([make_product("tente-a", stock=3)]), InMemoryBusinessEventLogger()
     )
     async with AsyncClient(transport=ASGITransport(app=application), base_url="http://t") as client:
         response = await client.get(path)

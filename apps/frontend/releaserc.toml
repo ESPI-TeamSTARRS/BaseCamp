@@ -1,0 +1,15 @@
+# Versionnement semver du front (python-semantic-release) : voir docs/development/versioning.md.
+# Lancer depuis apps/frontend avec --config releaserc.toml : le parseur monorepo ne retient que
+# les commits qui touchent ce dossier.
+[semantic_release]
+tag_format = "frontend-v{version}"
+version_variables = ["package.json:version"]
+allow_zero_version = true
+major_on_zero = false
+commit_parser = "conventional-monorepo"
+
+[semantic_release.commit_parser_options]
+path_filters = ["."]
+
+[semantic_release.branches.main]
+match = "main"

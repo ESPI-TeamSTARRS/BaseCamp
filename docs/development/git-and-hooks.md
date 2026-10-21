@@ -27,7 +27,7 @@ Types : `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `ci`, `build`, `perf
 2. Développer en TDD ([testing.md](testing.md)).
 3. Vérifier en local : `uv run poe quality` et `uv run poe test` sur les services touchés.
 4. Pousser, ouvrir la PR (brouillon tant que la CI n'est pas verte) avec : quoi, pourquoi, comment tester.
-5. Relecture, CI verte, **squash and merge**, suppression de la branche.
+5. Relecture, CI verte (`ci-ok`) et titre de PR valide (`pr-title`), **squash and merge** avec le titre de la PR comme message, suppression de la branche. Le titre fixe la version publiée ([versioning.md](versioning.md)).
 
 ## Feature flags
 

@@ -4,10 +4,13 @@ from app.cart.__tests__.fake_cart_product_reader import FakeCartProductReader, d
 from app.cart.application.invalid_cart_error import InvalidCartError
 from app.cart.application.quote_cart import QuoteCartUseCase
 from app.cart.domain.enums.line_status import LineStatus
+from app.core.__tests__.in_memory_business_event_logger import InMemoryBusinessEventLogger
 
 
-def _use_case() -> QuoteCartUseCase:
-    return QuoteCartUseCase(FakeCartProductReader(default_catalog()))
+def _use_case(events: InMemoryBusinessEventLogger | None = None) -> QuoteCartUseCase:
+    return QuoteCartUseCase(
+        FakeCartProductReader(default_catalog()), events or InMemoryBusinessEventLogger()
+    )
 
 
 class TestQuoteCartTotals:
@@ -97,8 +100,46 @@ class TestQuoteCartValidation:
 
     def test_accepts_fifty_distinct_lines(self) -> None:
         catalog = default_catalog()
-        use_case = QuoteCartUseCase(FakeCartProductReader(catalog))
+        use_case = QuoteCartUseCase(FakeCartProductReader(catalog), InMemoryBusinessEventLogger())
 
         quote = use_case.execute([(p.id, 1) for p in catalog])
 
         assert len(quote.lines) == len(catalog)
+
+
+class TestQuoteCartEvents:
+    def test_a_quote_emits_cart_quoted_with_line_count_and_total(self) -> None:
+        events = InMemoryBusinessEventLogger()
+
+        _use_case(events).execute([("tente", 1), ("popote", 2)])
+
+        (event,) = events.events
+        assert (event.event, event.outcome.value, event.reason) == ("cart.quoted", "success", None)
+        assert event.attributes == {"line_count": 2, "total_cents": 40700}
+
+    @pytest.mark.parametrize(
+        ("items", "reason"),
+        [
+            ([], "invalid_cart"),
+            ([(f"p{i}", 1) for i in range(51)], "invalid_cart"),
+            ([("tente", 0)], "quantity_out_of_range"),
+            ([("tente", 11)], "quantity_out_of_range"),
+            ([("tente", 1), ("tente", 2)], "duplicate_product"),
+            ([("inconnu", 1)], "product_not_found"),
+        ],
+    )
+    def test_a_rejected_cart_emits_a_denied_event_with_a_stable_reason(
+        self, items: list[tuple[str, int]], reason: str
+    ) -> None:
+        events = InMemoryBusinessEventLogger()
+
+        with pytest.raises(InvalidCartError):
+            _use_case(events).execute(items)
+
+        (event,) = events.events
+        assert (event.event, event.outcome.value, event.reason) == (
+            "cart.quote_rejected",
+            "denied",
+            reason,
+        )
+        assert "inconnu" not in repr(event)

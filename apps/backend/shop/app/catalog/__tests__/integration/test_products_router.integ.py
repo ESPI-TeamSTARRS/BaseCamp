@@ -7,6 +7,7 @@ from app.catalog.application.list_products import ListProductsUseCase
 from app.catalog.domain.entities.product import Product
 from app.catalog.domain.enums.product_category import ProductCategory
 from app.catalog.domain.interfaces.product_repository import ProductRepository
+from app.core.__tests__.in_memory_business_event_logger import InMemoryBusinessEventLogger
 from app.main import create_app
 
 
@@ -34,7 +35,7 @@ async def _get(path: str) -> tuple[int, Any]:
     ]
     application = create_app()
     application.state.list_products_use_case = ListProductsUseCase(
-        InMemoryProductRepository(products)
+        InMemoryProductRepository(products), InMemoryBusinessEventLogger()
     )
     async with AsyncClient(transport=ASGITransport(app=application), base_url="http://t") as client:
         response = await client.get(path)

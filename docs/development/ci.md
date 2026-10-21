@@ -1,14 +1,16 @@
 # Intégration continue
 
-Workflow : `.github/workflows/ci.yml`, déclenché à chaque push et sur les pull requests vers `main`.
+Workflow : `.github/workflows/ci.yml`, déclenché à chaque push (hors `main`) et sur les pull requests vers `main`. Sur `main`, la CI est jouée par `release.yml`, qui appelle `ci.yml` avant de calculer les versions.
 
 | Job | Contenu |
 |---|---|
 | `backend` (matrice par service) | `poe quality`, `poe test` (couverture ≥ 80 %), `poe security`, build de l'image Docker |
-| `frontend` | lint, format, types, tests et couverture, audit des dépendances, build |
+| `frontend` | lint, format, types, tests et couverture, audit des dépendances (bloquant dès une vulnérabilité élevée ou critique), build |
 | `secrets-scan` | gitleaks sur l'historique complet |
 | `outils-racine` | tests des scripts des hooks |
+| `deploy-rollback` | `bash scripts/deploy/test-deploy.sh` (`poe deploy-test`) : joue `scripts/deploy.sh` contre un registre local avec une panne volontaire, et vérifie le retour automatique ([deploy-script.md](../deployment/deploy-script.md)) |
 | `stack-e2e` | construit les images `shop`, `auth` et `front` (cache GitHub Actions), génère un `.env` factice depuis `.env.example`, démarre la pile minimale (`docker compose up --wait traefik` : Traefik, front, `shop`, `auth` et leurs bases), génère les clés de signature d'`auth` (`scripts/init-auth-keys.sh`), joue `poe test:e2e` de `shop` puis d'`auth` contre Traefik, publie les logs des conteneurs en artefact (`stack-e2e-logs`) en cas d'échec, puis supprime la pile |
+| `pr-title` (workflow séparé) | le titre de la PR respecte le format Conventional Commits (même script que le hook `commit-msg`); à rendre obligatoire avec `ci-ok` |
 | `ci-ok` | job final (attend aussi `stack-e2e`), seul check à rendre obligatoire dans la protection de branche |
 
 Chaque job appelle les tâches `poe` ou `npm` du service, jamais un outil en direct. Les permissions du jeton sont réduites au strict nécessaire (`contents: read`).
@@ -16,3 +18,7 @@ Chaque job appelle les tâches `poe` ou `npm` du service, jamais un outil en dir
 ## Ajouter un service
 
 Ajouter son nom dans la liste `service` de la matrice du job `backend`.
+
+## Release
+
+Le workflow `.github/workflows/release.yml` se déclenche à chaque push sur `main`, rejoue la CI puis, si elle est verte, pose les tags de version par service, publie les images sur GHCR ([images.md](images.md)) et ouvre la PR qui met à jour `deploy/manifest.json` ([runbook](../deployment/runbook.md)). Détails dans [versioning.md](versioning.md).
