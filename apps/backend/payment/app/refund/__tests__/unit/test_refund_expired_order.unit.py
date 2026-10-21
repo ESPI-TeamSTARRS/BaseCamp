@@ -3,7 +3,6 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
-from app.refund.application.refund_expired_order import RefundExpiredOrderUseCase
 
 from app.core.__tests__.in_memory_business_event_logger import InMemoryBusinessEventLogger
 from app.intent.domain.entities.payment_intent import PaymentIntent
@@ -12,6 +11,7 @@ from app.intent.domain.enums.intent_status import IntentStatus
 from app.intent.domain.exceptions.payment_intent_not_found_error import PaymentIntentNotFoundError
 from app.intent.domain.value_objects.amount import Amount
 from app.refund.__tests__.support import InMemoryStore, InMemoryUnitOfWork
+from app.refund.application.refund_expired_order import RefundExpiredOrderUseCase
 from app.refund.application.refund_payment import RefundPaymentUseCase
 from app.refund.domain.exceptions.refund_exceeds_captured_error import RefundExceedsCapturedError
 from app.webhook.domain.entities.outbox_event import OutboxEvent
