@@ -39,6 +39,22 @@ http:
       middlewares: [auth-password-rate-limit, body-limit, security-headers, strip-api-auth]
       service: auth
       priority: 200
+    auth-login:
+      # Connexion : meme cout argon2id que l'inscription, donc meme limite par IP (60/min, rafale 30).
+      # Le verrouillage de compte (A6) viendra en plus : la passerelle ne remplace pas la defense du service.
+      rule: "Path(`/api/auth/login`)"
+      entryPoints: [web]
+      middlewares: [auth-signup-rate-limit, body-limit, security-headers, strip-api-auth]
+      service: auth
+      priority: 200
+    auth-jwks:
+      # Cles publiques de verification des jetons (JWKS), lecture seule, sans prefixe retire :
+      # le service les sert a /.well-known/jwks.json.
+      rule: "Path(`/.well-known/jwks.json`) && (Method(`GET`) || Method(`HEAD`))"
+      entryPoints: [web]
+      middlewares: [security-headers]
+      service: auth
+      priority: 200
     auth:
       # Les routes /internal/* ne sont jamais exposees : elles sortent du routeur.
       rule: "PathPrefix(`/api/auth`) && !PathPrefix(`/api/auth/internal`)"
