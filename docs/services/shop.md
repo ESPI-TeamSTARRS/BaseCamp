@@ -11,6 +11,7 @@ Catalogue, commandes et stock. Demande les paiements au service [payment](paymen
 | GET | `/health` | liveness : le processus répond (toujours 200) |
 | GET | `/health/ready` | readiness : 200 si la base répond, **503** sinon (corps `{"service", "status": "up" \| "down"}`) |
 | POST | `/cart/quote` | devis d'un panier calculé par le serveur (voir ci-dessous) |
+| POST | `/orders` | crée une commande « en attente de paiement » (voir ci-dessous) |
 | GET | `/products` | catalogue paginé, filtrable par catégorie (voir ci-dessous) |
 | GET | `/products/{slug}` | fiche détaillée d'un produit |
 
@@ -30,7 +31,23 @@ Un slug inconnu renvoie **404** avec le message fixe `{"detail": "Produit introu
 
 Côté front, `/produits/[slug]` lit cette route, calcule la méta-description (140 à 160 caractères) et le JSON-LD `Product` (prix, disponibilité, note) à partir de la réponse, et `sitemap.xml` liste les produits de l'API (sans eux si l'API est arrêtée).
 
-Les autres routes métier (commandes) s'ajoutent par tranche et se documentent ici.
+### `POST /orders`
+En-tête obligatoire `Idempotency-Key` (8 à 128 caractères `A-Za-z0-9_.-`). Le `X-Correlation-ID` suit la règle commune de la [journalisation](../development/logging.md).
+
+Corps (`extra="forbid"`, aucun prix accepté) : `email`, `shippingAddress` (`fullName`, `line1`, `line2` facultatif, `postalCode`, `city`, `country`) et `lines` (`productId`, `quantity` de 1 à 10, 1 à 50 lignes sans doublon).
+
+Réponse : `id`, `number` (`BC-` + 10 caractères, non séquentiel), `status` (`pending_payment`), `email`, `shipping_address`, `lines` (`product_id`, `name`, `unit_price_cents`, `quantity`, `line_total_cents`), `subtotal_cents`, `shipping_cents`, `total_cents`, `created_at`.
+
+| Code | Cas |
+|---|---|
+| 201 | commande créée, prix figés, stock réservé |
+| 200 | même clé rejouée avec le même contenu : même commande, aucune seconde réservation |
+| 409 | stock devenu insuffisant (message fixe) : rien n'est réservé, même pour les lignes valides |
+| 422 | corps invalide, produit inconnu, pays hors liste (`FR`, `BE`, `CH`, `LU`, `DE`, `ES`, `IT`), clé réutilisée avec un autre contenu |
+
+Les prix sont relus en base sous verrou et la livraison suit la règle du devis (5,90 € sous 80 €). Les messages d'erreur sont fixes : aucune valeur reçue n'est reflétée. La passerelle limite `/api/shop/orders` à 10 requêtes par minute et par adresse.
+
+Les autres routes métier s'ajoutent par tranche et se documentent ici.
 
 ## Invariants
 - Les prix viennent toujours du catalogue serveur.
@@ -41,6 +58,13 @@ Les autres routes métier (commandes) s'ajoutent par tranche et se documentent i
 - Le serveur seul décide des prix, de la livraison et de la disponibilité : le client n'envoie que `productId` et `quantity`.
 - La liveness ne dépend jamais de la base; seule la readiness la teste.
 - Le service n'utilise que son propre rôle Postgres, jamais le compte administrateur.
+
+## Invariants de stock et de commande
+- **Une seule transaction** : verrou des produits (`SELECT … FOR UPDATE`, dans l'ordre des identifiants pour éviter les interblocages), relecture de la clé d'idempotence, contrôle du stock, insertion de la commande et de ses lignes, décrément du stock et lignes de `stock_reservations`, puis commit. Au moindre échec tout est annulé : jamais de réservation partielle.
+- Le stock ne devient jamais négatif : contrôle applicatif sous verrou et contrainte `ck_products_stock_non_negative` en base. Deux commandes sur la dernière pièce : une seule réussit, l'autre reçoit 409 (test de concurrence sur Postgres).
+- **Idempotence en base** : `orders.idempotency_key` est unique et `request_fingerprint` mémorise le contenu. Un rejeu, même en parallèle, renvoie la commande existante; une clé réutilisée avec un autre contenu est refusée (422).
+- Nom et prix unitaire des lignes sont figés à la commande (`order_lines`) : un changement de catalogue ne modifie jamais une commande existante.
+- Une réservation (`stock_reservations.status = reserved`) est liée à une commande; sa libération et le paiement relèvent du ticket de paiement.
 
 ## Configuration
 Variables d'environnement préfixées `APP_` (voir `.env.example` à la racine) :
@@ -65,6 +89,11 @@ Format et règles communes : [journalisation métier](../development/logging.md)
 | `catalog.product_viewed` | success | | ressource `product` (id) |
 | `catalog.product_not_found` | denied | `product_not_found` | ressource `product` (sans identifiant : le slug demandé n'est pas journalisé) |
 | `cart.quoted` | success | | `line_count`, `total_cents` |
+| `order.created` | success | | ressource `order` (numéro); `email_hash`, `line_count`, `total_cents`, `country` |
+| `stock.reserved` | success | | ressource `order` (numéro), émis juste avant `order.created`; mêmes attributs |
+| `order.replayed` | success | | ressource `order` (numéro); mêmes attributs (rejeu idempotent) |
+| `stock.insufficient` | denied | `insufficient_stock` | ressource `product` (id); `email_hash` |
+| `order.rejected` | denied | `country_not_supported`, `invalid_cart`, `quantity_out_of_range`, `duplicate_product`, `product_not_found`, `idempotency_key_reused` | `email_hash` (jamais la clé d'idempotence, l'email ni l'adresse) |
 | `cart.quote_rejected` | denied | `invalid_cart` (nombre de lignes), `quantity_out_of_range`, `duplicate_product`, `product_not_found` | |
 | `service.request_rejected` | denied | `invalid_request` | requête rejetée par la validation, sans la valeur reçue |
 | `service.unhandled_error` | error | `internal_error` | |
@@ -79,6 +108,8 @@ uv run alembic revision -m "ajoute les produits"  # nouvelle migration
 ```
 
 En Docker Compose, `shop-migrate` applique les migrations avant le démarrage de `shop`. La migration `0001` est vide : elle fixe le point de départ de l'historique.
+
+La migration `0003` crée `orders`, `order_lines` (prix figés en centimes) et `stock_reservations`, avec clés étrangères, unicité de la clé d'idempotence et contraintes de montants et de pays. Elle n'ajoute que des tables : l'ancienne version du code tourne sur le schéma migré, ce qui garde le retour arrière automatique sûr (voir `test_migrations_additive.unit.py`, qui impose la règle à toute migration après la 0002).
 
 La migration `0002` crée la table `products` (contraintes : prix > 0, stock ≥ 0, note 0 à 5, catégorie connue) et y charge le jeu de données initial : 15 produits, 3 par catégorie, dont un en rupture et un aux dernières pièces.
 
