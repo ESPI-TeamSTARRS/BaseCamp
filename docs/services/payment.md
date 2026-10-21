@@ -166,6 +166,47 @@ Un remboursement écrit la transaction inverse du paiement : débit `marchand`, 
 
 La table `confirmation_keys` (même migration) retient les clés d'idempotence des confirmations (propres à l'appelant), distinctes de celles de la création.
 
+### Contrôle du grand livre (`ledger-check`)
+Les garanties de la base empêchent d'altérer le grand livre par l'application; le contrôle détecte ce qui passerait quand même (accès direct à la base, fraude, corruption). C'est un **passage unique en ligne de commande**, strictement en lecture seule, à lancer à la demande ou périodiquement :
+
+```
+python -m app.ledgercheck.presentation.cli      # dans le conteneur : docker compose exec payment <commande>
+uv run poe ledger-check                         # en développement, depuis apps/backend/payment
+```
+
+Deux règles sont vérifiées (une seule implémentation, `LedgerAuditor`, dans `app/ledgercheck/domain/services`) :
+1. **Solde marchand par intention** : le solde du compte `marchand` (crédits − débits) vaut `capturé − remboursé`, où `capturé` est le montant de l'intention si elle est `succeeded` et 0 sinon (`remboursé` = `refunded_amount`). Une ligne altérée, manquante ou posée sur une intention jamais payée (orpheline) donne un écart.
+2. **Équilibre** : chaque transaction a autant de débits que de crédits, et le total des débits égale celui des crédits.
+
+Sortie (sortie standard; les lignes de journal JSON, voir plus bas, précèdent le rapport) :
+
+```
+grand livre cohérent                  # ou : grand livre INCOHÉRENT
+intentions contrôlées : 2
+transactions : 3
+lignes : 6
+débits : 11970 centimes
+crédits : 11970 centimes
+écarts : 0
+intention <uuid> : solde marchand attendu 10000, constaté 9000 (écart -1000)   # une ligne par écart
+transaction <uuid> : débits 5000, crédits 4000 (écart -1000)
+métrique payment_ledger_discrepancies 0
+```
+
+Les écarts sortent triés (intentions puis transactions, par identifiant) : deux passages se comparent. Seuls des identifiants techniques et des montants en centimes sont affichés ou journalisés (ni référence de commande, ni appelant, ni clé, ni jeton).
+
+| Code de sortie | Sens |
+|---|---|
+| `0` | grand livre cohérent |
+| `1` | au moins un écart (liste dans le rapport, événements d'erreur dans le journal) |
+| `2` | contrôle impossible (base indisponible), message sans détail technique, événement `ledger.check_failed` |
+
+- **Lecture seule garantie** : sur Postgres, transaction `READ ONLY` en `REPEATABLE READ` (deux agrégations SQL, sans verrou, sur le même instant même si des paiements sont écrits pendant le contrôle). Aucune correction automatique : le contrôle rapporte, l'exploitant décide.
+- **Performance** : moins de 2 s pour 10 000 intentions (test de volumétrie sur Postgres, de l'ordre de 0,5 s mesuré), aucun index ajouté (les index `intent_id` et `transaction_id` de la migration `0004` suffisent, aucune migration). Le résultat tient en mémoire le temps du passage (une ligne par intention); pour des volumes très supérieurs il faudra paginer par intervalle d'identifiants.
+- **Planification suggérée** : toutes les 5 à 15 minutes, par une tâche cron ou un planificateur de l'hôte qui lance `docker compose exec -T payment python -m app.ledgercheck.presentation.cli` (le code de sortie non nul alimente l'alerte du planificateur). Passages concurrents sans danger.
+- **Journal** : un événement d'erreur par écart (au plus 100 par passage, le total est dans la synthèse), puis une synthèse (voir le catalogue ci-dessous). Une corrélation par passage.
+- **Métrique** : `payment_ledger_discrepancies` (jauge : nombre d'écarts, 0 si cohérent; nom dans `app/ledgercheck/application/ledger_check_metrics.py`). Un processus ponctuel ne peut pas incrémenter un compteur lu par le service (aucun état en mémoire), la métrique est donc exposée comme une **valeur relue à la demande**. Branchement sur `/metrics` (WORK-28, le même mécanisme de métriques, aucun second) : `LedgerCheckServices.discrepancy_count` (`ReadLedgerDiscrepancyCount`, appelable sans argument qui renvoie un entier, sans journal) s'enregistre comme rappel de la jauge, avec `build_ledger_check_services(engine, events)` dans `app/ledgercheck/wiring.py`. L'alerte porte sur `payment_ledger_discrepancies > 0`. La commande imprime aussi la valeur sur sa dernière ligne pour un collecteur de fichiers texte.
+
 ## Webhook sortant vers la boutique
 Chaque règlement d'une intention produit un événement que la boutique reçoit en `POST`, signé. Garantie : **au moins une fois**, la boutique doit donc être idempotente sur l'identifiant d'événement (exigé par WORK-13).
 
@@ -283,6 +324,7 @@ La migration `0007` suit la même règle : elle **ajoute seulement** la table `r
 - Webhook sur la pile : `tests/e2e/scenarios/test_payment_webhook.e2e.py` lance un récepteur factice dans le conteneur `shop` (port 9100; le job `stack-e2e` pointe le worker dessus par `PAYMENT_WEBHOOK_URL` et fixe `PAYMENT_WEBHOOK_BACKOFF_BASE_SECONDS=2`). Il vérifie la livraison signée (signature recalculée indépendamment) pour une confirmation réussie et un refus, l'absence d'événement sur un rejeu, la reprise automatique après arrêt et redémarrage du conteneur `shop` (même identifiant d'événement), la relance d'un événement `dead` par la commande d'exploitation, et que ni secret ni signature n'apparaissent dans les journaux, dont les lignes respectent le schéma commun.
 - Remboursement sur Postgres : `app/refund/__tests__/integration/test_refund_postgres.integ.py` (même variable `PAYMENT_TEST_DATABASE_URL`) vérifie la concurrence (deux remboursements de 6000 après 4000 sur 10 000 : un seul réussit; huit de 3000 : trois réussissent; même clé simultanée : une écriture), le plafond **en base** par insertion SQL directe, l'ajout seul de `refunds` et la migration `0007` additive (aucune table existante modifiée, données antérieures conservées).
 - Remboursement sur la pile : `tests/e2e/scenarios/test_payment_refund.e2e.py` (job `stack-e2e`, deux instances de `payment`) couvre le scénario 4000 / 6001 / 6000, le rejeu, la clé réutilisée (422), l'intention non encaissée (409), les montants invalides (422), huit remboursements parallèles répartis sur les deux instances (au plus trois de 3000 sur 10 000), le refus du dépassement par la base elle-même, l'événement de l'outbox et un journal conforme au schéma commun sans clé ni jeton; `test_payment_webhook.e2e.py` vérifie la livraison signée de `refund.succeeded`.
+- Contrôle du grand livre sur la pile : `tests/e2e/scenarios/test_payment_ledger_check.e2e.py` (même job `stack-e2e`, aucune étape ajoutée) crée, confirme et rembourse via le conteneur `shop`, puis lance `python -m app.ledgercheck.presentation.cli` dans le conteneur `payment` (`docker compose exec`) : « cohérent », code de sortie 0, aucune ligne de grand livre écrite, ligne de synthèse conforme au schéma commun et sans jeton. Les écarts (lignes altérées ou orphelines) sont couverts par les tests Postgres de la tranche, la pile ne permettant pas de les fabriquer (grand livre en ajout seul).
 - Pile (job CI `stack-e2e`, lancé avec `--scale payment=2`) : `tests/e2e/scenarios/test_payment_resilience.e2e.py` génère la charge depuis le conteneur `shop` : 200 requêtes parallèles sur `/health` (200 attendus, p95 < 200 ms) pendant 200 requêtes d'attaque, 413, création concurrente répartie sur les deux instances (un seul 201, des rejeux 200 de la même intention), 429 avec `Retry-After`, puis arrêt de `payment` (503 propre sur `/pay`, catalogue et devis en 200) et redémarrage.
 
 ## Invariants
@@ -292,6 +334,7 @@ La migration `0007` suit la même règle : elle **ajoute seulement** la table `r
 - Un remboursement, son cumul sur l'intention, ses deux lignes de grand livre inverses et son événement sont écrits dans la même transaction; une même clé d'idempotence ne rembourse jamais deux fois.
 - Une intention n'est confirmée qu'une fois; l'état et le grand livre sont écrits dans la même transaction.
 - Le grand livre est en double écriture (débits = crédits par transaction), en ajout seul, et cohérent avec les transactions.
+- Pour chaque intention, le solde du compte `marchand` vaut `capturé − remboursé`; `ledger-check` le vérifie en lecture seule et sort en erreur au moindre écart.
 - Un webhook sortant est signé (HMAC et horodatage); un événement rejoué est ignoré à la réception.
 - Un événement de webhook est écrit dans la même transaction que l'état qu'il annonce, garde le même identifiant et le même corps à chaque tentative, et n'est jamais livré deux fois en parallèle.
 
@@ -374,6 +417,16 @@ Webhook sortant (ressource `webhook_event`, identifiant = identifiant d'événem
 | `webhook.event_dead` | error | `max_attempts_reached` | `attempts`, `last_error`; l'événement ne sera plus tenté sans relance d'exploitation |
 | `webhook.event_requeued` | success | | acteur `service` = `operations`; relance d'un événement `dead` |
 | `webhook.worker_failed` | error | `worker_error` | erreur inattendue de la boucle (base injoignable…), sans message d'exception |
+
+Contrôle du grand livre (pas d'acteur : traitement interne; une corrélation par passage; noms dans `app/ledgercheck/application/ledger_check_event_names.py`; seuls des identifiants et des montants en centimes) :
+
+| Événement | Outcome | Reason | Détails |
+|---|---|---|---|
+| `ledger.inconsistency_detected` | error | `intent_balance_mismatch` | ressource `payment_intent`; `expected_cents` (capturé − remboursé), `observed_cents` (solde `marchand`); au plus 100 par passage |
+| `ledger.inconsistency_detected` | error | `transaction_unbalanced` | ressource `ledger_transaction`; `expected_cents` = débits, `observed_cents` = crédits |
+| `ledger.check_completed` | success | | `intents_checked`, `transactions_checked`, `entry_count`, `debit_cents`, `credit_cents`; `duration_ms` |
+| `ledger.check_completed` | error | `ledger_inconsistent` | mêmes détails et `discrepancy_count` (total, même au-delà de 100 événements); signal à alerter |
+| `ledger.check_failed` | error | `database_error` | lecture impossible (code de sortie 2), sans message de la base |
 
 Les événements des tranches à venir (expiration) s'ajoutent ici avec leur ticket.
 
@@ -464,7 +517,7 @@ Remarque : les intentions `requires_confirmation` abandonnées ne sont pas encor
 Le service `shop` utilise l'interface `PaymentProvider`. L'adaptateur interne est celui par défaut; un fournisseur externe reste branchable.
 
 ## Structure
-Tranches verticales `app/<feature>/{domain,application,infrastructure,presentation}` (aujourd'hui `health`, `intent`, `ratelimit`, `confirmation`, `cancellation`, `expiration`, `ledger`, `refund`, `webhook` et `observability`), configuration dans `app/core`. Migrations Alembic dans `alembic/` (`0001` vide, `0002` : tables `payment_intents` et `idempotency_keys`; montants en `BIGINT` de centimes, aucune colonne flottante; `0003` : table `rate_limit_windows`, ajout seul; `0004` : tables `confirmation_keys` et `ledger_entries` avec ses déclencheurs, ajout seul; `0005` : index partiel d'expiration, ajout seul; `0006` : table `outbox`, ajout seul; `0007` : table `refunds` avec ses déclencheurs, ajout seul). `confirmation` orchestre la confirmation (unité de travail transactionnelle, fournisseur, journal) et réutilise l'entité d'intention et le grand livre; elle ne partage que des modèles et des mappers avec `intent`. `webhook` fournit à `confirmation` l'événement à écrire dans l'outbox (fabrique de domaine et dépôt) et porte seule la livraison (cas d'usage, signature, envoi HTTP, worker, commande de relance). `refund` suit le même schéma que `confirmation` (unité de travail transactionnelle, verrou de l'intention, grand livre, outbox) et réutilise l'entité d'intention. `webhook` fournit à `confirmation` et à `refund` l'événement à écrire dans l'outbox (fabriques de domaine et dépôt). Règle de dépendance vérifiée par `app/__tests__/unit/test_architecture.unit.py`.
+Tranches verticales `app/<feature>/{domain,application,infrastructure,presentation}` (aujourd'hui `health`, `intent`, `ratelimit`, `confirmation`, `cancellation`, `expiration`, `ledger`, `ledgercheck`, `refund`, `webhook` et `observability`), configuration dans `app/core`. Migrations Alembic dans `alembic/` (`0001` vide, `0002` : tables `payment_intents` et `idempotency_keys`; montants en `BIGINT` de centimes, aucune colonne flottante; `0003` : table `rate_limit_windows`, ajout seul; `0004` : tables `confirmation_keys` et `ledger_entries` avec ses déclencheurs, ajout seul; `0005` : index partiel d'expiration, ajout seul; `0006` : table `outbox`, ajout seul; `0007` : table `refunds` avec ses déclencheurs, ajout seul). `confirmation` orchestre la confirmation (unité de travail transactionnelle, fournisseur, journal) et réutilise l'entité d'intention et le grand livre; elle ne partage que des modèles et des mappers avec `intent`. `webhook` fournit à `confirmation` l'événement à écrire dans l'outbox (fabrique de domaine et dépôt) et porte seule la livraison (cas d'usage, signature, envoi HTTP, worker, commande de relance). `refund` suit le même schéma que `confirmation` (unité de travail transactionnelle, verrou de l'intention, grand livre, outbox) et réutilise l'entité d'intention. `webhook` fournit à `confirmation` et à `refund` l'événement à écrire dans l'outbox (fabriques de domaine et dépôt). Règle de dépendance vérifiée par `app/__tests__/unit/test_architecture.unit.py`.
 
 ## Isolation sur la pile
 - **Base dédiée** : conteneur `payment-db` (Postgres) avec son seul rôle applicatif, sur le réseau interne `payment-data` où seul `payment` se trouve. `shop` ne voit pas cette base et `payment` ne voit pas la base du shop.
