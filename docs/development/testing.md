@@ -41,6 +41,10 @@ npm run test:coverage
 
 Idempotence, montant et devise valides, remboursement inférieur ou égal au montant capturé restant, signature de webhook invalide rejetée, rejeu d'événement ignoré, cohérence commande payée et transaction.
 
+## Concurrence sur Postgres
+
+Le test de concurrence des commandes (`test_order_concurrency.integ.py`) a besoin d'un vrai Postgres (SQLite ne verrouille pas les lignes). Il est ignoré sans la variable `APP_TEST_POSTGRES_URL` (fournie par le service Postgres du job `backend` en CI). En local : lancer un Postgres jetable de son choix et exporter l'URL `postgresql+psycopg://…` avant `uv run poe test`.
+
 ## Scénarios e2e de la pile
 
 Un scénario e2e vit dans `apps/backend/shop/tests/e2e/scenarios/test_<parcours>.e2e.py` et parle à la pile Docker Compose réelle **par la passerelle Traefik**, avec `httpx` (jamais directement aux services). Il lit l'URL de la passerelle dans `E2E_BASE_URL`; sans cette variable, les scénarios sont ignorés, donc `poe test` ne dépend pas de la pile.

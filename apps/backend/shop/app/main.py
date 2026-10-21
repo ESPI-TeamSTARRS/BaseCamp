@@ -17,10 +17,16 @@ from app.catalog.presentation.router import router as catalog_router
 from app.core.config import Settings
 from app.core.errors import register_error_handlers
 from app.core.logging.correlation_id_middleware import CorrelationIdMiddleware
+from app.core.logging.email_pseudonymizer import build_pseudonymizer
 from app.core.logging.structlog_business_event_logger import StructlogBusinessEventLogger
 from app.health.application.get_readiness import GetReadinessUseCase
 from app.health.infrastructure.clients.sqlalchemy_database_probe import SqlAlchemyDatabaseProbe
 from app.health.presentation.router import router as health_router
+from app.order.application.place_order import PlaceOrderUseCase
+from app.order.infrastructure.repositories.sqlalchemy_order_unit_of_work import (
+    SqlAlchemyOrderUnitOfWork,
+)
+from app.order.presentation.router import router as order_router
 
 DB_CONNECT_TIMEOUT_SECONDS = 2
 
@@ -48,10 +54,16 @@ def create_app() -> FastAPI:
     application.state.quote_cart_use_case = QuoteCartUseCase(
         SqlAlchemyCartProductReader(engine), events
     )
+    application.state.place_order_use_case = PlaceOrderUseCase(
+        lambda: SqlAlchemyOrderUnitOfWork(engine),
+        events,
+        build_pseudonymizer(settings.log_pseudonym_key),
+    )
     register_error_handlers(application, events)
     application.include_router(health_router)
     application.include_router(catalog_router)
     application.include_router(cart_router)
+    application.include_router(order_router)
     return application
 
 

@@ -1,40 +1,20 @@
 'use client';
 
 import Image from 'next/image';
+import Link from 'next/link';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X, Minus, Plus, ShoppingBag } from 'lucide-react';
-import { useState } from 'react';
 import { useCart } from '../context/CartContext';
 
 export function CartDrawer() {
   const { isOpen, closeCart, items, quote, quoteStatus, setQuantity, removeItem } = useCart();
-  const [isCheckingOut, setIsCheckingOut] = useState(false);
 
   // Tous les montants affichés viennent du devis du serveur, franco compris.
   const threshold = quote?.freeShippingThresholdEur ?? 0;
   const amountRemaining = quote?.amountRemainingForFreeShippingEur ?? 0;
   const progressPct = threshold > 0 ? Math.min(100, ((threshold - amountRemaining) / threshold) * 100) : 0;
   const quoteByProduct = new Map((quote?.lines ?? []).map((line) => [line.productId, line]));
-  const canCheckout = quoteStatus === 'ready' && quote !== null && !quote.hasIssues && !isCheckingOut;
-
-  async function handleCheckout() {
-    setIsCheckingOut(true);
-    try {
-      const res = await fetch('/api/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          lines: items.map((item) => ({ productId: item.product.id, quantity: item.quantity })),
-        }),
-      });
-      const data = await res.json();
-      if (data.url) {
-        window.location.href = data.url;
-      }
-    } finally {
-      setIsCheckingOut(false);
-    }
-  }
+  const canCheckout = quoteStatus === 'ready' && quote !== null && !quote.hasIssues;
 
   return (
     <AnimatePresence>
@@ -195,14 +175,15 @@ export function CartDrawer() {
                   <span>Total</span>
                   <span>{quote ? `${quote.totalEur.toFixed(2)} €` : '…'}</span>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleCheckout}
-                  disabled={!canCheckout}
-                  className="mt-4 flex w-full items-center justify-center rounded-full bg-bivouac py-3.5 text-base font-semibold text-white transition-transform duration-150 hover:bg-bivouac-dark active:scale-[0.98] disabled:opacity-60"
+                <Link
+                  href="/panier"
+                  onClick={closeCart}
+                  aria-disabled={!canCheckout}
+                  tabIndex={canCheckout ? undefined : -1}
+                  className="mt-4 flex w-full items-center justify-center rounded-full bg-bivouac py-3.5 text-base font-semibold text-white transition-transform duration-150 hover:bg-bivouac-dark active:scale-[0.98] disabled:opacity-60 aria-disabled:pointer-events-none"
                 >
-                  {isCheckingOut ? 'Redirection…' : 'Passer au paiement sécurisé'}
-                </button>
+                  Passer commande
+                </Link>
               </div>
             )}
           </motion.aside>
