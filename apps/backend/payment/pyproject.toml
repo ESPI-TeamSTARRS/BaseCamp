@@ -74,7 +74,7 @@ ignore = ["E501", "N818"]
 
 [tool.ruff.lint.per-file-ignores]
 "**/__tests__/**/*.py" = ["S101", "S105", "S106"]
-"tests/**/*.py" = ["S101", "S105", "S106"]
+"tests/**/*.py" = ["S101", "S105", "S106", "S608"]  # S608 : SQL de vérification e2e (UUID serveur)
 "conftest.py" = ["S101"]
 
 [tool.mypy]
