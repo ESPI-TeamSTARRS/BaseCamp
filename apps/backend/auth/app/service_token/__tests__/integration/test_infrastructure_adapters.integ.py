@@ -50,7 +50,10 @@ class TestArgon2SecretHasher:
     def test_hashes_are_salted(self) -> None:
         hasher = Argon2SecretHasher(FAST)
 
-        assert hasher.hash(SECRET) != hasher.hash(SECRET)
+        first_hash = hasher.hash(SECRET)
+        second_hash = hasher.hash(SECRET)
+
+        assert first_hash != second_hash
 
     def test_verifies_the_right_secret_only(self) -> None:
         hasher = Argon2SecretHasher(FAST)
