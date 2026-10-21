@@ -46,6 +46,7 @@ class TestSettingsLogPseudonymKey:
     def test_key_is_read_from_the_environment(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("APP_ENVIRONMENT", "production")
         monkeypatch.setenv("APP_LOG_PSEUDONYM_KEY", "une-cle-longue-et-secrete")
+        monkeypatch.setenv("APP_JWT_PRIVATE_KEY_FILE", "/run/secrets/auth_jwt_private_key")
 
         assert Settings().log_pseudonym_key == "une-cle-longue-et-secrete"
 
@@ -116,3 +117,52 @@ class TestSettingsMail:
         )
         assert settings.smtp_password.get_secret_value() == "tres-secret"
         assert "tres-secret" not in repr(settings)
+
+
+class TestSettingsTokens:
+    def test_tokens_have_safe_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for name in (
+            "JWT_PRIVATE_KEY_FILE",
+            "JWT_PREVIOUS_PUBLIC_KEYS_DIR",
+            "JWT_ISSUER",
+            "JWT_AUDIENCE",
+            "ACCESS_TOKEN_TTL_SECONDS",
+            "REFRESH_TOKEN_TTL_SECONDS",
+        ):
+            monkeypatch.delenv(f"APP_{name}", raising=False)
+
+        settings = Settings()
+
+        assert settings.jwt_private_key_file == ""
+        assert settings.jwt_previous_public_keys_dir == ""
+        assert (settings.jwt_issuer, settings.jwt_audience) == (
+            "basecamp-auth",
+            "basecamp-client-api",
+        )
+        assert settings.access_token_ttl_seconds == 900
+        assert settings.refresh_token_ttl_seconds == 604800
+
+    @pytest.mark.parametrize("environment", ["staging", "production"])
+    def test_startup_fails_outside_dev_without_a_signing_key(
+        self, monkeypatch: pytest.MonkeyPatch, environment: str
+    ) -> None:
+        monkeypatch.setenv("APP_ENVIRONMENT", environment)
+        monkeypatch.setenv("APP_LOG_PSEUDONYM_KEY", "une-cle-longue-et-secrete")
+        monkeypatch.delenv("APP_JWT_PRIVATE_KEY_FILE", raising=False)
+
+        with pytest.raises(ValueError, match="APP_JWT_PRIVATE_KEY_FILE"):
+            Settings()
+
+    def test_the_key_is_optional_in_dev_and_local(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("APP_JWT_PRIVATE_KEY_FILE", raising=False)
+        for environment in ("dev", "local"):
+            monkeypatch.setenv("APP_ENVIRONMENT", environment)
+
+            assert Settings().jwt_private_key_file == ""
+
+    @pytest.mark.parametrize("name", ["ACCESS_TOKEN_TTL_SECONDS", "REFRESH_TOKEN_TTL_SECONDS"])
+    def test_lifetimes_must_be_positive(self, monkeypatch: pytest.MonkeyPatch, name: str) -> None:
+        monkeypatch.setenv(f"APP_{name}", "0")
+
+        with pytest.raises(ValueError, match="greater than 0"):
+            Settings()

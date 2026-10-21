@@ -14,9 +14,9 @@ from app.login.__tests__.fakes import (
     FakeUnitOfWork,
     make_account,
 )
+from app.login.application.invalid_credentials_error import InvalidCredentialsError
 from app.login.application.login_account import LoginAccountUseCase
 from app.login.domain.entities.account import Account
-from app.login.domain.exceptions.invalid_credentials_error import InvalidCredentialsError
 
 ACCESS_TTL = 900
 REFRESH_TTL = 604800
