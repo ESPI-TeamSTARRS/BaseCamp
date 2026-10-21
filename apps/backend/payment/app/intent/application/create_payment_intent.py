@@ -88,16 +88,18 @@ class CreatePaymentIntentUseCase:
         record = IdempotencyRecord(command.caller, command.idempotency_key, fingerprint, intent.id)
         try:
             self._repository.add(intent, record)
-        except IdempotencyRaceError:
-            return self._replay_after_race(command, fingerprint)
+        except (IdempotencyRaceError, DuplicateOrderReferenceError) as error:
+            # Une autre instance a enregistré la même demande entre notre lecture et notre écriture :
+            # si c'est la même clé, on rejoue son résultat (200) ; sinon le conflit est réel.
+            return self._replay_after_race(command, fingerprint, error)
         return CreatePaymentIntentResult(PaymentIntentView.from_entity(intent), created=True)
 
     def _replay_after_race(
-        self, command: CreatePaymentIntentCommand, fingerprint: str
+        self, command: CreatePaymentIntentCommand, fingerprint: str, error: Exception
     ) -> CreatePaymentIntentResult:
         existing = self._repository.find_by_idempotency(command.caller, command.idempotency_key)
         if existing is None:
-            raise IdempotencyRaceError
+            raise error
         return self._replay(existing, fingerprint)
 
     @staticmethod

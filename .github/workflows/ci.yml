@@ -158,7 +158,7 @@ jobs:
           cache-from: type=gha,scope=front
           cache-to: type=gha,scope=front,mode=max
       - name: Pile minimale (Traefik, front, shop, auth, payment, bucket d images et leurs bases) healthy
-        run: docker compose up -d --no-build --wait --wait-timeout 120 traefik payment seaweedfs
+        run: docker compose up -d --no-build --wait --wait-timeout 120 --scale payment=2 traefik payment seaweedfs
       - name: Amorcage des clients de service (jetons entre services) rejouable sans effet
         run: docker compose run --rm --no-deps auth-bootstrap
       - name: Amorcage du bucket (visuels du catalogue)
@@ -181,7 +181,7 @@ jobs:
         run: sh scripts/check-payment-isolation.sh
       - run: uv sync --frozen
         working-directory: apps/backend/payment
-      - name: Scenarios e2e de payment depuis l'exterieur
+      - name: Scenarios e2e de payment (charge, attaque, 2 instances, arret) depuis l'exterieur
         run: uv run poe test:e2e
         working-directory: apps/backend/payment
       - name: Logs des conteneurs
