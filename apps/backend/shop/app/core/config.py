@@ -49,6 +49,16 @@ class Settings(BaseSettings):
     )
     auth_issuer: str = "basecamp-auth"
     auth_audience: str = "basecamp-client-api"
+    # Administration du catalogue : méthode d'authentification (`amr`) exigée en plus du rôle `operator`.
+    admin_required_amr: str = "face"
+
+    # Stockage des images produit : API S3 de SeaweedFS (clés S3 lues dans l'environnement, jamais versionnées).
+    s3_endpoint: str = "http://seaweedfs:8333"
+    s3_bucket: str = "product-images"
+    s3_access_key: str = ""
+    s3_secret_key: str = ""
+    s3_region: str = "us-east-1"
+
     auth_jwks_ttl_seconds: float = 300.0
     auth_jwks_min_refetch_seconds: float = 10.0
     auth_connect_timeout_seconds: float = 1.0
