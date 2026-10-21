@@ -5,11 +5,12 @@ Le nom place ce fichier en dernier : il epuise les compteurs par IP de la passer
 suivants s'ils partageaient ces compteurs.
 """
 
+import asyncio
 import os
 import statistics
+import threading
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 
 import httpx
 import pytest
@@ -18,7 +19,7 @@ BASE_URL = os.environ.get("E2E_BASE_URL", "http://127.0.0.1:8080")
 MAX_ATTEMPTS = 200
 MAX_BODY_BYTES = 1_048_576
 ATTACKERS = 200
-HEALTH_PROBES = 60
+MIN_PROBES = 40
 P95_LIMIT_SECONDS = 0.2
 
 
@@ -80,30 +81,36 @@ class TestUnderAttack:
     def test_health_stays_up_and_fast_during_200_parallel_attempts(
         self, client: httpx.Client
     ) -> None:
-        def attack(index: int) -> int:
-            with httpx.Client(base_url=BASE_URL, timeout=30.0) as http:
-                return int(
-                    http.post(
+        """200 tentatives simultanees (asyncio : une seule boucle, peu de bruit cote client) pendant
+        que `/health` est sondee en continu depuis un autre fil."""
+        attack_statuses: list[int] = []
+
+        async def attack() -> None:
+            async with httpx.AsyncClient(base_url=BASE_URL, timeout=30.0) as http:
+
+                async def one(index: int) -> int:
+                    response = await http.post(
                         "/api/auth/login",
                         json={"email": f"nobody-{index}@example.test", "password": "mauvais"},
-                    ).status_code
-                )
+                    )
+                    return int(response.status_code)
 
-        def probe(_: int) -> tuple[int, float]:
+                attack_statuses.extend(await asyncio.gather(*(one(i) for i in range(ATTACKERS))))
+
+        attacker = threading.Thread(target=lambda: asyncio.run(attack()))
+        health: list[tuple[int, float]] = []
+        attacker.start()
+        while attacker.is_alive() or len(health) < MIN_PROBES:
             started = time.perf_counter()
             status = client.get("/api/auth/health").status_code
-            return int(status), time.perf_counter() - started
+            health.append((int(status), time.perf_counter() - started))
+        attacker.join()
 
-        with ThreadPoolExecutor(ATTACKERS + HEALTH_PROBES) as pool:
-            attackers = [pool.submit(attack, index) for index in range(ATTACKERS)]
-            probes = [pool.submit(probe, index) for index in range(HEALTH_PROBES)]
-            attack_statuses = [future.result() for future in attackers]
-            health = [future.result() for future in probes]
-
+        assert len(attack_statuses) == ATTACKERS
         assert set(attack_statuses) <= {401, 429}
         assert {status for status, _ in health} == {200}
         durations = sorted(duration for _, duration in health)
-        p95 = durations[int(len(durations) * 0.95) - 1]
+        p95 = durations[max(int(len(durations) * 0.95) - 1, 0)]
         assert p95 < P95_LIMIT_SECONDS, (
-            f"p95 = {p95:.3f}s (mediane {statistics.median(durations):.3f}s)"
+            f"p95 = {p95:.3f}s (mediane {statistics.median(durations):.3f}s, {len(durations)} sondes)"
         )
