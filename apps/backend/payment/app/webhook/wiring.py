@@ -4,6 +4,11 @@ from sqlalchemy import Engine
 
 from app.core.config import Settings
 from app.core.events.business_event_logger import BusinessEventLogger
+from app.refund.application.refund_expired_order import RefundExpiredOrderUseCase
+from app.refund.application.refund_payment import RefundPaymentUseCase
+from app.refund.infrastructure.repositories.sqlalchemy_refund_unit_of_work import (
+    SqlAlchemyRefundUnitOfWork,
+)
 from app.webhook.application.deliver_next_event import DeliverNextEventUseCase
 from app.webhook.application.requeue_dead_events import RequeueDeadEventsUseCase
 from app.webhook.domain.services.webhook_signer import WebhookSigner
@@ -29,6 +34,11 @@ def build_deliver_use_case(
         ),
         lambda: datetime.now(UTC),
         events,
+        RefundExpiredOrderUseCase(
+            RefundPaymentUseCase(
+                SqlAlchemyRefundUnitOfWork(engine), lambda: datetime.now(UTC), events
+            )
+        ),
     )
 
 

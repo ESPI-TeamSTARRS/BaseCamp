@@ -1,4 +1,5 @@
 import http.client
+import json
 import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
@@ -9,6 +10,9 @@ from app.webhook.domain.value_objects.delivery_result import DeliveryResult
 from app.webhook.infrastructure.senders.no_redirect_handler import NoRedirectHandler
 
 _SUCCESS = range(200, 300)
+_CONFLICT = 409
+_MAX_REJECTION_BYTES = 1024
+_REJECTION_REASONS = frozenset({"order_expired"})  # seul refus définitif : commande expirée
 
 
 class HttpWebhookSender(WebhookSender):
@@ -47,7 +51,10 @@ class HttpWebhookSender(WebhookSender):
             with self._opener.open(request, timeout=self._timeout) as response:
                 status = int(response.status)
         except urllib.error.HTTPError as error:
+            reason = self._rejection_reason(error) if error.code == _CONFLICT else None
             error.close()
+            if reason is not None:
+                return DeliveryResult.rejection(reason, error.code)
             return self._answer(error.code)
         except TimeoutError:
             return DeliveryResult.failed("timeout")
@@ -58,6 +65,18 @@ class HttpWebhookSender(WebhookSender):
         except (OSError, http.client.HTTPException):
             return DeliveryResult.failed("connection_error")
         return self._answer(status)
+
+    @staticmethod
+    def _rejection_reason(error: urllib.error.HTTPError) -> str | None:
+        """Motif d'un 409 de la boutique (corps `{"status": "rejected", "reason": "order_expired"}`)."""
+        try:
+            document = json.loads(error.read(_MAX_REJECTION_BYTES))
+        except (ValueError, OSError, http.client.HTTPException):
+            return None
+        if not isinstance(document, dict) or document.get("status") != "rejected":
+            return None
+        reason = document.get("reason")
+        return reason if isinstance(reason, str) and reason in _REJECTION_REASONS else None
 
     @staticmethod
     def _answer(status: int) -> DeliveryResult:

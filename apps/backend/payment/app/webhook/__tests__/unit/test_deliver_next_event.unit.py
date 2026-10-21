@@ -1,8 +1,6 @@
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from app.webhook.domain.interfaces.expired_order_refunder import ExpiredOrderRefunder
-
 from app.core.__tests__.in_memory_business_event_logger import InMemoryBusinessEventLogger
 from app.core.events.outcome import Outcome
 from app.webhook.__tests__.support import InMemoryDeliveryUnitOfWork, InMemoryOutbox, ScriptedSender
@@ -11,6 +9,7 @@ from app.webhook.application.deliver_next_event import DeliverNextEventUseCase
 from app.webhook.domain.entities.outbox_event import OutboxEvent
 from app.webhook.domain.enums.outbox_status import OutboxStatus
 from app.webhook.domain.enums.webhook_event_type import WebhookEventType
+from app.webhook.domain.interfaces.expired_order_refunder import ExpiredOrderRefunder
 from app.webhook.domain.services.webhook_signer import WebhookSigner
 from app.webhook.domain.value_objects.delivery_result import DeliveryResult
 from app.webhook.domain.value_objects.retry_policy import RetryPolicy
@@ -208,7 +207,7 @@ class _Refunder(ExpiredOrderRefunder):
         self.refunded.append(event)
 
 
-EXPIRED = DeliveryResult.rejected("order_expired", 409)
+EXPIRED = DeliveryResult.rejection("order_expired", 409)
 
 
 def _with_refunder(*results: DeliveryResult, fail: bool = False) -> tuple[Fixture, _Refunder]:
