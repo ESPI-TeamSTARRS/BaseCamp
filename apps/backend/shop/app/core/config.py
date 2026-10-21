@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
@@ -20,6 +22,8 @@ class Settings(BaseSettings):
     db_password: str = ""  # fournie par l'environnement (APP_DB_PASSWORD), jamais versionnee
 
     # Appels a payment : delais courts pour qu'un payment arrete ou lent ne bloque jamais la boutique.
+    # `http` : service payment (par défaut) ; `simulated` : fournisseur simulé en base, sans réseau ni clé.
+    payment_provider: Literal["http", "simulated"] = "http"
     payment_url: str = "http://payment:8000"
     payment_service_token: str = ""  # jeton de service de shop aupres de payment, via l'env
     payment_connect_timeout_seconds: float = 1.0
