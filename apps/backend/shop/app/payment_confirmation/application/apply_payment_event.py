@@ -15,6 +15,7 @@ from app.payment_request.domain.entities.payment_attempt import (
 
 PAYMENT_SUCCEEDED = "payment.succeeded"
 PAYMENT_FAILED = "payment.failed"
+REFUND_SUCCEEDED = "refund.succeeded"
 
 
 class ApplyPaymentEvent:
@@ -28,6 +29,8 @@ class ApplyPaymentEvent:
             return self._succeeded(uow, event)
         if event.event_type == PAYMENT_FAILED:
             return self._failed(uow, event)
+        if event.event_type == REFUND_SUCCEEDED:
+            return self._refunded(uow, event)
         return AppliedEvent(WebhookOutcome.IGNORED, "unsupported_type")
 
     def _target(self, uow: ConfirmationUnitOfWork, event: PaymentEvent) -> SettlementTarget | None:
@@ -82,3 +85,35 @@ class ApplyPaymentEvent:
         if target.attempt_status == REQUIRES_CONFIRMATION:
             uow.targets.set_attempt_status(target.attempt_id, FAILED)
         return AppliedEvent(WebhookOutcome.APPLIED, None, target.order_id, target.order_number)
+
+    def _refunded(self, uow: ConfirmationUnitOfWork, event: PaymentEvent) -> AppliedEvent:
+        """Le cumul remboursé ne fait que croître : un rejeu ou un événement plus ancien est ignoré."""
+        target = self._target(uow, event)
+        if target is None:
+            return AppliedEvent(WebhookOutcome.IGNORED, "order_not_found")
+        refunded = event.amount_refunded_cents
+        reason = self._refund_refusal(target, refunded)
+        if reason is not None or refunded is None:
+            return AppliedEvent(
+                WebhookOutcome.IGNORED, reason, target.order_id, target.order_number
+            )
+        uow.targets.record_refund(target.order_id, refunded)
+        return AppliedEvent(
+            WebhookOutcome.APPLIED,
+            None,
+            target.order_id,
+            target.order_number,
+            refunded_cents=refunded,
+        )
+
+    @staticmethod
+    def _refund_refusal(target: SettlementTarget, refunded: int | None) -> str | None:
+        if refunded is None:
+            return "refund_amount_missing"
+        if target.order_status is not OrderStatus.PAID:
+            return "order_not_paid"
+        if refunded > target.total_cents:
+            return "refund_exceeds_total"
+        if refunded <= target.refunded_cents:
+            return "refund_already_recorded"
+        return None

@@ -7,6 +7,7 @@ WEBHOOK_REJECTED = "payment.webhook_rejected"
 WEBHOOK_REPLAYED = "payment.webhook_replayed"
 WEBHOOK_IGNORED = "payment.webhook_ignored"
 ORDER_PAYMENT_FAILED = "order.payment_failed"
+ORDER_REFUNDED = "order.refunded"
 CONFIRMATION_EMAIL_SENT = "order.confirmation_email_sent"
 CONFIRMATION_EMAIL_FAILED = "order.confirmation_email_failed"
 

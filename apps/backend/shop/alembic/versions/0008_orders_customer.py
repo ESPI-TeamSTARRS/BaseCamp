@@ -5,8 +5,8 @@ existantes (invitees) gardent `user_id` nul; l'ancienne version du service, qui 
 continue de fonctionner sur le schema migre. Aucune cle etrangere : le compte vit dans `auth`
 (autre base), seul son identifiant est conserve, sans copie d'autre donnee du compte.
 
-Revision ID: 0007
-Revises: 0006
+Revision ID: 0008
+Revises: 0007
 """
 
 from collections.abc import Sequence
@@ -15,8 +15,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision: str = "0007"
-down_revision: str | None = "0006"
+revision: str = "0008"
+down_revision: str | None = "0007"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -65,9 +65,11 @@ class RequestOrderPaymentUseCase:
         if order is None:
             self._events.log(payment_events.rejected("order_not_found"))
             raise PaymentOrderNotFoundError
-        reason = {OrderStatus.PAID: "order_already_paid", OrderStatus.EXPIRED: "order_expired"}.get(
-            order.status
-        )
+        reason = {
+            OrderStatus.PAID: "order_already_paid",
+            OrderStatus.EXPIRED: "order_expired",
+            OrderStatus.REFUNDED: "order_already_paid",
+        }.get(order.status)
         if reason is not None:
             self._events.log(payment_events.rejected(reason, order.number))
             raise OrderNotPayableError(reason)
