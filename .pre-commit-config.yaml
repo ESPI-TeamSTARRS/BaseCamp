@@ -55,6 +55,12 @@ repos:
         files: ^apps/frontend/
         pass_filenames: false
         entry: npm --prefix apps/frontend run pre-commit
+      - id: backoffice-pre-commit
+        name: "backoffice - lint + format"
+        language: system
+        files: ^apps/backoffice/
+        pass_filenames: false
+        entry: npm --prefix apps/backoffice run pre-commit
 
       - id: shop-pre-push
         name: "shop - types + tests unitaires"
@@ -84,3 +90,10 @@ repos:
         pass_filenames: false
         stages: [pre-push]
         entry: npm --prefix apps/frontend run pre-push
+      - id: backoffice-pre-push
+        name: "backoffice - types + tests unitaires"
+        language: system
+        files: ^apps/backoffice/
+        pass_filenames: false
+        stages: [pre-push]
+        entry: npm --prefix apps/backoffice run pre-push
