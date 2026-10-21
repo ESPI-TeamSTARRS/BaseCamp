@@ -3,6 +3,9 @@ import sys
 from fastapi import FastAPI
 from sqlalchemy import Engine
 
+from app.confirmation.error_handlers import register_confirmation_error_handlers
+from app.confirmation.presentation.router import router as confirmation_router
+from app.confirmation.wiring import build_confirmation_services
 from app.core.config import Settings
 from app.core.database import build_engine
 from app.core.errors import register_database_unavailable_handler, register_unhandled_error_handler
@@ -40,10 +43,13 @@ def create_app(
         settings.service_name, SqlAlchemyDatabaseProbe(engine)
     )
     application.state.intent_services = build_intent_services(engine, settings, events)
+    application.state.confirmation_services = build_confirmation_services(engine, settings)
     application.state.rate_limiter = build_rate_limiter(engine, settings, events)
     application.include_router(health_router)
     application.include_router(intent_router)
+    application.include_router(confirmation_router)
     register_error_handlers(application, events)
+    register_confirmation_error_handlers(application)
     register_rate_limit_error_handlers(application)
     register_database_unavailable_handler(application, events)
     register_unhandled_error_handler(application, events)

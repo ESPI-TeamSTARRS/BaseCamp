@@ -1,4 +1,4 @@
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     service_tokens: dict[str, str] = {}
     intent_ttl_minutes: int = 30
     max_amount_cents: int = 500_000  # plafond par intention : 5 000 EUR
+    # Délai simulé du fournisseur interne pour pm_test_timeout : toujours borné (10 s au plus).
+    provider_timeout_seconds: float = Field(default=2.0, gt=0, le=10)
 
     db_password: str = ""  # fournie par l'environnement (APP_DB_PASSWORD), jamais versionnee
 

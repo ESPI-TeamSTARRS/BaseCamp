@@ -3,11 +3,11 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 
 import pytest
-from app.confirmation.wiring import build_confirmation_services
 from fastapi.testclient import TestClient
 from httpx import Response
 from sqlalchemy import Engine, StaticPool, create_engine, event, text
 
+from app.confirmation.wiring import build_confirmation_services
 from app.core.config import Settings
 from app.intent.infrastructure.models.base import Base
 from app.main import create_app
@@ -61,11 +61,12 @@ def _create(env: Env, order: str = "CMD-1") -> str:
 def _confirm(
     env: Env, intent_id: str, method: object = "pm_test_success", key: str = "confirm-0001"
 ) -> Response:
-    return env.client.post(
+    response: Response = env.client.post(
         f"/payments/intents/{intent_id}/confirm",
         json={"payment_method": method},
         headers=_headers(key),
     )
+    return response
 
 
 def _ledger(env: Env) -> list[tuple[str, str, int]]:
