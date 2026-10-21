@@ -44,7 +44,13 @@ LONG_AGO = datetime.now(UTC) - timedelta(hours=2)
 
 
 class SlowApprovingProvider(PaymentProvider):
+    """Signale `entered` dès qu'il est appelé : l'intention est alors verrouillée par la confirmation."""
+
+    def __init__(self) -> None:
+        self.entered = threading.Event()
+
     def authorize(self, method: PaymentMethod, amount: Amount) -> ProviderOutcome:
+        self.entered.set()
         time.sleep(0.5)
         return ProviderOutcome.APPROVED
 
@@ -136,9 +142,10 @@ class TestExpirationOnPostgres:
         # La confirmation a lu l'heure avant l'échéance (horloge figée) et tient le verrou; pour
         # l'expiration, l'échéance est dépassée : la ligne verrouillée doit être laissée de côté.
         intent = add_intent(engine, LONG_AGO)
+        provider = SlowApprovingProvider()
         confirmation = ConfirmPaymentUseCase(
             SqlAlchemyConfirmationUnitOfWork(engine),
-            SlowApprovingProvider(),
+            provider,
             lambda: LONG_AGO,
             InMemoryBusinessEventLogger(),
         )
@@ -147,7 +154,7 @@ class TestExpirationOnPostgres:
         )
         confirming = threading.Thread(target=confirmation.execute, args=(command,))
         confirming.start()
-        time.sleep(0.2)
+        assert provider.entered.wait(10)
 
         expired = _expire(engine)
         confirming.join()

@@ -43,10 +43,14 @@ pytestmark = requires_postgres
 
 
 class ApprovingProvider(PaymentProvider):
-    def __init__(self, delay: float = 0.0) -> None:
+    """Signale `entered` dès qu'il est appelé : l'intention est alors verrouillée par la confirmation."""
+
+    def __init__(self, delay: float = 0.0, entered: threading.Event | None = None) -> None:
         self._delay = delay
+        self.entered = entered or threading.Event()
 
     def authorize(self, method: PaymentMethod, amount: Amount) -> ProviderOutcome:
+        self.entered.set()
         time.sleep(self._delay)
         return ProviderOutcome.APPROVED
 
@@ -56,10 +60,12 @@ def engine(monkeypatch: pytest.MonkeyPatch) -> Iterator[Engine]:
     yield from migrated_engine(monkeypatch)
 
 
-def _confirm(engine: Engine, intent: PaymentIntent, delay: float = 0.0) -> None:
+def _confirm(
+    engine: Engine, intent: PaymentIntent, provider: ApprovingProvider | None = None
+) -> None:
     ConfirmPaymentUseCase(
         SqlAlchemyConfirmationUnitOfWork(engine),
-        ApprovingProvider(delay),
+        provider or ApprovingProvider(),
         lambda: datetime.now(UTC),
         InMemoryBusinessEventLogger(),
     ).execute(ConfirmPaymentCommand("shop", "confirm-key-0001", str(intent.id), "pm_test_success"))
@@ -107,9 +113,10 @@ class TestCancelVersusConfirm:
         self, engine: Engine
     ) -> None:
         intent = add_intent(engine)
-        confirming = threading.Thread(target=_confirm, args=(engine, intent, 0.5))
+        provider = ApprovingProvider(delay=0.5)
+        confirming = threading.Thread(target=_confirm, args=(engine, intent, provider))
         confirming.start()
-        time.sleep(0.15)  # la confirmation tient le verrou pendant l'appel au fournisseur
+        assert provider.entered.wait(10)  # la confirmation tient le verrou pendant l'appel
 
         with pytest.raises(IntentNotCancelableError):
             _cancel(engine, intent)

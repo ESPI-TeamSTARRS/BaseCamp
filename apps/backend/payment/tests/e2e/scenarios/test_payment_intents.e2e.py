@@ -315,7 +315,7 @@ class TestCancellation:
         assert _intent_status(token, intent_id) == "canceled"
         assert _ledger_rows(intent_id) == []
 
-    def test_aconfirmed_id_intent_cannot_be_canceled(self, token: str) -> None:
+    def test_a_confirmed_intent_cannot_be_canceled(self, token: str) -> None:
         intent_id = _new_intent(token)
         _confirm(token, intent_id, "pm_test_success", f"e2e-{uuid.uuid4().hex}")
 
@@ -371,7 +371,7 @@ class TestExpiration:
         assert _intent_status(token, confirmed_id) == "succeeded"
         assert _ledger_rows(intent_id) == []
 
-    def test_an_expired_intent_can_neither_beconfirmed_id_nor_canceled(self, token: str) -> None:
+    def test_an_expired_intent_can_neither_be_confirmed_nor_canceled(self, token: str) -> None:
         intent_id = _new_intent(token)
         _psql(
             "UPDATE payment_intents SET expires_at = now() - interval '1 minute' "
