@@ -16,7 +16,7 @@ from app.intent.infrastructure.models.base import Base
 
 
 class RefundModel(Base):
-    """Remboursements émis (table `refunds`, migration 0006, ajout seul de schéma).
+    """Remboursements émis (table `refunds`, migration 0007, ajout seul de schéma).
 
     Sur Postgres, des déclencheurs posés par la migration refusent tout cumul supérieur au montant
     capturé de l'intention (le verrou de ligne de l'application n'est qu'une première barrière) et

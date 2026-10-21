@@ -6,8 +6,8 @@ Le compte de grand livre `remboursements` n'exige aucun changement de schéma (`
 texte libre, les déclencheurs de `ledger_entries` ne dépendent pas du nom du compte). L'ancienne
 version ignore la table et continue de fonctionner.
 
-Revision ID: 0006
-Revises: 0005
+Revision ID: 0007
+Revises: 0006
 """
 
 from collections.abc import Sequence
@@ -16,8 +16,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision: str = "0006"
-down_revision: str | None = "0005"
+revision: str = "0007"
+down_revision: str | None = "0006"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

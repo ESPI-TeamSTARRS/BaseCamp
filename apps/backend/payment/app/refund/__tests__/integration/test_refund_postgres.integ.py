@@ -301,7 +301,7 @@ class TestMigrationIsAdditive:
     def test_the_refund_migration_only_adds_a_table(self, monkeypatch: pytest.MonkeyPatch) -> None:
         assert DATABASE_URL
         config = _config(monkeypatch)
-        command.upgrade(config, "0005")
+        command.upgrade(config, "0006")
         engine = create_engine(DATABASE_URL)
         try:
             before = _columns(engine)
@@ -319,7 +319,7 @@ class TestMigrationIsAdditive:
     ) -> None:
         assert DATABASE_URL
         config = _config(monkeypatch)
-        command.upgrade(config, "0005")
+        command.upgrade(config, "0006")
         engine = create_engine(DATABASE_URL)
         try:
             intent = _paid_intent(engine)
