@@ -1,0 +1,115 @@
+name: E2E
+
+# Test de bout en bout de la pile complete (Traefik, front, shop, auth, payment...), joue toutes les heures
+# sur main et a la demande. Il ne bloque ni les PR ni les releases : un echec rend ce workflow rouge
+# (verifier le dernier run vert avant de fusionner une PR de manifeste, voir docs/deployment/runbook.md).
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: e2e
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  stack-e2e:
+    name: stack-e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      E2E_BASE_URL: http://127.0.0.1:8080
+      # Surcharge de test : publie l'API de Mailpit sur 127.0.0.1 pour lire les emails d'inscription.
+      COMPOSE_FILE: docker-compose.yml:docker-compose.e2e.yml
+      E2E_MAILPIT_URL: http://127.0.0.1:8025
+      # Webhook payment -> shop : le worker vise le vrai recepteur de la boutique (http://shop:8000/webhooks/payment,
+      # valeur par defaut de la pile) pour les scenarios shop; relances rapprochees.
+      PAYMENT_WEBHOOK_BACKOFF_BASE_SECONDS: "2"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fichier .env de CI (valeurs factices) et cles de signature auth (non versionnees)
+        run: |
+          cp .env.example .env
+          sh scripts/init-auth-keys.sh
+      - uses: docker/setup-buildx-action@v3
+      - name: Image shop (cache GHA)
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/backend/shop
+          load: true
+          tags: basecamp-shop
+          cache-from: type=gha,scope=shop
+          cache-to: type=gha,scope=shop,mode=max
+      - name: Image auth (build compose, sans action tierce)
+        run: docker compose build auth
+      - name: Image payment (cache GHA)
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/backend/payment
+          load: true
+          tags: basecamp-payment
+          cache-from: type=gha,scope=payment
+          cache-to: type=gha,scope=payment,mode=max
+      - name: Image front (cache GHA)
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/frontend
+          load: true
+          tags: basecamp-front
+          build-args: |
+            NEXT_PUBLIC_SITE_URL=http://localhost:8080
+          cache-from: type=gha,scope=front
+          cache-to: type=gha,scope=front,mode=max
+      - name: Pile minimale (Traefik, front, shop, auth, payment et son worker, Mailpit, bucket d images et leurs bases) healthy
+        run: docker compose up -d --no-build --wait --wait-timeout 120 --scale payment=2 traefik payment payment-worker seaweedfs mailpit
+      - name: Amorcage des clients de service (jetons entre services) rejouable sans effet
+        run: docker compose run --rm --no-deps auth-bootstrap
+      - name: Amorcage du bucket (visuels du catalogue)
+        run: docker compose run --rm --no-deps seaweedfs-seed
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/backend/shop/uv.lock
+      - run: uv sync --frozen
+        working-directory: apps/backend/shop
+      - name: Scenarios e2e contre Traefik
+        run: uv run poe test:e2e
+        working-directory: apps/backend/shop
+      - run: uv sync --frozen --no-build --python 3.13
+        working-directory: apps/backend/auth
+      - name: Scenarios e2e auth (passerelle, jetons de service, inscription avec Mailpit, journaux)
+        run: uv run --frozen --no-build poe test:e2e
+        working-directory: apps/backend/auth
+        env:
+          E2E_CHECK_LOGS: "1"
+      - name: Isolation de payment (reseau, bases, migrations, readiness)
+        run: sh scripts/check-payment-isolation.sh
+      - name: Worker de webhook vers le recepteur factice des scenarios payment (conteneur shop, port 9100)
+        run: docker compose up -d --no-deps --no-build --force-recreate --wait payment-worker
+        env:
+          PAYMENT_WEBHOOK_URL: http://shop:9100/webhooks/payment
+      - run: uv sync --frozen
+        working-directory: apps/backend/payment
+      - name: Scenarios e2e de payment (charge, attaque, 2 instances, arret, webhook signe, signaux) depuis l'exterieur
+        run: uv run poe test:e2e
+        working-directory: apps/backend/payment
+        env:
+          # Les scenarios relancent des conteneurs : la cible du worker doit rester le recepteur factice.
+          PAYMENT_WEBHOOK_URL: http://shop:9100/webhooks/payment
+      - name: Logs des conteneurs
+        if: failure()
+        run: docker compose logs --no-color > compose-logs.txt
+      - name: Publier les logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stack-e2e-logs
+          path: compose-logs.txt
+      - name: Nettoyage de la pile
+        if: always()
+        run: docker compose down -v
