@@ -2,6 +2,7 @@ import importlib.util
 from collections.abc import Iterator
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 import pytest
 from alembic.autogenerate import compare_metadata
@@ -42,7 +43,7 @@ class TestMigration0004:
     def test_upgrade_matches_the_sqlalchemy_models(self, engine: Engine) -> None:
         migration = load("0004_users_et_verification")
         with engine.begin() as connection:
-            context = MigrationContext.configure(connection)
+            context = MigrationContext.configure(connection, opts={"include_object": _owned})
             with Operations.context(context):
                 migration.upgrade()
             differences = compare_metadata(context, AuthBase.metadata)
@@ -56,3 +57,9 @@ class TestMigration0004:
                 migration.upgrade()
                 migration.downgrade()
             assert inspect(connection).get_table_names() == []
+
+
+def _owned(object_: Any, name: str | None, type_: str, reflected: bool, compare_to: Any) -> bool:
+    """Ne compare que les tables de la migration 0002 (les suivantes ont leur propre test)."""
+    table = object_ if type_ == "table" else getattr(object_, "table", None)
+    return table is None or table.name in {"users", "email_verification_tokens"}
