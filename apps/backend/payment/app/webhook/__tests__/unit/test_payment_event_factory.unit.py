@@ -69,4 +69,7 @@ class TestPaymentEventFactory:
         factory = PaymentEventFactory()
         intent = _intent().succeed()
 
-        assert factory.build(intent, NOW).id != factory.build(intent, NOW).id
+        first = factory.build(intent, NOW)
+        second = factory.build(intent, NOW)
+
+        assert first.id != second.id
