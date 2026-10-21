@@ -213,7 +213,7 @@ Chaque règlement d'une intention produit un événement que la boutique reçoit
 ### Outbox transactionnelle
 À la confirmation, l'événement est écrit dans la table `outbox` **dans la même transaction** que le changement d'état, la clé d'idempotence et le grand livre : jamais d'événement sans état, ni d'état sans événement. Une confirmation réussie écrit `payment.succeeded`; un refus (`pm_test_declined`, `pm_test_timeout`) écrit `payment.failed`; un remboursement écrit `refund.succeeded` (même transaction que le cumul remboursé et le grand livre). Un rejeu idempotent n'écrit rien de plus. Panne de la boutique : la confirmation n'en dépend jamais (elle ne fait aucun appel sortant).
 
-Table `outbox` (migration `0006`) : `id` (identifiant d'événement, constant), `event_type`, `intent_id`, `body` (le texte exact signé et envoyé), `status` (`pending`, `delivered`, `dead`), `attempts`, `next_attempt_at`, `created_at`, `last_error` (un code comme `http_503`, `timeout`, `connection_error`, jamais un message), `delivered_at`.
+Table `outbox` (migration `0006`) : `id` (identifiant d'événement, constant), `event_type`, `intent_id`, `body` (le texte exact signé et envoyé), `status` (`pending`, `delivered`, `dead`, `rejected_by_receiver`), `attempts`, `next_attempt_at`, `created_at`, `last_error` (un code comme `http_503`, `timeout`, `connection_error`, jamais un message), `delivered_at`.
 
 ### Format publié
 `POST <APP_WEBHOOK_URL>` avec `Content-Type: application/json` et :
@@ -252,6 +252,8 @@ Vecteur de test (à reproduire côté boutique, épinglé par `test_webhook_sign
 
 ### Livraison et relances
 Le service `payment-worker` (même image que `payment`, commande `python -m app.webhook.presentation.worker_main`) lit les événements `pending` échus, du plus ancien au plus récent, et les envoie un par un. Une réponse 2xx marque l'événement `delivered`. Autre chose (statut non 2xx, redirection comprise, délai dépassé, connexion refusée) : nouvelle tentative avec attente exponentielle, `APP_WEBHOOK_BACKOFF_BASE_SECONDS` × 2^(n-1) plafonnée à `APP_WEBHOOK_BACKOFF_MAX_SECONDS` (5 s, 10 s, 20 s, 40 s, 80 s par défaut). Après `APP_WEBHOOK_MAX_ATTEMPTS` tentatives (6 par défaut), l'événement passe `dead` et un événement d'erreur `webhook.event_dead` est journalisé.
+
+**Paiement refusé par la boutique (WORK-30)** : si la boutique répond **409** `{"status": "rejected", "reason": "order_expired"}` à un `payment.succeeded` (la commande a expiré avant le paiement), le worker ne retente pas : il rembourse en totalité le montant capturé par le cas d'usage de remboursement (appelant `payment-worker`, clé d'idempotence `auto-refund-<id de l'événement>` : un rejeu ne rembourse jamais deux fois), puis passe l'événement `rejected_by_receiver` (final, jamais relancé) et journalise l'alerte `webhook.rejected_by_receiver`. Le remboursement publie lui-même un `refund.succeeded` (la boutique l'ignore : commande non payée). Tout autre 409, un 5xx ou un délai retombe sur les tentatives ci-dessus sans rembourser; si le remboursement échoue, la tentative est comptée (`auto_refund_failed`) et rejouée, jusqu'à `dead` avec son alerte.
 
 - **Exclusion** : l'événement est verrouillé (`SELECT … FOR UPDATE SKIP LOCKED`) pendant son envoi; plusieurs workers ne livrent jamais le même événement.
 - **Reprise** : tout est en base, aucun état en mémoire. Le worker arrêté, redémarré ou le shop indisponible : la livraison reprend toute seule à l'échéance de la prochaine tentative. Le worker survit aux pannes de base ou de boutique (erreur journalisée, nouvelle boucle) et s'arrête proprement sur `SIGTERM`.
@@ -305,6 +307,7 @@ La migration `0004` suit cette règle : elle **ajoute seulement** les tables `co
 
 La migration `0006` suit la même règle : elle **ajoute seulement** la table `outbox` (clé étrangère de `outbox` vers `payment_intents`, jamais l'inverse), sans toucher à une table existante. L'ancienne version l'ignore et fonctionne. Limite assumée : après un retour arrière de l'image, les confirmations n'écrivent plus d'événement; les événements déjà en base restent `pending` et sont livrés par le worker dès qu'il tourne avec la nouvelle version.
 
+La migration `0008` n'ajoute rien : elle élargit `outbox.status` (`VARCHAR(32)`) et `ck_outbox_status` à `rejected_by_receiver`; l'ancien code n'écrit que les anciens statuts et ne relit que `pending` et `dead` (retour arrière : ces lignes deviennent `delivered`).
 La migration `0007` suit la même règle : elle **ajoute seulement** la table `refunds` (clé étrangère de `refunds` vers `payment_intents`, jamais l'inverse), ses contraintes et ses déclencheurs (plafond, ajout seul), qui ne portent que sur cette nouvelle table. Le compte de grand livre `remboursements` n'exige aucun changement de schéma, et `payment_intents.refunded_amount` (avec sa contrainte) existe depuis `0002`. L'ancienne version ignore la table et fonctionne. Limite assumée : après un retour arrière de l'image, l'ancienne version ne sait ni créer ni relire un remboursement; les remboursements déjà en base et leurs événements `refund.succeeded` `pending` restent valides et sont livrés par le worker dès qu'il tourne avec la nouvelle version.
 
 ### Mise à l'échelle (`--scale payment=2`)
@@ -414,6 +417,7 @@ Webhook sortant (ressource `webhook_event`, identifiant = identifiant d'événem
 | `webhook.event_queued` | success | | émis par `payment` après la validation de la confirmation; `event_type`, `payment_intent_id` |
 | `webhook.delivered` | success | | `event_type`, `payment_intent_id`, `attempt`, `status_code` |
 | `webhook.delivery_failed` | error | `http_<statut>` (`http_503`…), `timeout`, `connection_error` | `attempt`, `status_code` (nul sans réponse), `retry_in_seconds` |
+| `webhook.rejected_by_receiver` | error | `order_expired` | paiement refusé par la boutique (409), remboursé en totalité; `attempt`, `status_code`; signal à alerter |
 | `webhook.event_dead` | error | `max_attempts_reached` | `attempts`, `last_error`; l'événement ne sera plus tenté sans relance d'exploitation |
 | `webhook.event_requeued` | success | | acteur `service` = `operations`; relance d'un événement `dead` |
 | `webhook.worker_failed` | error | `worker_error` | erreur inattendue de la boucle (base injoignable…), sans message d'exception |
@@ -443,7 +447,7 @@ Le journal est du JSON, une ligne par événement, au [contrat commun](../develo
 | Rejeu | `payment.intent_replayed` (création), `payment.confirmation_replayed` (confirmation) | idempotence |
 | Rejet d'un appelant (jeton) | `payment.service_authenticated` (denied, `invalid_token`) + `service.request_completed` en `http_401` | l'IP du client y figure, jamais le jeton |
 | Rejet de requête | `service.request_rejected`, `payment.confirmation_rejected`, `payment.intent_rejected`, `service.rate_limited`, `service.payload_too_large`, `service.overloaded` | refus |
-| Webhook | `webhook.event_queued`, `webhook.delivered`, `webhook.delivery_failed`, `webhook.event_dead`, `webhook.event_requeued` | livraison sortante |
+| Webhook | `webhook.event_queued`, `webhook.delivered`, `webhook.delivery_failed`, `webhook.event_dead`, `webhook.event_requeued`, `webhook.rejected_by_receiver` | livraison sortante |
 | Collecte détournée | `service.metrics_refused` | `/metrics` demandé à travers un proxy |
 
 Exemple de ligne de requête (`attributes.route` est le gabarit, jamais le chemin réel) :
@@ -472,7 +476,7 @@ Format texte Prometheus 0.0.4 (`text/plain; version=0.0.4`), pour un collecteur 
 | `payment_captured_amount_cents` | gauge | | base : somme des intentions `succeeded` |
 | `payment_refunded_amount_cents` | gauge | | base : somme remboursée des intentions `succeeded` |
 | `payment_refunded_intents` | gauge | | base : intentions `succeeded` ayant un remboursement |
-| `payment_webhook_events` | gauge | `status` (`pending`, `delivered`, `dead`) | base (outbox) |
+| `payment_webhook_events` | gauge | `status` (`pending`, `delivered`, `dead`, `rejected_by_receiver`) | base (outbox) |
 | `payment_webhook_oldest_pending_age_seconds` | gauge | | base : âge du plus ancien `pending`, 0 si aucun |
 | `payment_ledger_discrepancies` | gauge | `kind` | base, voir ci-dessous |
 | `payment_state_up` | gauge | | 1 si l'état a pu être lu en base pendant cette collecte, 0 sinon (les séries d'état sont alors **absentes**, pas à zéro) |
@@ -499,6 +503,7 @@ Valeurs de départ pour un trafic faible (PromQL indicatif); les règles réelle
 | Signal | Condition conseillée | Gravité | Lecture |
 |---|---|---|---|
 | `payment_ledger_discrepancies{kind=…}` | `> 0` (n'importe quel `kind`) | critique, immédiate | grand livre incohérent : intégrité comptable en cause |
+| `payment_webhook_events{status="rejected_by_receiver"}` | `increase[1h] > 0` | avertissement | paiement reçu après l'expiration de la commande, remboursé automatiquement : vérifier le délai d'expiration |
 | `payment_webhook_events{status="dead"}` | `> 0` | critique | événement abandonné après 6 tentatives, la boutique ne sait pas qu'un paiement a abouti : relancer (voir exploitation) |
 | `payment_webhook_oldest_pending_age_seconds` | `> 300` pendant 2 min, `> 900` critique | avertissement / critique | le worker est arrêté ou bloqué (le budget nominal de relances tient en 155 s) |
 | `payment_state_up` | `== 0` pendant 1 min | critique | base injoignable (le service répond mais l'état n'est plus lisible) |
