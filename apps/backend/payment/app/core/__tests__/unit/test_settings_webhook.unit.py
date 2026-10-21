@@ -33,7 +33,7 @@ class TestWebhookSettings:
 
     def test_a_short_secret_is_refused(self) -> None:
         with pytest.raises(ValidationError):
-            Settings(webhook_secret="too-short")
+            Settings(webhook_secret=SecretStr("too-short"))
 
     def test_the_secrets_never_appear_in_the_representation(self) -> None:
         settings = Settings(

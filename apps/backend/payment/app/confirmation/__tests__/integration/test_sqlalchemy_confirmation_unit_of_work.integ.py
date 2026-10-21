@@ -7,10 +7,10 @@ from sqlalchemy.exc import DatabaseError, IntegrityError
 from sqlalchemy.orm import Session
 
 from app.confirmation.domain.entities.confirmation_record import ConfirmationRecord
-from app.confirmation.domain.interfaces.confirmation_session import ConfirmationSession
 from app.confirmation.domain.exceptions.confirmation_key_reused_error import (
     ConfirmationKeyReusedError,
 )
+from app.confirmation.domain.interfaces.confirmation_session import ConfirmationSession
 from app.confirmation.infrastructure.repositories.sqlalchemy_confirmation_unit_of_work import (
     SqlAlchemyConfirmationUnitOfWork,
 )

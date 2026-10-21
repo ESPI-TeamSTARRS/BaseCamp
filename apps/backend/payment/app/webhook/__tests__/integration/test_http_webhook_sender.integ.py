@@ -98,14 +98,16 @@ class TestSend:
     def test_a_refused_connection_is_a_failure_not_an_exception(self, receiver: Receiver) -> None:
         result = HttpWebhookSender("http://127.0.0.1:9/hook", 1.0).send(uuid4(), BODY, SIGNATURE)
 
-        assert (result.delivered, result.reason, result.status_code) == (
-            False,
-            "connection_error",
-            None,
-        )
+        # Linux refuse tout de suite (connection_error); Windows laisse expirer le délai (timeout).
+        assert (result.delivered, result.status_code) == (False, None)
+        assert result.reason in {"connection_error", "timeout"}
 
     def test_a_silent_receiver_ends_in_a_timeout(self, receiver: Receiver) -> None:
-        receiver.respond = lambda h: time.sleep(0.6) or h.send_response(200)
+        def slow(handler: BaseHTTPRequestHandler) -> None:
+            time.sleep(0.6)
+            handler.send_response(200)
+
+        receiver.respond = slow
 
         result = HttpWebhookSender(receiver.url, 0.2).send(uuid4(), BODY, SIGNATURE)
 

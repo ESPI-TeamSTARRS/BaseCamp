@@ -284,6 +284,7 @@ class TestBusinessEvents:
             "payment.service_authenticated",
             "payment.confirmed",
             "ledger.entries_written",
+            "webhook.event_queued",
         ]
         assert {r["correlation_id"] for r in records} == {CORRELATION_ID}
         assert records[1]["resource_id"] == intent_id
