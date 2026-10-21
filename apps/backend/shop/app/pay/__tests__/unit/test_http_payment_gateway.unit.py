@@ -111,3 +111,58 @@ class TestCorrelation:
         _call(_gateway(httpx.MockTransport(handler)))
 
         assert seen[0].headers["X-Correlation-ID"] == "corr-0123456789"
+
+
+class TestReadAndConfirm:
+    def test_reads_an_intent_by_identifier(self) -> None:
+        seen: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request)
+            return httpx.Response(200, json=INTENT)
+
+        intent = _gateway(httpx.MockTransport(handler)).get_intent("7d1f")
+
+        assert (seen[0].method, seen[0].url.path) == ("GET", "/payments/intents/7d1f")
+        assert seen[0].headers["Authorization"] == f"Bearer {TOKEN}"
+        assert intent.status == "requires_confirmation"
+
+    def test_confirms_with_a_test_method_and_an_idempotency_key(self) -> None:
+        seen: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request)
+            return httpx.Response(200, json={**INTENT, "status": "succeeded"})
+
+        intent = _gateway(httpx.MockTransport(handler)).confirm_intent(
+            "7d1f", "pm_test_success", "confirm-00000001"
+        )
+
+        request = seen[0]
+        assert (request.method, request.url.path) == ("POST", "/payments/intents/7d1f/confirm")
+        assert request.headers["Idempotency-Key"] == "confirm-00000001"
+        assert json.loads(request.content) == {"payment_method": "pm_test_success"}
+        assert intent.status == "succeeded"
+
+    def test_the_identifier_cannot_escape_the_path(self) -> None:
+        seen: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request)
+            return httpx.Response(200, json=INTENT)
+
+        _gateway(httpx.MockTransport(handler)).get_intent("../admin")
+
+        assert seen[0].url.raw_path == b"/payments/intents/..%2Fadmin"
+
+    @pytest.mark.parametrize(("status", "conflict"), [(404, False), (409, True), (422, False)])
+    def test_business_refusals_become_a_rejection(self, status: int, conflict: bool) -> None:
+        with pytest.raises(PaymentRejectedError) as error:
+            _gateway(_responding(status, {"detail": "x"})).get_intent("7d1f")
+
+        assert error.value.conflict is conflict
+
+    @pytest.mark.parametrize("status", [401, 429, 500, 503])
+    def test_technical_failures_become_unavailable(self, status: int) -> None:
+        with pytest.raises(PaymentUnavailableError):
+            _gateway(_responding(status, {})).confirm_intent("7d1f", "pm_test_success", "k-0000001")

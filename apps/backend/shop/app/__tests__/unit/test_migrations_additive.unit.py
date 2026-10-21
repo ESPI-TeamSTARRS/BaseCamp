@@ -11,6 +11,10 @@ from pathlib import Path
 
 VERSIONS = Path(__file__).resolve().parents[3] / "alembic" / "versions"
 ADDITIVE_OPERATIONS = {"create_table", "create_index"}
+# Elargir une contrainte CHECK de statut (ajout d'une valeur) reste compatible : l'ancien code
+# n'ecrit que les anciennes valeurs. Seules les contraintes listees ici peuvent etre remplacees.
+WIDENABLE_CONSTRAINTS = {"ck_orders_status", "ck_stock_reservations_status"}
+CONSTRAINT_OPERATIONS = {"drop_constraint", "create_check_constraint"}
 LAST_BASELINE_REVISION = 2
 
 
@@ -25,14 +29,27 @@ def _upgrade_operations(path: Path) -> list[str]:
     upgrade = next(
         node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "upgrade"
     )
-    return [
-        node.func.attr
-        for node in ast.walk(upgrade)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and isinstance(node.func.value, ast.Name)
-        and node.func.value.id == "op"
-    ]
+    operations: list[str] = []
+    for node in ast.walk(upgrade):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "op"
+        ):
+            continue
+        name = node.func.attr
+        if name in CONSTRAINT_OPERATIONS and _first_string(node) in WIDENABLE_CONSTRAINTS:
+            continue
+        operations.append(name)
+    return operations
+
+
+def _first_string(call: ast.Call) -> str | None:
+    return next(
+        (a.value for a in call.args if isinstance(a, ast.Constant) and isinstance(a.value, str)),
+        None,
+    )
 
 
 def test_migrations_after_the_baseline_only_add() -> None:
@@ -49,3 +66,16 @@ def test_the_orders_migration_exists_and_creates_the_three_tables() -> None:
     (path,) = VERSIONS.glob("0003_*.py")
 
     assert _upgrade_operations(path).count("create_table") == 3
+
+
+def test_only_the_listed_status_constraints_may_be_replaced(tmp_path: Path) -> None:
+    migration = tmp_path / "0099_x.py"
+    migration.write_text(
+        "from alembic import op\n"
+        "def upgrade():\n"
+        "    op.drop_constraint('ck_products_stock_non_negative', 'products', type_='check')\n"
+        "    op.drop_constraint('ck_orders_status', 'orders', type_='check')\n",
+        encoding="utf-8",
+    )
+
+    assert _upgrade_operations(migration) == ["drop_constraint"]
