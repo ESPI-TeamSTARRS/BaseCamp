@@ -3,12 +3,12 @@ from uuid import uuid4
 from app.core.events.business_event import BusinessEvent
 from app.core.events.business_event_logger import BusinessEventLogger
 from app.login.application import login_events as catalog
+from app.login.application.invalid_credentials_error import InvalidCredentialsError
 from app.login.application.login_result import LoginResult
 from app.login.application.unit_of_work_factory import UnitOfWorkFactory
 from app.login.domain.entities.access_token_claims import AccessTokenClaims
 from app.login.domain.entities.account import Account
 from app.login.domain.entities.refresh_token import RefreshToken
-from app.login.domain.exceptions.invalid_credentials_error import InvalidCredentialsError
 from app.login.domain.interfaces.access_token_signer import AccessTokenSigner
 from app.login.domain.interfaces.clock import Clock
 from app.login.domain.interfaces.email_fingerprinter import EmailFingerprinter

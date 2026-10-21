@@ -4,6 +4,7 @@ from app.core.events.business_event import BusinessEvent
 from app.core.events.business_event_logger import BusinessEventLogger
 from app.login.application import login_events as catalog
 from app.login.application.account_profile import AccountProfile
+from app.login.application.unauthenticated_error import UnauthenticatedError
 from app.login.application.unit_of_work_factory import UnitOfWorkFactory
 from app.login.domain.entities.account import Account
 from app.login.domain.enums.token_rejection import TokenRejection
@@ -32,11 +33,11 @@ class GetCurrentAccountUseCase:
             claims = self._verifier.verify(token, self._clock.now())
         except AccessTokenRejectedError as error:
             self._reject(error.rejection, None)
-            raise
+            raise UnauthenticatedError from None
         account = self._find(claims.subject)
         if account is None or account.disabled:
             self._reject(TokenRejection.REVOKED, claims.subject)
-            raise AccessTokenRejectedError(TokenRejection.REVOKED)
+            raise UnauthenticatedError
         return AccountProfile(account.id, account.email, (account.role,), account.email_verified)
 
     def _find(self, account_id: UUID) -> Account | None:

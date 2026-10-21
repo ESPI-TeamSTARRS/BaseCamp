@@ -12,9 +12,9 @@ from app.login.__tests__.fakes import (
     make_account,
 )
 from app.login.application.get_current_account import GetCurrentAccountUseCase
+from app.login.application.unauthenticated_error import UnauthenticatedError
 from app.login.domain.entities.account import Account
 from app.login.domain.enums.token_rejection import TokenRejection
-from app.login.domain.exceptions.access_token_rejected_error import AccessTokenRejectedError
 
 
 def build(
@@ -50,7 +50,7 @@ class TestGetCurrentAccount:
     ) -> None:
         use_case, events = build(make_account(), reject=rejection)
 
-        with pytest.raises(AccessTokenRejectedError) as raised:
+        with pytest.raises(UnauthenticatedError) as raised:
             use_case.execute("n-importe-quoi")
 
         assert raised.value.message == "Authentification requise."
@@ -66,7 +66,7 @@ class TestGetCurrentAccount:
     def test_a_valid_token_of_an_unknown_account_is_revoked(self) -> None:
         use_case, events = build(None)
 
-        with pytest.raises(AccessTokenRejectedError):
+        with pytest.raises(UnauthenticatedError):
             use_case.execute(f"signed::{uuid4()}")
 
         assert events.events[0].reason == "revoked"
@@ -75,7 +75,7 @@ class TestGetCurrentAccount:
         account = make_account(disabled=True)
         use_case, events = build(account)
 
-        with pytest.raises(AccessTokenRejectedError):
+        with pytest.raises(UnauthenticatedError):
             use_case.execute(f"signed::{account.id}")
 
         assert events.events[0].reason == "revoked"

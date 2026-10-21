@@ -1,0 +1,61 @@
+from pathlib import Path
+
+from fastapi import FastAPI
+from sqlalchemy import Engine
+
+from app.core.config import Settings
+from app.core.events.business_event_logger import BusinessEventLogger
+from app.core.logging.email_pseudonymizer import build_pseudonymizer
+from app.login.application.get_current_account import GetCurrentAccountUseCase
+from app.login.application.get_public_keys import GetPublicKeysUseCase
+from app.login.application.login_account import LoginAccountUseCase
+from app.login.infrastructure.clients.argon2_password_verifier import Argon2PasswordVerifier
+from app.login.infrastructure.clients.ed25519_key_ring import Ed25519KeyRing
+from app.login.infrastructure.clients.hmac_email_fingerprinter import HmacEmailFingerprinter
+from app.login.infrastructure.clients.jwt_access_token_signer import JwtAccessTokenSigner
+from app.login.infrastructure.clients.jwt_access_token_verifier import JwtAccessTokenVerifier
+from app.login.infrastructure.clients.secure_refresh_token_generator import (
+    SecureRefreshTokenGenerator,
+)
+from app.login.infrastructure.clients.system_clock import SystemClock
+from app.login.infrastructure.repositories.sqlalchemy_unit_of_work import SqlAlchemyUnitOfWork
+
+
+def build_key_ring(settings: Settings) -> Ed25519KeyRing:
+    """Cle lue dans le secret monte ; en dev et local seulement, une cle ephemere sans fichier."""
+    if not settings.jwt_private_key_file:
+        return Ed25519KeyRing.generate()
+    previous = settings.jwt_previous_public_keys_dir
+    return Ed25519KeyRing.from_files(
+        Path(settings.jwt_private_key_file), Path(previous) if previous else None
+    )
+
+
+def wire_login(
+    application: FastAPI, settings: Settings, engine: Engine, events: BusinessEventLogger
+) -> None:
+    """Seul endroit qui assemble les implementations d'infrastructure de la tranche."""
+    keys = build_key_ring(settings)
+    clock = SystemClock()
+
+    def unit_of_work() -> SqlAlchemyUnitOfWork:
+        return SqlAlchemyUnitOfWork(engine)
+
+    application.state.login_account_use_case = LoginAccountUseCase(
+        unit_of_work,
+        Argon2PasswordVerifier(),
+        JwtAccessTokenSigner(keys, settings.jwt_issuer, settings.jwt_audience),
+        SecureRefreshTokenGenerator(),
+        clock,
+        events,
+        HmacEmailFingerprinter(build_pseudonymizer(settings.log_pseudonym_key)),
+        settings.access_token_ttl_seconds,
+        settings.refresh_token_ttl_seconds,
+    )
+    application.state.get_current_account_use_case = GetCurrentAccountUseCase(
+        unit_of_work,
+        JwtAccessTokenVerifier(keys, settings.jwt_issuer, settings.jwt_audience),
+        clock,
+        events,
+    )
+    application.state.get_public_keys_use_case = GetPublicKeysUseCase(keys)
