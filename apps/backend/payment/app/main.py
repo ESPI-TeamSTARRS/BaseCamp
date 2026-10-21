@@ -43,7 +43,7 @@ def create_app(
         settings.service_name, SqlAlchemyDatabaseProbe(engine)
     )
     application.state.intent_services = build_intent_services(engine, settings, events)
-    application.state.confirmation_services = build_confirmation_services(engine, settings)
+    application.state.confirmation_services = build_confirmation_services(engine, settings, events)
     application.state.rate_limiter = build_rate_limiter(engine, settings, events)
     application.include_router(health_router)
     application.include_router(intent_router)

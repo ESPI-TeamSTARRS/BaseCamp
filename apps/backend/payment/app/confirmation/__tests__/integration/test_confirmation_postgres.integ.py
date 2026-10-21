@@ -31,6 +31,7 @@ from app.confirmation.domain.interfaces.payment_provider import PaymentProvider
 from app.confirmation.infrastructure.repositories.sqlalchemy_confirmation_unit_of_work import (
     SqlAlchemyConfirmationUnitOfWork,
 )
+from app.core.__tests__.in_memory_business_event_logger import InMemoryBusinessEventLogger
 from app.intent.domain.entities.idempotency_record import IdempotencyRecord
 from app.intent.domain.entities.payment_intent import PaymentIntent
 from app.intent.domain.enums.currency import Currency
@@ -93,6 +94,7 @@ def _confirm(engine: Engine, intent: PaymentIntent, key: str) -> None:
         SqlAlchemyConfirmationUnitOfWork(engine),
         SlowApprovingProvider(),
         lambda: datetime.now(UTC),
+        InMemoryBusinessEventLogger(),
     ).execute(ConfirmPaymentCommand("shop", key, str(intent.id), "pm_test_success"))
 
 

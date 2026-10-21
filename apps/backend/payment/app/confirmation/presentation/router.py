@@ -5,11 +5,14 @@ from fastapi import APIRouter, Depends, Header
 from app.confirmation.application.commands.confirm_payment_command import ConfirmPaymentCommand
 from app.confirmation.application.confirmation_services import ConfirmationServices
 from app.confirmation.presentation.dependencies import get_confirmation_services
+from app.confirmation.presentation.logged_validation_route import LoggedValidationRoute
 from app.confirmation.presentation.schemas.confirm_payment_request import ConfirmPaymentRequest
 from app.intent.presentation.dependencies import get_calling_service
 from app.intent.presentation.schemas.payment_intent_response import PaymentIntentResponse
 
-router = APIRouter(prefix="/payments/intents", tags=["payment-confirmation"])
+router = APIRouter(
+    prefix="/payments/intents", tags=["payment-confirmation"], route_class=LoggedValidationRoute
+)
 
 Services = Annotated[ConfirmationServices, Depends(get_confirmation_services)]
 Caller = Annotated[str, Depends(get_calling_service)]
