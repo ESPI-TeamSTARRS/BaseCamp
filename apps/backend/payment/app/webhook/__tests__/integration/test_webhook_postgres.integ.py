@@ -135,7 +135,8 @@ class TestWorkersDoNotOverlap:
             claimed_one = worker_one.claim_next_due(now)
             with SqlAlchemyDeliveryUnitOfWork(engine).begin() as worker_two:
                 claimed_two = worker_two.claim_next_due(now)
-                nothing_left = worker_two.claim_next_due(now)
+                with SqlAlchemyDeliveryUnitOfWork(engine).begin() as worker_three:
+                    nothing_left = worker_three.claim_next_due(now)
 
         assert claimed_one is not None
         assert claimed_two is not None
