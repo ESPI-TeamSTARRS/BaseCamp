@@ -174,10 +174,20 @@ apply_release() {
 # forcement la derniere revision de schema : relancer `alembic upgrade head` avec elle echouerait.
 restore_previous() {
   local services
-  services="$(compose config --services | grep -v -e '-migrate$' -e '-bootstrap$' | tr '\n' ' ')"
+  services="$(compose config --services | grep -v -e '-migrate$' -e '-bootstrap$' -e '-worker$' | tr '\n' ' ')"
   # shellcheck disable=SC2086
   compose up -d --wait --wait-timeout "$WAIT_TIMEOUT" --no-deps --remove-orphans $services || return 1
   sh -c "$SMOKE_CMD" || return 1
+  # Workers : les images precedentes n'ont pas forcement le module du worker. On tente de les relancer ;
+  # s'ils ne demarrent pas, on les arrete (les evenements restent en base et partiront apres le
+  # prochain deploiement reussi) au lieu de les laisser tourner en boucle.
+  local worker
+  for worker in $(compose config --services | grep -e '-worker$' || true); do
+    if ! compose up -d --no-deps --wait --wait-timeout 30 "$worker"; then
+      log "ATTENTION : $worker ne demarre pas avec les images precedentes, il est arrete."
+      compose stop "$worker" || true
+    fi
+  done
 }
 
 backup_databases

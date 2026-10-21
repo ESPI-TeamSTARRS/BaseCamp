@@ -191,6 +191,37 @@ services:
       retries: 5
       start_period: 5s
 
+  # Worker de livraison des webhooks signes payment -> shop : meme image que payment (donc le meme
+  # digest du manifeste), meme base, aucun port. Plusieurs workers sont surs (SKIP LOCKED).
+  payment-worker:
+    <<: *hardening
+    image: ${PAYMENT_IMAGE}
+    command: ["python", "-m", "app.webhook.presentation.worker_main"]
+    mem_limit: 128m
+    environment:
+      <<: *payment-env
+      APP_WEBHOOK_URL: ${PAYMENT_WEBHOOK_URL:-http://shop:8000/webhooks/payment}
+      APP_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:?voir deploy/prod.env.example}
+      # Rotation : l'ancien secret signe en parallele jusqu'a la bascule de la boutique.
+      APP_WEBHOOK_SECRET_PREVIOUS: ${PAYMENT_WEBHOOK_SECRET_PREVIOUS:-}
+      APP_WEBHOOK_MAX_ATTEMPTS: ${PAYMENT_WEBHOOK_MAX_ATTEMPTS:-6}
+      APP_WEBHOOK_BACKOFF_BASE_SECONDS: ${PAYMENT_WEBHOOK_BACKOFF_BASE_SECONDS:-5}
+    networks: [payment-net, payment-data]
+    read_only: true
+    # Pas de serveur HTTP : sain = le processus 1 est bien le worker (`--wait` exige un etat sain).
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import sys; sys.exit(0 if b'worker_main' in open('/proc/1/cmdline', 'rb').read() else 1)"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    depends_on:
+      payment-migrate: { condition: service_completed_successfully }
+
   payment-db:
     restart: unless-stopped
     security_opt: ["no-new-privileges:true"]

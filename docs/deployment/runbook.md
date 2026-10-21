@@ -91,3 +91,12 @@ Quand une évolution du code rend une variable obligatoire (secret, clé), la VM
 3. Fusionner la PR de manifeste qui déploie la nouvelle version.
 
 Si l'ordre n'est pas respecté, la production n'est pas touchée : Compose refuse l'environnement incomplet **au tirage** (« required variable … is missing a value »), le script s'arrête avec « aucune modification effectuee » (code 1), la version en service continue de tourner et le manifeste n'est pas noté refusé. Le minuteur réessaie toutes les 3 minutes (le journal le répète) : dès que la variable est ajoutée, le déploiement passe seul. Une valeur présente mais inutilisable fait échouer le démarrage ou le test de fumée : retour automatique à la version précédente et manifeste noté refusé.
+
+### Webhook signé de payment (payment-worker)
+
+`payment-worker` livre à la boutique les événements de paiement signés (même image que `payment`, aucun port, mémoire limitée à 128 Mio). Il exige `PAYMENT_WEBHOOK_SECRET` (au moins 32 caractères, généré par l'installation, uniquement sur la VM). Facultatives : `PAYMENT_WEBHOOK_SECRET_PREVIOUS` (rotation : l'ancien secret signe en parallèle le temps que la boutique bascule, puis on le vide), `PAYMENT_WEBHOOK_URL`, `PAYMENT_WEBHOOK_MAX_ATTEMPTS`, `PAYMENT_WEBHOOK_BACKOFF_BASE_SECONDS`.
+
+- **Ordre** : le manifeste ne doit référencer une image `payment` qui embarque le worker qu'après la fusion et la release de cette évolution. Avec une image sans worker, le worker est malsain : le déploiement échoue, retour automatique, manifeste noté refusé, la production reste en service.
+- **Retour arrière** : les services applicatifs reviennent aux images précédentes. Le worker est relancé avec elles ; s'il ne démarre pas (image sans worker), il est arrêté et le journal le dit. Les événements restent en base et partiront après le prochain déploiement réussi.
+- **Relancer des événements en échec** (état `dead`) : `docker compose -p basecamp-prod -f /opt/basecamp/repo/deploy/docker-compose.prod.yml --env-file /opt/basecamp/state/compose.env run --rm --no-deps payment-worker python -m app.webhook.presentation.requeue_main --all` (ou `--event-id <uuid>`).
+- **Vérifier le secret sans l'afficher** : `sudo awk -F= '/^PAYMENT_WEBHOOK_SECRET=/{print $1, length($2)}' /opt/basecamp/.env` doit afficher 48 ; de même pour `AUTH_SERVICE_CLIENT_SECRET_SHOP`.
