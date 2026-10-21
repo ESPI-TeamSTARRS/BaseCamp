@@ -189,9 +189,18 @@ services:
     mem_limit: 128m
     cpus: 0.5
     pids_limit: 64
-    # Pas de serveur HTTP : le HEALTHCHECK de l'image (port 8000) ne s'applique pas.
+    # Pas de serveur HTTP : le HEALTHCHECK de l'image (port 8000) ne s'applique pas. Sain = le
+    # processus 1 est bien le worker (`--wait` exige un etat sain).
     healthcheck:
-      disable: true
+      test:
+        - CMD
+        - python
+        - -c
+        - "import sys; sys.exit(0 if b'worker_main' in open('/proc/1/cmdline', 'rb').read() else 1)"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
     depends_on:
       payment-migrate: { condition: service_completed_successfully }
 
