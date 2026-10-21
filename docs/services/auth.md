@@ -10,11 +10,12 @@ Tranches verticales Clean Architecture (`domain / application / infrastructure /
 
 | Tranche | Contenu actuel |
 |---|---|
-| `core` | configuration (`Settings`, variables `APP_*`) |
+| `core` | configuration (`Settings`, variables `APP_*`), journalisation métier (`events`, `logging`), handlers d'erreur assainis |
 | `health` | liveness (`GetHealthUseCase`) et readiness (`GetReadinessUseCase`, sonde `DatabaseProbe`) |
 | `service_token` | jetons de service : émission (`IssueServiceTokenUseCase`), vérification (`VerifyTokenUseCase`), JWKS, amorçage des clients, limitation de débit par client |
+| `registration` | inscription et vérification d'email : `RegisterAccountUseCase`, `VerifyEmailUseCase`, `PasswordPolicy`, `EmailAddress`, dépôts SQLAlchemy dans une unité de travail, hachage argon2id, envoi SMTP |
 
-Les tranches métier (`account`, `session`) s'ajoutent à côté de `health`; leurs routes se documentent ici.
+Les autres tranches métier (`session`) s'ajoutent à côté; leurs routes se documentent ici. Le câblage de `registration` est dans `app/registration/composition.py` (seul endroit qui importe l'infrastructure).
 
 ## API
 | Méthode | Route | Description |
@@ -23,8 +24,30 @@ Les tranches métier (`account`, `session`) s'ajoutent à côté de `health`; le
 | GET | `/health/ready` | readiness : 200 si la base répond, 503 sinon |
 | POST | `/internal/token` | jeton de service (réseau interne seulement, voir plus bas) |
 | GET | `/internal/jwks` | clé publique de signature (réseau interne seulement) |
+| POST | `/register` | inscription `{email, password}` : 202 et message neutre, identique que l'adresse soit libre ou déjà inscrite; 422 assaini si la saisie est invalide |
+| POST | `/verify-email` | confirmation `{token}` : 200, ou 400 « Lien de vérification invalide ou expiré. » (jeton inconnu, expiré ou déjà utilisé, même réponse) |
 
-Via la passerelle : `/api/auth/health` et `/api/auth/health/ready` (préfixe retiré par Traefik). Les routes `/internal/*` (appels entre services) ne sont jamais routées par la passerelle : un appel externe reçoit 404 (couvert par le test e2e `test_auth_stack.e2e.py`).
+Via la passerelle : `/api/auth/health`, `/api/auth/health/ready`, `/api/auth/register` et `/api/auth/verify-email` (préfixe retiré par Traefik). `register` et `verify-email` ont un routeur dédié avec limitation de débit par IP (60 requêtes/minute, rafale de 30), car le hachage argon2id est coûteux.
+
+### Inscription (`POST /register`)
+- Corps strict (`extra="forbid"`). Email normalisé (minuscules, sans espace ni retour à la ligne). Mot de passe : 12 à 128 caractères, mots de passe courants refusés (liste embarquée `app/registration/infrastructure/data/common_passwords.txt`, insensible à la casse), **aucune règle de composition**.
+- Entrée invalide : 422 `{"detail", "fields", "messages"}` avec des messages fixes; la valeur saisie n'est jamais renvoyée, un champ en trop n'est pas nommé.
+- Compte créé : rôle `customer`, mot de passe haché **argon2id** (paramètres par défaut d'`argon2-cffi`), email non vérifié, jeton de vérification émis puis envoyé par email.
+- **Anti-énumération** : le mot de passe est toujours haché avant de savoir si l'adresse existe; une adresse déjà inscrite reçoit la même réponse (statut, corps, en-têtes) et un email « un compte existe déjà » au titulaire. Une course entre deux inscriptions identiques est tranchée par la contrainte d'unicité.
+- L'envoi d'email se fait après la transaction; un échec SMTP est journalisé (`auth.email_delivery_failed`) sans changer la réponse.
+
+### Vérification d'email (`POST /verify-email`)
+Jeton aléatoire de 256 bits (`secrets.token_urlsafe(32)`), **seul son SHA-256 est stocké**, valable **24 h**, à **usage unique** (un `UPDATE ... WHERE used_at IS NULL AND expires_at > now RETURNING` atomique). Le lien envoyé est `{APP_PUBLIC_BASE_URL}/compte/verification#token=...` : le jeton est dans le fragment, donc absent des journaux d'accès et du `Referer`.
+
+## Tables
+Migration `0004_users_et_verification` (down_revision `0003`).
+
+| Table | Colonnes |
+|---|---|
+| `users` | `id` (uuid, clé primaire), `email` (unique, minuscules), `password_hash`, `role` (`customer` ou `operator`), `email_verified_at` (nullable), `created_at` |
+| `email_verification_tokens` | `id`, `user_id` (clé étrangère, suppression en cascade), `token_hash` (SHA-256 hex, unique), `expires_at`, `used_at` (nullable) |
+
+Les horodatages sont en UTC avec fuseau. Un test compare la migration aux modèles SQLAlchemy (aucune dérive possible sans échec). Les routes `/internal/*` (appels entre services) ne sont jamais routées par la passerelle : un appel externe reçoit 404 (couvert par le test e2e `test_auth_stack.e2e.py`).
 
 ## Isolation
 - Postgres dédié (`postgres-auth`, volume propre) sur le réseau interne `auth-data`, que seuls `auth` et `auth-migrate` rejoignent : `shop` et `payment` ne peuvent pas l'atteindre, et `auth` ne rejoint aucune base des autres services.
@@ -113,8 +136,21 @@ Les émissions, refus et limitations sont journalisés via le port `BusinessEven
 | `APP_SERVICE_TOKEN_RATE_LIMIT_PER_MINUTE` | demandes de jeton par client et par minute (défaut 60) |
 | `APP_SERVICE_CLIENTS`, `APP_SERVICE_CLIENT_SECRET_<CLIENT>[_PREVIOUS]` | lus par la commande d'amorçage uniquement |
 | `APP_LOG_PSEUDONYM_KEY` | clé HMAC des empreintes d'email dans les logs; obligatoire hors `dev` et `local` |
+| `APP_SMTP_HOST`, `APP_SMTP_PORT` | serveur SMTP (défaut `localhost:1025`; en compose : `mailpit:1025`) |
+| `APP_SMTP_FROM` | expéditeur des emails (défaut `comptes@basecamp.local`) |
+| `APP_SMTP_USERNAME`, `APP_SMTP_PASSWORD` | authentification SMTP facultative (le mot de passe est un `SecretStr`, jamais journalisé ni versionné) |
+| `APP_SMTP_STARTTLS` | active STARTTLS (défaut `false`, à activer avec un relais réel) |
+| `APP_SMTP_TIMEOUT_SECONDS` | délai de connexion SMTP (défaut 5) |
+| `APP_PUBLIC_BASE_URL` | origine publique du site, base des liens des emails (défaut `http://localhost:8080`) |
 
-Côté compose : `AUTH_DB_NAME`, `AUTH_DB_USER`, `AUTH_DB_PASSWORD` (voir `.env.example`).
+Côté compose : `AUTH_DB_NAME`, `AUTH_DB_USER`, `AUTH_DB_PASSWORD`, `AUTH_SMTP_FROM`, `NEXT_PUBLIC_SITE_URL` (voir `.env.example`).
+
+## Emails et Mailpit
+En local et en CI, le service `mailpit` (réseau interne `app`, SMTP 1025, interface et API 8025) reçoit tous les emails d'`auth`. Il n'est ni publié ni routé par la passerelle. Pour le lire depuis l'hôte (scénarios e2e, vérification manuelle), ajouter la surcharge `docker-compose.e2e.yml`, qui le publie sur `127.0.0.1:${MAILPIT_PORT:-8025}` :
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build --wait traefik mailpit
+```
 
 ## Événements métier
 Le module de journalisation (port `BusinessEventLogger`, adaptateur JSON, middleware `X-Correlation-ID`) est en place; format et règles : [journalisation métier](../development/logging.md). Chaque ticket d'auth émet ses événements et les ajoute à ce catalogue.
@@ -130,13 +166,23 @@ Jetons de service (ressource `service_client` + identifiant du client; jamais de
 | `auth.service_rate_limited` | denied | `rate_limit_exceeded` | `retry_after_seconds` |
 | `auth.token_verification_denied` | denied | `expired`, `issued_in_future`, `issuer`, `token_use`, `audience`, `scope` (ressource `service_token`) | |
 | `auth.service_client_bootstrapped` | success | | commande d'amorçage |
+Le module de journalisation (port `BusinessEventLogger`, adaptateur JSON, middleware `X-Correlation-ID`) est en place; format et règles : [journalisation métier](../development/logging.md). La tranche `registration` émet, via le port, les événements suivants (noms et motifs stables, jamais renommés). L'email n'apparaît que sous la forme `attributes.email_hash` (HMAC tronqué); jamais de mot de passe, de jeton ni d'adresse en clair, et la saisie invalide n'est pas journalisée.
 
-Catalogue cible (à émettre par les tickets d'auth, sans mot de passe, jeton ni email en clair; l'email n'apparaît que sous la forme `attributes.email_hash`) :
+Déjà émis hors tranche : `service.request_rejected` (denied, `invalid_request`, requête rejetée par la validation) et `service.unhandled_error` (error, `internal_error`).
+
+| Événement | Outcome | Reason | Ressource et attributs |
+|---|---|---|---|
+| `auth.account_registered` | success | | `account` + id; `email_hash` |
+| `auth.registration_rejected` | denied | `email_already_used` | `account`; `email_hash` |
+| `auth.registration_rejected` | denied | `invalid_email`, `weak_password` | `account`; `rule` (`email_invalid`, `password_too_short`, `password_too_long`, `password_too_common`) |
+| `auth.email_verified` | success | | `account` + id |
+| `auth.email_verification_failed` | denied | `invalid_or_expired_token` | `email_verification` |
+| `auth.email_delivery_failed` | error | `mail_delivery_failed` | `email_verification`; `kind` (`verification` ou `account_exists`) |
+
+Catalogue cible des prochains tickets d'auth (même règles) :
 
 | Événement | Outcome | Reason |
 |---|---|---|
-| `auth.account_registered` | success | |
-| `auth.registration_rejected` | denied | `email_already_used`, `weak_password` |
 | `auth.login_succeeded` | success | |
 | `auth.login_failed` | denied | `invalid_credentials`, `account_locked` (avec `client_ip`) |
 | `auth.token_refreshed` | success | |
@@ -148,3 +194,4 @@ Avant l'authentification, l'acteur est inconnu : seul `email_hash` identifie la 
 
 ## Tests
 `uv run poe test` (unit et integ, couverture ≥ 80 %); `uv run poe test:e2e` sur la pile lancée (`E2E_BASE_URL`, `http://127.0.0.1:8080` par défaut); les scénarios de jetons appellent `auth` depuis le conteneur `shop` (réseau `app`, `docker compose exec`) et lisent le secret du client `shop` dans `AUTH_SERVICE_CLIENT_SECRET_SHOP` ou `.env`.
+`uv run poe test` (unit et integ, couverture ≥ 80 %); `uv run poe test:e2e` sur la pile lancée (`E2E_BASE_URL`, `http://127.0.0.1:8080` par défaut). Les scénarios d'inscription lisent les emails dans Mailpit via `E2E_MAILPIT_URL` (ignorés sans cette variable); `E2E_CHECK_LOGS=1` ajoute le contrôle des journaux des conteneurs (`docker compose logs`) : ni mot de passe, ni jeton, ni adresse.

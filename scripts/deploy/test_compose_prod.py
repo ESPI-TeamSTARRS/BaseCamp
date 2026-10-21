@@ -21,6 +21,7 @@ DYNAMIC_DEV = ROOT / "infra" / "traefik" / "dynamic.yml"
 FIRST_PARTY_IMAGE_VARS = {"FRONT_IMAGE", "SHOP_IMAGE", "PAYMENT_IMAGE", "AUTH_IMAGE"}
 # Noms de routeurs deja pris par l'ancienne pile de la VM : ne jamais les reutiliser.
 RESERVED_ROUTERS = {"basecamp", "basecamp-http"}
+RATE_LIMITERS = {"orders-rate-limit", "auth-signup-rate-limit"}  # cle IP differente en prod
 
 SAMPLE_ENV = {
     "FRONT_IMAGE": "ghcr.io/o/basecamp-frontend@sha256:" + "a" * 64,
@@ -101,8 +102,8 @@ def test_routage_identique_au_developpement() -> None:
     assert prod["routers"] == dev["routers"]
     assert prod["serversTransports"] == dev["serversTransports"]
     assert prod.get("services") == dev.get("services")
-    prod_middlewares = {k: v for k, v in prod["middlewares"].items() if k != "orders-rate-limit"}
-    dev_middlewares = {k: v for k, v in dev["middlewares"].items() if k != "orders-rate-limit"}
+    prod_middlewares = {k: v for k, v in prod["middlewares"].items() if k not in RATE_LIMITERS}
+    dev_middlewares = {k: v for k, v in dev["middlewares"].items() if k not in RATE_LIMITERS}
     assert prod_middlewares == dev_middlewares
 
 

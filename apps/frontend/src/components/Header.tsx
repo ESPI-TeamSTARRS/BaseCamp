@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { ShoppingBag, Menu, Mountain } from 'lucide-react';
+import { ShoppingBag, Menu, Mountain, UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import { useCart } from '../context/CartContext';
 import { categoryLabels } from '../lib/categories';
@@ -27,6 +27,13 @@ export function Header() {
         </nav>
 
         <div className="flex items-center gap-3">
+          <Link
+            href="/compte/inscription"
+            aria-label="Créer mon compte"
+            className="flex h-11 w-11 items-center justify-center rounded-full text-granite transition-colors hover:bg-granite/5"
+          >
+            <UserPlus size={20} />
+          </Link>
           <button
             type="button"
             onClick={openCart}

@@ -1,0 +1,3 @@
+# Jeton factice d'un test d'integration (historique de la PR WORK-33), pas un secret.
+8512686cd1ab1ede325b7bf2bc534e61625afbfe:apps/backend/auth/app/registration/__tests__/integration/test_smtp_registration_mailer.integ.py:generic-api-key:13
+eaa6b432029535ac6ab51d2fba7df7fe199e8ba5:apps/backend/auth/app/registration/__tests__/integration/test_smtp_registration_mailer.integ.py:generic-api-key:13

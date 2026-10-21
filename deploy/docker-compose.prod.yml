@@ -221,6 +221,15 @@ services:
       APP_DB_USER: ${AUTH_DB_USER:-auth}
       APP_DB_PASSWORD: ${AUTH_DB_PASSWORD:?voir deploy/prod.env.example}
       APP_LOG_PSEUDONYM_KEY: ${LOG_PSEUDONYM_KEY:?voir deploy/prod.env.example}
+      # Emails d'inscription : relais SMTP facultatif (jamais obligatoire au demarrage). Sans relais,
+      # l'inscription repond normalement et l'echec d'envoi est journalise (auth.email_delivery_failed).
+      APP_SMTP_HOST: ${AUTH_SMTP_HOST:-localhost}
+      APP_SMTP_PORT: ${AUTH_SMTP_PORT:-587}
+      APP_SMTP_USERNAME: ${AUTH_SMTP_USER:-}
+      APP_SMTP_PASSWORD: ${AUTH_SMTP_PASSWORD:-}
+      APP_SMTP_FROM: ${AUTH_SMTP_FROM:-comptes@basecamp.local}
+      APP_SMTP_STARTTLS: ${AUTH_SMTP_STARTTLS:-true}
+      APP_PUBLIC_BASE_URL: https://${BASECAMP_DOMAIN}
     networks: [auth-data]
     depends_on:
       postgres-auth: { condition: service_healthy }
