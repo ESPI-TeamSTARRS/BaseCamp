@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     payment_connect_timeout_seconds: float = 1.0
     payment_read_timeout_seconds: float = 3.0
 
+    # Délai avant qu'une commande impayée expire et rende son stock (minutes).
+    order_expiration_minutes: int = 30
+
     media_base_url: str = "/media"  # prefixe public des images (servies par la passerelle)
 
     log_pseudonym_key: str = (
