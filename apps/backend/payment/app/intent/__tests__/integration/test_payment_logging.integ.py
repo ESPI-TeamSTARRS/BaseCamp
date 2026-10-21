@@ -9,8 +9,8 @@ from sqlalchemy import StaticPool, create_engine
 
 from app.core.config import Settings
 from app.intent.infrastructure.models.base import Base
-from app.intent.wiring import build_intent_services
 from app.main import create_app
+from app.ratelimit.infrastructure.models.base import Base as RateLimitBase
 
 TOKEN = "tok-shop-test-0001"
 CORRELATION_ID = "7c1f0e52-3a0b-4f1e-9a52-1d6f7a9b2c10"
@@ -24,11 +24,9 @@ def client() -> Iterator[TestClient]:
         "sqlite+pysqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
-    application = create_app()
+    RateLimitBase.metadata.create_all(engine)
     settings = Settings(service_tokens={"shop": TOKEN})
-    application.state.intent_services = build_intent_services(
-        engine, settings, application.state.events
-    )
+    application = create_app(settings, engine)
     with TestClient(application, raise_server_exceptions=False) as test_client:
         yield test_client
 
