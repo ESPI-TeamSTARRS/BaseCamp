@@ -9,6 +9,8 @@ from app.core.logging.email_pseudonymizer import build_pseudonymizer
 from app.login.application.get_current_account import GetCurrentAccountUseCase
 from app.login.application.get_public_keys import GetPublicKeysUseCase
 from app.login.application.login_account import LoginAccountUseCase
+from app.login.application.logout_session import LogoutSessionUseCase
+from app.login.application.refresh_session import RefreshSessionUseCase
 from app.login.infrastructure.clients.argon2_password_verifier import Argon2PasswordVerifier
 from app.login.infrastructure.clients.ed25519_key_ring import (
     Ed25519KeyRing,
@@ -55,6 +57,19 @@ def wire_login(
         HmacEmailFingerprinter(build_pseudonymizer(settings.log_pseudonym_key)),
         settings.access_token_ttl_seconds,
         settings.refresh_token_ttl_seconds,
+    )
+    refresh_tokens = SecureRefreshTokenGenerator()
+    application.state.refresh_session_use_case = RefreshSessionUseCase(
+        unit_of_work,
+        JwtAccessTokenSigner(keys, settings.jwt_issuer, settings.jwt_audience),
+        refresh_tokens,
+        clock,
+        events,
+        settings.access_token_ttl_seconds,
+        settings.refresh_token_ttl_seconds,
+    )
+    application.state.logout_session_use_case = LogoutSessionUseCase(
+        unit_of_work, refresh_tokens, events
     )
     application.state.get_current_account_use_case = GetCurrentAccountUseCase(
         unit_of_work,

@@ -22,13 +22,13 @@ from app.login.domain.interfaces.refresh_token_repository import RefreshTokenRep
 from app.login.domain.interfaces.unit_of_work import UnitOfWork
 
 START = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
-PASSWORD = "sentier-du-mont-blanc"
+ACCOUNT_SECRET = "sentier-du-mont-blanc"
 EMAIL = "camille@example.com"
 
 
 def make_account(
     email: str = EMAIL,
-    password: str = PASSWORD,
+    password: str = ACCOUNT_SECRET,
     role: str = "customer",
     verified: bool = True,
     disabled: bool = False,
@@ -59,11 +59,30 @@ class FakeAccountRepository(AccountRepository):
 
 
 class FakeRefreshTokenRepository(RefreshTokenRepository):
-    def __init__(self, pending: list[RefreshToken]) -> None:
+    """`add` n'est visible qu'au `commit()`; `consume` et `revoke_family` agissent aussitot."""
+
+    def __init__(self, store: FakeStore, pending: list[RefreshToken]) -> None:
+        self._store = store
         self._pending = pending
 
     def add(self, token: RefreshToken) -> None:
         self._pending.append(token)
+
+    def consume(self, token_hash: str, now: datetime) -> RefreshToken | None:
+        for index, token in enumerate(self._store.refresh_tokens):
+            if token.token_hash == token_hash and token.used_at is None and not token.expired(now):
+                self._store.refresh_tokens[index] = token.consumed(now)
+                return self._store.refresh_tokens[index]
+        return None
+
+    def find_by_hash(self, token_hash: str) -> RefreshToken | None:
+        return next((t for t in self._store.refresh_tokens if t.token_hash == token_hash), None)
+
+    def revoke_family(self, family_id: UUID) -> int:
+        kept = [t for t in self._store.refresh_tokens if t.family_id != family_id]
+        revoked = len(self._store.refresh_tokens) - len(kept)
+        self._store.refresh_tokens[:] = kept
+        return revoked
 
 
 class FakeUnitOfWork(UnitOfWork):
@@ -72,7 +91,7 @@ class FakeUnitOfWork(UnitOfWork):
         self._pending: list[RefreshToken] = []
         self._updates: dict[UUID, str] = {}
         self.accounts = FakeAccountRepository(store, self._updates)
-        self.refresh_tokens = FakeRefreshTokenRepository(self._pending)
+        self.refresh_tokens = FakeRefreshTokenRepository(store, self._pending)
 
     def __enter__(self) -> Self:
         return self

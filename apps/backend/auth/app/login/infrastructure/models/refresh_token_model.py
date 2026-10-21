@@ -18,3 +18,5 @@ class RefreshTokenModel(LoginBase):
     token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
+    family_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True, index=True)
+    used_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)

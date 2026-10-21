@@ -1,7 +1,7 @@
 /**
  * Jeton d'acces garde UNIQUEMENT en memoire du module : jamais dans localStorage, sessionStorage
- * ni un cookie lisible par le script. Un rechargement complet de la page l'efface, ce qui est voulu
- * (le rafraichissement par cookie HttpOnly viendra avec le ticket A4).
+ * ni un cookie lisible par le script. Un rechargement complet de la page l'efface; la session est
+ * alors retrouvee par le rafraichissement (cookie HttpOnly), voir `session-keeper.ts`.
  */
 type Listener = () => void;
 
@@ -17,6 +17,11 @@ export function setSession(token: string, expiresInSeconds: number, nowMs: numbe
   accessToken = token;
   expiresAtMs = nowMs + expiresInSeconds * 1000;
   notify();
+}
+
+/** Instant d'expiration du jeton d'acces en memoire, ou 0 sans session. */
+export function getExpiresAtMs(): number {
+  return accessToken === null ? 0 : expiresAtMs;
 }
 
 export function getAccessToken(nowMs: number = Date.now()): string | null {

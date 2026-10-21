@@ -3,8 +3,8 @@ import pytest
 from app.core.__tests__.in_memory_business_event_logger import InMemoryBusinessEventLogger
 from app.core.events.outcome import Outcome
 from app.login.__tests__.fakes import (
+    ACCOUNT_SECRET,
     EMAIL,
-    PASSWORD,
     FakeAccessTokenSigner,
     FakeClock,
     FakeEmailFingerprinter,
@@ -47,7 +47,7 @@ class TestSuccessfulLogin:
         account = make_account()
         setup = Setup(account)
 
-        result = setup.use_case.execute(EMAIL, PASSWORD)
+        result = setup.use_case.execute(EMAIL, ACCOUNT_SECRET)
 
         assert result.access_token == f"signed::{account.id}"
         assert result.expires_in == ACCESS_TTL
@@ -58,7 +58,7 @@ class TestSuccessfulLogin:
         account = make_account(role="operator", verified=False)
         setup = Setup(account)
 
-        setup.use_case.execute(EMAIL, PASSWORD)
+        setup.use_case.execute(EMAIL, ACCOUNT_SECRET)
 
         claims = setup.signer.signed[0]
         assert claims.subject == account.id
@@ -70,8 +70,8 @@ class TestSuccessfulLogin:
     def test_each_token_gets_its_own_identifier(self) -> None:
         setup = Setup(make_account())
 
-        setup.use_case.execute(EMAIL, PASSWORD)
-        setup.use_case.execute(EMAIL, PASSWORD)
+        setup.use_case.execute(EMAIL, ACCOUNT_SECRET)
+        setup.use_case.execute(EMAIL, ACCOUNT_SECRET)
 
         assert setup.signer.signed[0].token_id != setup.signer.signed[1].token_id
 
@@ -79,7 +79,7 @@ class TestSuccessfulLogin:
         account = make_account()
         setup = Setup(account)
 
-        setup.use_case.execute(EMAIL, PASSWORD)
+        setup.use_case.execute(EMAIL, ACCOUNT_SECRET)
 
         (stored,) = setup.store.refresh_tokens
         assert stored.user_id == account.id
@@ -90,20 +90,20 @@ class TestSuccessfulLogin:
     def test_the_email_is_normalized(self) -> None:
         setup = Setup(make_account())
 
-        result = setup.use_case.execute("  Camille@Example.COM \n", PASSWORD)
+        result = setup.use_case.execute("  Camille@Example.COM \n", ACCOUNT_SECRET)
 
         assert result.access_token
 
     def test_an_unverified_account_can_log_in(self) -> None:
         setup = Setup(make_account(verified=False))
 
-        assert setup.use_case.execute(EMAIL, PASSWORD).access_token
+        assert setup.use_case.execute(EMAIL, ACCOUNT_SECRET).access_token
 
     def test_success_emits_login_succeeded_without_sensitive_data(self) -> None:
         account = make_account()
         setup = Setup(account)
 
-        setup.use_case.execute(EMAIL, PASSWORD)
+        setup.use_case.execute(EMAIL, ACCOUNT_SECRET)
 
         (event,) = setup.events.events
         assert (event.event, event.outcome, event.reason) == (
@@ -116,7 +116,7 @@ class TestSuccessfulLogin:
         assert event.attributes["email_hash"] == FakeEmailFingerprinter().fingerprint(EMAIL)
         assert event.attributes["hash_upgraded"] is False
         assert EMAIL not in repr(event)
-        assert PASSWORD not in repr(event)
+        assert ACCOUNT_SECRET not in repr(event)
         assert "raw-refresh-token" not in repr(event)
 
 
@@ -125,8 +125,8 @@ class TestRejectedLogin:
         ("account", "email", "password", "cause"),
         [
             (make_account(), EMAIL, "mauvais-mot-de-passe", "wrong_password"),
-            (make_account(), "inconnu@example.com", PASSWORD, "unknown_account"),
-            (make_account(disabled=True), EMAIL, PASSWORD, "account_disabled"),
+            (make_account(), "inconnu@example.com", ACCOUNT_SECRET, "unknown_account"),
+            (make_account(disabled=True), EMAIL, ACCOUNT_SECRET, "account_disabled"),
         ],
     )
     def test_every_cause_raises_the_same_error_and_issues_nothing(
@@ -158,7 +158,7 @@ class TestRejectedLogin:
         with pytest.raises(InvalidCredentialsError):
             setup.use_case.execute(EMAIL, "mauvais-mot-de-passe")
         with pytest.raises(InvalidCredentialsError):
-            setup.use_case.execute("inconnu@example.com", PASSWORD)
+            setup.use_case.execute("inconnu@example.com", ACCOUNT_SECRET)
 
         known, unknown = setup.events.events
         assert known.resource_id == str(account.id)
@@ -168,7 +168,7 @@ class TestRejectedLogin:
         setup = Setup(make_account())
 
         with pytest.raises(InvalidCredentialsError):
-            setup.use_case.execute("inconnu@example.com", PASSWORD)
+            setup.use_case.execute("inconnu@example.com", ACCOUNT_SECRET)
 
         assert (setup.verifier.decoys, setup.verifier.verifications) == (1, 0)
 
@@ -185,7 +185,7 @@ class TestRejectedLogin:
         setup = Setup(make_account(disabled=True))
 
         with pytest.raises(InvalidCredentialsError):
-            setup.use_case.execute(EMAIL, PASSWORD)
+            setup.use_case.execute(EMAIL, ACCOUNT_SECRET)
 
         assert setup.verifier.verifications == 1
 
@@ -195,9 +195,9 @@ class TestPasswordRehash:
         account = make_account()
         setup = Setup(account, outdated=True)
 
-        setup.use_case.execute(EMAIL, PASSWORD)
+        setup.use_case.execute(EMAIL, ACCOUNT_SECRET)
 
-        assert setup.verifier.hashed == [PASSWORD]
+        assert setup.verifier.hashed == [ACCOUNT_SECRET]
         assert setup.store.accounts[account.id].password_hash.startswith("rehashed::")
         assert setup.events.events[0].attributes["hash_upgraded"] is True
 
@@ -205,7 +205,7 @@ class TestPasswordRehash:
         account = make_account()
         setup = Setup(account)
 
-        setup.use_case.execute(EMAIL, PASSWORD)
+        setup.use_case.execute(EMAIL, ACCOUNT_SECRET)
 
         assert setup.verifier.hashed == []
         assert setup.store.accounts[account.id].password_hash == account.password_hash
