@@ -1,7 +1,7 @@
 # Pile complete locale : `cp .env.example .env && docker compose up --build`
 # Les images applicatives sont taguees ${COMPOSE_PROJECT_NAME:-basecamp}-<service> : deux piles (projets) ne se partagent pas leurs tags.
 # Seul Traefik est publie (127.0.0.1:${GATEWAY_PORT}). Reseaux :
-#   edge : traefik <-> hote        app  : traefik, front, shop, auth, mailpit (interne)
+#   edge : traefik <-> hote        app  : traefik, front, backoffice, shop, auth, mailpit (interne)
 #   data : shop, postgres, seaweedfs   (interne, jamais publie)
 #   auth-data : auth, postgres-auth    (interne, isole : ni shop ni payment n'y accedent)
 #   payment-net  : shop <-> payment (interne) ; payment n'est ni sur app ni publie
@@ -41,6 +41,7 @@ services:
       retries: 5
     depends_on:
       front: { condition: service_healthy }
+      backoffice: { condition: service_healthy }
       shop: { condition: service_healthy }
       auth: { condition: service_healthy }
 
@@ -56,6 +57,19 @@ services:
       NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:8080}
       RESEND_API_KEY: ${RESEND_API_KEY:?voir .env.example}
       RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:?voir .env.example}
+    networks: [app]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+  backoffice:
+    <<: *hardening
+    image: ${COMPOSE_PROJECT_NAME:-basecamp}-backoffice
+    build:
+      context: ./apps/backoffice
     networks: [app]
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/"]
