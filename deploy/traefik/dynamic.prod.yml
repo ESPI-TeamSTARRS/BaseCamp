@@ -13,7 +13,7 @@ http:
       service: shop
       priority: 200
     shop:
-      rule: "PathPrefix(`/api/shop`)"
+      rule: "PathPrefix(`/api/shop`) && !PathPrefix(`/api/shop/webhooks`)"
       entryPoints: [web]
       middlewares: [body-limit, security-headers, strip-api-shop]
       service: shop

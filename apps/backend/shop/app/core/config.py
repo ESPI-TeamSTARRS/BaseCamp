@@ -29,6 +29,18 @@ class Settings(BaseSettings):
     payment_connect_timeout_seconds: float = 1.0
     payment_read_timeout_seconds: float = 3.0
 
+    # Webhook signé de `payment` (WORK-13) : secrets partagés via l'environnement (jamais versionnés).
+    # Sans secret, tout webhook est refusé; `previous` sert à la rotation (les deux sont acceptés).
+    payment_webhook_secret: str = ""
+    payment_webhook_secret_previous: str = ""
+    payment_webhook_tolerance_seconds: int = 300
+
+    # Email de confirmation : Mailpit en développement (aucun relais externe).
+    smtp_host: str = "mailpit"
+    smtp_port: int = 1025
+    smtp_from: str = "commandes@basecamp.local"
+    smtp_timeout_seconds: float = 3.0
+
     # Délai avant qu'une commande impayée expire et rende son stock (minutes).
     order_expiration_minutes: int = 30
 

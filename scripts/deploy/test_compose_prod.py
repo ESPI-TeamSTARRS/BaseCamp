@@ -156,3 +156,14 @@ def test_compose_rend_traefik_enable_false() -> None:
     assert result.returncode == 0, result.stderr
     labels = json.loads(result.stdout)["services"]["traefik"]["labels"]
     assert labels["traefik.enable"] == "false"
+
+def test_webhook_de_paiement_recu_par_shop_seulement_et_jamais_route_par_la_passerelle(
+    compose: dict,
+) -> None:
+    environment = compose["services"]["shop"]["environment"]
+    assert environment["APP_PAYMENT_WEBHOOK_SECRET"].startswith("${PAYMENT_WEBHOOK_SECRET:?")
+    for autre in ("shop-migrate", "payment", "front"):
+        assert "APP_PAYMENT_WEBHOOK_SECRET" not in compose["services"][autre].get("environment", {})
+    for chemin in (DYNAMIC_PROD, DYNAMIC_DEV):
+        routeurs = yaml.safe_load(chemin.read_text(encoding="utf-8"))["http"]["routers"]
+        assert "!PathPrefix(`/api/shop/webhooks`)" in routeurs["shop"]["rule"], chemin.name

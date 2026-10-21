@@ -15,6 +15,7 @@ Catalogue, commandes et stock. Demande les paiements au service [payment](paymen
 | POST | `/orders/lookup` | retrouve une commande par numéro et email (suivi, voir ci-dessous) |
 | POST | `/orders/{id}/pay` | demande l'intention de paiement d'une commande en attente |
 | POST | `/orders/{id}/pay/confirm` | confirme le paiement avec une méthode de test |
+| POST | `/webhooks/payment` | **interne** : webhook signé de `payment` (jamais routé par la passerelle, voir ci-dessous) |
 | GET | `/products` | catalogue paginé, filtrable par catégorie (voir ci-dessous) |
 | GET | `/products/{slug}` | fiche détaillée d'un produit |
 | POST | `/pay` | démarre le paiement d'un panier : montant recalculé par le serveur, intention créée dans `payment` (voir ci-dessous) |
@@ -100,8 +101,28 @@ Les autres routes métier s'ajoutent par tranche et se documentent ici.
 - Le stock ne devient jamais négatif : contrôle applicatif sous verrou et contrainte `ck_products_stock_non_negative` en base. Deux commandes sur la dernière pièce : une seule réussit, l'autre reçoit 409 (test de concurrence sur Postgres).
 - **Idempotence en base** : `orders.idempotency_key` est unique et `request_fingerprint` mémorise le contenu. Un rejeu, même en parallèle, renvoie la commande existante; une clé réutilisée avec un autre contenu est refusée (422).
 - Nom et prix unitaire des lignes sont figés à la commande (`order_lines`) : un changement de catalogue ne modifie jamais une commande existante.
-- Une réservation (`stock_reservations.status = reserved`) est liée à une commande; sa libération et le paiement relèvent du ticket de paiement.
+- Une réservation (`stock_reservations.status = reserved`) est liée à une commande; sa libération est décrite plus bas (expiration) et le paiement la rend définitive (`committed`, voir la confirmation par webhook).
 
+## Confirmation de paiement par webhook (WORK-13)
+`payment` notifie la boutique de chaque règlement par un `POST /webhooks/payment` signé (contrat publié : [payment.md, « Webhook sortant vers la boutique »](payment.md)). La route n'est **pas** publique : seul `payment-worker` l'appelle, sur le réseau interne `payment-net`, et la passerelle ne route pas `/api/shop/webhooks` (le chemin tombe sur le front, 404).
+
+**Authentification** (avant toute lecture d'état) : en-tête `X-Payment-Signature: t=<secondes>,v1=<hex>`, `v1 = HMAC-SHA256(secret, "<t>.<corps brut>")`, comparaison en temps constant (`hmac.compare_digest`), plusieurs `v1` acceptés pendant une rotation, horodatage à ± 300 s. Secret `APP_PAYMENT_WEBHOOK_SECRET` (et `APP_PAYMENT_WEBHOOK_SECRET_PREVIOUS` pour la rotation), alimentés par `PAYMENT_WEBHOOK_SECRET` : jamais dans le dépôt ni dans les journaux. Sans secret configuré, tout webhook est refusé. Le vecteur de test du contrat est rejoué par `test_webhook_signature_verifier.unit.py`.
+
+| Code | Cas |
+|---|---|
+| 200 `{"status": "applied"}` | événement appliqué (commande payée, ou échec noté) |
+| 200 `{"status": "replayed"}` | même identifiant d'événement déjà reçu : aucun effet, aucun second email |
+| 200 `{"status": "ignored"}` | événement authentique mais sans effet (voir les motifs ci-dessous) |
+| 401 `{"detail": "Signature invalide."}` | signature absente, mal formée, fausse, corps altéré ou horodatage hors fenêtre (le motif exact est dans le journal) |
+| 400 `{"detail": "Evenement invalide."}` | corps signé mais illisible, ou `X-Payment-Event-Id` différent de l'`id` du corps |
+
+**`payment.succeeded`** : la référence `data.order_reference` est celle de la **tentative** de paiement (`BC-…`, puis `BC-…-2` après un refus), résolue par `payment_attempts.reference`. Dans une seule transaction, avec la commande verrouillée (`FOR UPDATE`) : la commande passe « payée » (si elle ne l'est pas déjà par `/pay/confirm`), la tentative « succeeded », les réservations de stock `reserved` deviennent `committed` (le stock avait déjà été retiré à la commande : il devient définitif et ne sera plus rendu par l'expiration) et l'événement est enregistré. L'email de confirmation part **après** le commit et la réponse. Jamais payée par un événement dont le montant (centimes) ou la devise (`EUR`) diffère de la commande, ni une commande expirée (`ignored`, motifs `amount_mismatch`, `currency_mismatch`, `order_expired`; référence inconnue : `order_not_found`).
+
+**`payment.failed`** : la tentative passe « failed », la commande reste payable (un événement tardif ne rétrograde jamais une tentative réussie : `attempt_settled`). Les autres types (dont `refund.succeeded`, traité par un ticket ultérieur) sont acquittés en 200 sans effet (`unsupported_type`).
+
+**Idempotence persistée** : table `payment_webhook_events` (clé primaire = identifiant d'événement de `payment`, constant à chaque relance). Elle survit à un redémarrage et départage les livraisons parallèles (la perdante est un rejeu). **Invariant** : `paid_order_id` est unique, donc une commande payée correspond à exactement un événement de paiement; un second événement pour la même commande est mémorisé mais n'a aucun effet (`order_already_confirmed`).
+
+**Email de confirmation** : port `ConfirmationSender`, adaptateur SMTP vers Mailpit en développement (`APP_SMTP_HOST`, `APP_SMTP_PORT`, `APP_SMTP_FROM`; en production, relais facultatif `SHOP_SMTP_HOST`). Le message reprend le numéro, les lignes et le total figés. Une panne d'envoi ne fait jamais échouer le webhook : elle est journalisée (`order.confirmation_email_failed`, avec l'empreinte HMAC de l'adresse, jamais l'adresse) et la commande reste payée. Avec `APP_PAYMENT_PROVIDER=simulated`, il n'y a pas de webhook : aucun email n'est envoyé.
 ## Expiration des commandes impayées
 Une commande « en attente de paiement » depuis plus de `APP_ORDER_EXPIRATION_MINUTES` (30 par défaut) passe à « expirée » et ses réservations de stock sont libérées : le stock redevient disponible. Le délai est strict (exactement 30 minutes n'expire pas) et l'horloge est injectée dans le cas d'usage (`ExpireUnpaidOrdersUseCase`), ce qui rend le comportement testable sans attente.
 
@@ -122,6 +143,10 @@ Variables d'environnement préfixées `APP_` (voir `.env.example` à la racine) 
 | `APP_DB_PASSWORD` | vide | mot de passe du rôle (fourni par l'environnement, jamais versionné) |
 | `APP_MEDIA_BASE_URL` | `/media` | préfixe public des images du catalogue |
 | `APP_ORDER_EXPIRATION_MINUTES` | `30` | délai au bout duquel une commande impayée expire et rend son stock |
+| `APP_PAYMENT_WEBHOOK_SECRET` / `APP_PAYMENT_WEBHOOK_SECRET_PREVIOUS` | vides | secrets du webhook signé de `payment` (alimentés par `PAYMENT_WEBHOOK_SECRET` / `_PREVIOUS`, jamais versionnés); sans secret tout webhook est refusé |
+| `APP_PAYMENT_WEBHOOK_TOLERANCE_SECONDS` | `300` | fenêtre d'acceptation de l'horodatage de la signature |
+| `APP_SMTP_HOST` / `APP_SMTP_PORT` | `mailpit` / `1025` | serveur d'envoi de l'email de confirmation (Mailpit en développement) |
+| `APP_SMTP_FROM` / `APP_SMTP_TIMEOUT_SECONDS` | `commandes@basecamp.local` / `3` | expéditeur et délai d'envoi |
 | `APP_PAYMENT_PROVIDER` | `http` | fournisseur de paiement : `http` (service `payment`) ou `simulated` (sans réseau ni clé) |
 | `APP_PAYMENT_URL` | `http://payment:8000` | adresse interne de `payment` |
 | `APP_PAYMENT_SERVICE_TOKEN` | vide | jeton de service de `shop` auprès de `payment` (alimenté par `PAYMENT_SERVICE_TOKEN_SHOP`, jamais versionné) |
@@ -147,10 +172,16 @@ Format et règles communes : [journalisation métier](../development/logging.md)
 | `order.looked_up` | success | | ressource `order` (numéro); `status` |
 | `order.lookup_denied` | denied | `order_not_found`, `email_mismatch` | `email_hash` du demandeur; ressource `order` seulement si le numéro existe (jamais l'email reçu) |
 | `order.payment_requested` | success | | ressource `order` (numéro); `amount_cents`, `currency`, `attempt` |
-| `order.paid` | success | | ressource `order` (numéro); `amount_cents`, `currency`, `attempt` |
+| `order.paid` | success | | ressource `order` (numéro); `amount_cents`, `currency`, `attempt` (confirmation synchrone) ou `source` = `webhook` (webhook de paiement) |
 | `order.payment_failed` | denied | `provider_declined` | ressource `order` (numéro); `attempt` |
 | `order.payment_rejected` | denied | `order_not_found`, `order_already_paid`, `order_expired`, `no_pending_payment` | ressource `order` (numéro) sauf `order_not_found`; couvre aussi un paiement reçu après expiration |
 | `order.payment_unavailable` | error | `payment_unavailable` | fournisseur arrêté, injoignable ou saturé |
+| `payment.webhook_received` | success | | webhook authentifié et lu : `event_id`, `event_type` |
+| `payment.webhook_rejected` | denied | `webhook_not_configured`, `signature_missing`, `signature_malformed`, `timestamp_out_of_window`, `signature_mismatch`, `payload_not_json`, `payload_not_object`, `event_id_invalid`, `event_type_invalid`, `data_invalid`, `amount_invalid`, `currency_invalid`, `reference_invalid`, `event_id_mismatch` | 401 ou 400; jamais le corps ni la signature reçus |
+| `payment.webhook_replayed` | success | | identifiant déjà reçu : `event_id`, `event_type` |
+| `payment.webhook_ignored` | denied | `order_not_found`, `amount_mismatch`, `currency_mismatch`, `order_expired`, `order_already_confirmed`, `attempt_settled`, `unsupported_type` | acquitté en 200 sans effet; ressource `order` si connue |
+| `order.confirmation_email_sent` | success | | ressource `order` (numéro) |
+| `order.confirmation_email_failed` | error | `delivery_failed` | ressource `order`; `email_hash` (HMAC de l'adresse); le webhook reste en succès |
 | `order.expired` | success | | ressource `order` (numéro); `released_units`, `line_count`, `age_minutes` |
 | `order.expiration_completed` | success | | un par passage qui a expiré au moins une commande : `expired_orders`, `released_units` |
 | `order.expiration_failed` | error | `expiration_error` | un passage a échoué (base arrêtée…); le traitement continue au passage suivant |
@@ -176,6 +207,8 @@ La migration `0003` crée `orders`, `order_lines` (prix figés en centimes) et `
 La migration `0004` ajoute les tables `payment_attempts` (une ligne par tentative de paiement : intention, référence unique, statut) et `simulated_payment_intents` (état du fournisseur simulé), et **élargit** la contrainte `ck_orders_status` à `pending_payment`, `paid`, `expired`. L'ancien code n'écrit que `pending_payment` et reste valide sur le schéma migré. Limite assumée : il ne sait pas relire une commande déjà payée ou expirée (uniquement en rejouant la clé d'idempotence de sa création). `test_migrations_additive.unit.py` n'autorise ce remplacement que pour les contraintes de statut listées.
 
 La migration `0005` élargit `ck_stock_reservations_status` à `reserved`, `released` (libération du stock des commandes expirées). Aucune table ni colonne ajoutée; l'ancien code n'écrit que `reserved`.
+
+La migration `0006` ajoute la table `payment_webhook_events` (identifiant d'événement en clé primaire, `outcome` `applied` ou `ignored`, `paid_order_id` unique et lié à `orders`) et élargit `ck_stock_reservations_status` à `reserved`, `released`, `committed`. L'ancien code n'écrit que `reserved` : il reste valide sur le schéma migré (test d'additivité).
 
 La migration `0002` crée la table `products` (contraintes : prix > 0, stock ≥ 0, note 0 à 5, catégorie connue) et y charge le jeu de données initial : 15 produits, 3 par catégorie, dont un en rupture et un aux dernières pièces.
 

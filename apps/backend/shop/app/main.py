@@ -1,4 +1,5 @@
 import sys
+import time
 
 import httpx
 from fastapi import FastAPI
@@ -38,6 +39,23 @@ from app.pay.domain.interfaces.payment_gateway import PaymentGateway
 from app.pay.error_handlers import register_pay_error_handlers
 from app.pay.infrastructure.clients.http_payment_gateway import HttpPaymentGateway
 from app.pay.presentation.router import router as pay_router
+from app.payment_confirmation.application.receive_payment_webhook import (
+    ReceivePaymentWebhookUseCase,
+)
+from app.payment_confirmation.application.send_order_confirmation import (
+    SendOrderConfirmationUseCase,
+)
+from app.payment_confirmation.domain.services.webhook_signature_verifier import (
+    WebhookSignatureVerifier,
+)
+from app.payment_confirmation.error_handlers import register_payment_confirmation_error_handlers
+from app.payment_confirmation.infrastructure.repositories.sqlalchemy_confirmation_unit_of_work import (
+    SqlAlchemyConfirmationUnitOfWork,
+)
+from app.payment_confirmation.infrastructure.senders.smtp_confirmation_sender import (
+    SmtpConfirmationSender,
+)
+from app.payment_confirmation.presentation.router import router as payment_confirmation_router
 from app.payment_request.application.confirm_order_payment import ConfirmOrderPaymentUseCase
 from app.payment_request.application.request_order_payment import RequestOrderPaymentUseCase
 from app.payment_request.infrastructure.gateways.simulated_payment_gateway import (
@@ -108,7 +126,27 @@ def create_app() -> FastAPI:
     application.state.confirm_order_payment_use_case = ConfirmOrderPaymentUseCase(
         lambda: SqlAlchemyPaymentUnitOfWork(engine), gateway, events
     )
+    application.state.receive_payment_webhook_use_case = ReceivePaymentWebhookUseCase(
+        lambda: SqlAlchemyConfirmationUnitOfWork(engine),
+        WebhookSignatureVerifier(
+            (settings.payment_webhook_secret, settings.payment_webhook_secret_previous),
+            settings.payment_webhook_tolerance_seconds,
+            time.time,
+        ),
+        events,
+    )
+    application.state.send_order_confirmation_use_case = SendOrderConfirmationUseCase(
+        SmtpConfirmationSender(
+            settings.smtp_host,
+            settings.smtp_port,
+            settings.smtp_from,
+            settings.smtp_timeout_seconds,
+        ),
+        events,
+        build_pseudonymizer(settings.log_pseudonym_key),
+    )
     register_error_handlers(application, events)
+    register_payment_confirmation_error_handlers(application)
     register_pay_error_handlers(application)
     application.include_router(pay_router)
     application.include_router(health_router)
@@ -117,6 +155,7 @@ def create_app() -> FastAPI:
     application.include_router(order_tracking_router)
     application.include_router(order_router)
     application.include_router(payment_request_router)
+    application.include_router(payment_confirmation_router)
     return application
 
 
