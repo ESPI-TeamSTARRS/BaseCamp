@@ -93,6 +93,8 @@ class ReceivePaymentWebhookUseCase:
             self._events.log(names.ignored(event, applied.reason, applied.order_number))
         elif applied.confirmed and applied.order_number is not None:
             self._events.log(self._paid(event, applied.order_number))
+        elif applied.refunded_cents is not None and applied.order_number is not None:
+            self._events.log(self._refunded(applied.order_number, applied.refunded_cents))
         elif event.event_type == PAYMENT_FAILED and applied.order_number is not None:
             self._events.log(
                 BusinessEvent.denied(
@@ -103,6 +105,18 @@ class ReceivePaymentWebhookUseCase:
                     attributes={"source": SOURCE},
                 )
             )
+
+    def _refunded(self, order_number: str, refunded_cents: int) -> BusinessEvent:
+        return BusinessEvent.success(
+            names.ORDER_REFUNDED,
+            resource_type="order",
+            resource_id=order_number,
+            attributes={
+                "amount_refunded_cents": refunded_cents,
+                "currency": names.CURRENCY,
+                "source": SOURCE,
+            },
+        )
 
     def _paid(self, event: PaymentEvent, order_number: str) -> BusinessEvent:
         return BusinessEvent.success(

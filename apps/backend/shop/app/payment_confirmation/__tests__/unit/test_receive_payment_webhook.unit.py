@@ -242,9 +242,9 @@ class TestAcknowledgedWithoutEffect:
         assert setup.store.committed_orders == []
         assert receipt.mail is None
 
-    def test_a_refund_event_is_acknowledged_without_effect(self) -> None:
+    def test_an_unsupported_event_type_is_acknowledged_without_effect(self) -> None:
         setup = _Setup()
-        body = event_body(type="refund.succeeded")
+        body = event_body(type="payment.pending")
 
         receipt = setup.receive(body)
 
@@ -285,3 +285,109 @@ class TestPaymentFailed:
 
         assert (receipt.outcome, receipt.reason) == (WebhookOutcome.IGNORED, "attempt_settled")
         assert setup.store.attempt_statuses == {}
+
+
+def _refund_body(refunded: int | None, amount: int = 1000) -> bytes:
+    data: dict[str, object] = {
+        "refund_id": "r-1",
+        "payment_intent_id": "7d2f3c1e-8a41-4d3b-9c55-2a6e0f9b1c42",
+        "order_reference": REFERENCE,
+        "amount": amount,
+        "currency": "EUR",
+        "status": "succeeded",
+    }
+    if refunded is not None:
+        data["amount_refunded"] = refunded
+    return event_body(type="refund.succeeded", data=data)
+
+
+def _paid_store(refunded_cents: int = 0) -> ConfirmationStore:
+    return ConfirmationStore(
+        targets={
+            REFERENCE: target(
+                OrderStatus.PAID, attempt_status="succeeded", refunded_cents=refunded_cents
+            )
+        }
+    )
+
+
+class TestRefundSucceeded:
+    def test_a_partial_refund_is_recorded_and_the_order_stays_paid(self) -> None:
+        setup = _Setup(_paid_store())
+
+        receipt = setup.receive(_refund_body(1000))
+
+        assert (receipt.outcome, receipt.reason, receipt.mail) == (
+            WebhookOutcome.APPLIED,
+            None,
+            None,
+        )
+        current = setup.store.targets[REFERENCE]
+        assert (current.order_status, current.refunded_cents) == (OrderStatus.PAID, 1000)
+        refunded = [e for e in setup.events.events if e.event == "order.refunded"]
+        assert len(refunded) == 1
+        assert refunded[0].resource_id == ORDER_NUMBER
+        assert refunded[0].attributes["amount_refunded_cents"] == 1000
+
+    def test_a_full_refund_marks_the_order_refunded(self) -> None:
+        setup = _Setup(_paid_store())
+
+        setup.receive(_refund_body(TOTAL_CENTS, amount=TOTAL_CENTS))
+
+        current = setup.store.targets[REFERENCE]
+        assert (current.order_status, current.refunded_cents) == (
+            OrderStatus.REFUNDED,
+            TOTAL_CENTS,
+        )
+
+    def test_a_later_refund_completes_a_partial_one(self) -> None:
+        setup = _Setup(_paid_store(refunded_cents=1000))
+
+        setup.receive(_refund_body(TOTAL_CENTS, amount=3490), event_id=None)
+
+        assert setup.store.targets[REFERENCE].order_status is OrderStatus.REFUNDED
+
+    @pytest.mark.parametrize(
+        ("refunded", "reason"),
+        [
+            (3000, "refund_already_recorded"),
+            (1000, "refund_already_recorded"),
+            (TOTAL_CENTS + 1, "refund_exceeds_total"),
+            (None, "refund_amount_missing"),
+        ],
+    )
+    def test_a_replayed_older_excessive_or_incomplete_refund_changes_nothing(
+        self, refunded: int | None, reason: str
+    ) -> None:
+        setup = _Setup(_paid_store(refunded_cents=3000))
+
+        receipt = setup.receive(_refund_body(refunded), event_id=None)
+
+        assert (receipt.outcome, receipt.reason) == (WebhookOutcome.IGNORED, reason)
+        assert setup.store.targets[REFERENCE].refunded_cents == 3000
+
+    def test_the_same_event_id_is_never_applied_twice(self) -> None:
+        setup = _Setup(_paid_store())
+        body = _refund_body(1000)
+        setup.receive(body)
+        setup.events.events.clear()
+
+        receipt = setup.receive(body)
+
+        assert receipt.outcome is WebhookOutcome.REPLAYED
+        assert [e for e in setup.events.events if e.event == "order.refunded"] == []
+
+    def test_a_refund_on_an_unpaid_order_is_ignored(self) -> None:
+        setup = _Setup()
+
+        receipt = setup.receive(_refund_body(1000))
+
+        assert (receipt.outcome, receipt.reason) == (WebhookOutcome.IGNORED, "order_not_paid")
+        assert setup.store.targets[REFERENCE].refunded_cents == 0
+
+    def test_a_refund_for_an_unknown_reference_is_acknowledged(self) -> None:
+        setup = _Setup(ConfirmationStore())
+
+        receipt = setup.receive(_refund_body(1000))
+
+        assert (receipt.outcome, receipt.reason) == (WebhookOutcome.IGNORED, "order_not_found")

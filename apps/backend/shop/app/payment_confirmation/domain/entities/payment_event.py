@@ -12,3 +12,4 @@ class PaymentEvent:
     amount_cents: int | None
     currency: str | None
     status: str | None
+    amount_refunded_cents: int | None = None  # cumul rendu à cet instant (refund.succeeded)

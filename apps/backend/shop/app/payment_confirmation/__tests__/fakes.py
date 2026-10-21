@@ -53,6 +53,7 @@ def target(
     status: OrderStatus = OrderStatus.PENDING_PAYMENT,
     total_cents: int = TOTAL_CENTS,
     attempt_status: str = "requires_confirmation",
+    refunded_cents: int = 0,
 ) -> SettlementTarget:
     return SettlementTarget(
         order_id=ORDER_ID,
@@ -61,6 +62,7 @@ def target(
         total_cents=total_cents,
         attempt_id=ATTEMPT_ID,
         attempt_status=attempt_status,
+        refunded_cents=refunded_cents,
     )
 
 
@@ -96,12 +98,16 @@ class _Targets(SettlementTargets):
         self.paid: list[str] = []
         self.statuses: dict[str, str] = {}
         self.committed: list[str] = []
+        self.refunds: dict[str, int] = {}
 
     def find_for_update(self, reference: str) -> SettlementTarget | None:
         return self._store.targets.get(reference)
 
     def mark_paid(self, order_id: str) -> None:
         self.paid.append(order_id)
+
+    def record_refund(self, order_id: str, refunded_cents: int) -> None:
+        self.refunds[order_id] = refunded_cents
 
     def set_attempt_status(self, attempt_id: str, status: str) -> None:
         self.statuses[attempt_id] = status
@@ -153,6 +159,16 @@ class FakeConfirmationUnitOfWork(ConfirmationUnitOfWork):
         for reference, current in list(self._store.targets.items()):
             if current.order_id in self.targets.paid:
                 self._store.targets[reference] = replace(current, order_status=OrderStatus.PAID)
+            if current.order_id in self.targets.refunds:
+                refunded = self.targets.refunds[current.order_id]
+                status = (
+                    OrderStatus.REFUNDED
+                    if refunded >= current.total_cents
+                    else current.order_status
+                )
+                self._store.targets[reference] = replace(
+                    current, order_status=status, refunded_cents=refunded
+                )
 
 
 class RecordingSender(ConfirmationSender):

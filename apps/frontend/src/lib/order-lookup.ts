@@ -9,6 +9,7 @@ const STATUS_LABELS: Record<string, string> = {
   pending_payment: 'En attente de paiement',
   paid: 'Payée',
   expired: 'Expirée',
+  refunded: 'Remboursée',
 };
 const UNKNOWN_STATUS_LABEL = 'Statut en cours de mise à jour';
 

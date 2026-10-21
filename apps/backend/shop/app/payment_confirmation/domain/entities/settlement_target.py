@@ -13,3 +13,4 @@ class SettlementTarget:
     total_cents: int
     attempt_id: str
     attempt_status: str
+    refunded_cents: int = 0
