@@ -29,7 +29,7 @@ from app.registration.infrastructure.repositories.sqlalchemy_unit_of_work import
 )
 
 EMAIL = "camille@example.com"
-NEW_PASSWORD = "nouveau-sentier-2026"  # noqa: S105
+NEW_PASSWORD = "nouveau-sentier-2026"
 GENERIC = {
     "message": "Si un compte existe pour cette adresse, un email de réinitialisation vient d'être envoyé."
 }

@@ -19,7 +19,7 @@ from app.registration.__tests__.fakes import (
 from app.registration.domain.services.password_policy import PasswordPolicy
 
 EMAIL = "camille@example.com"
-NEW_PASSWORD = "nouveau-sentier-2026"  # noqa: S105
+NEW_PASSWORD = "nouveau-sentier-2026"
 
 
 class Harness:

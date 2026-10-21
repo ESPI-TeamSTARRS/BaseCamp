@@ -11,7 +11,7 @@ from app.registration.domain.exceptions.mail_delivery_error import MailDeliveryE
 from app.registration.domain.value_objects.email_address import EmailAddress
 from app.registration.infrastructure.clients.smtp_email_sender import SmtpEmailSender
 
-TOKEN = "jeton-de-test-0123456789-abcdefghijklmnopqrstu"  # noqa: S105
+TOKEN = "jeton-de-test-0123456789-abcdefghijklmnopqrstu"
 TO = EmailAddress.of("camille@example.com")
 
 

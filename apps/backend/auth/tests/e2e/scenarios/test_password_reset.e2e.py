@@ -14,10 +14,12 @@ import time
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx
 import pytest
 
+REPO_ROOT = Path(__file__).resolve().parents[6]
 BASE_URL = os.environ.get("E2E_BASE_URL", "http://127.0.0.1:8080")
 MAILPIT_URL = os.environ.get("E2E_MAILPIT_URL", "")
 PHRASE = "Randonnee-GR20-" + uuid.uuid4().hex[:12]
@@ -258,6 +260,7 @@ class TestPasswordResetLogs:
             capture_output=True,
             text=True,
             timeout=60,
+            cwd=REPO_ROOT,
             check=True,
         ).stdout
 

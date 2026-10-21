@@ -6,8 +6,10 @@ from typing import Any
 
 import pytest
 from alembic.autogenerate import compare_metadata
+from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
+from alembic.script import ScriptDirectory
 from sqlalchemy import Engine, create_engine, inspect
 from sqlalchemy.pool import StaticPool
 
@@ -38,15 +40,15 @@ def engine() -> Iterator[Engine]:
     engine.dispose()
 
 
-class TestMigration0005:
-    def test_it_follows_revision_0002(self) -> None:
-        migration = load("0005_reinitialisation_mot_de_passe")
+class TestMigration0006:
+    def test_it_follows_revision_0004(self) -> None:
+        migration = load("0006_reinitialisation_mot_de_passe")
 
-        assert (migration.revision, migration.down_revision) == ("0005", "0002")
+        assert (migration.revision, migration.down_revision) == ("0006", "0004")
 
     def test_upgrade_matches_the_sqlalchemy_models(self, engine: Engine) -> None:
-        base = load("0002_users_et_verification")
-        migration = load("0005_reinitialisation_mot_de_passe")
+        base = load("0004_users_et_verification")
+        migration = load("0006_reinitialisation_mot_de_passe")
         assert PasswordResetAttemptModel.__tablename__ in AuthBase.metadata.tables
         with engine.begin() as connection:
             context = MigrationContext.configure(connection, opts={"include_object": _owned})
@@ -58,8 +60,8 @@ class TestMigration0005:
         assert differences == []
 
     def test_it_only_adds_tables(self, engine: Engine) -> None:
-        base = load("0002_users_et_verification")
-        migration = load("0005_reinitialisation_mot_de_passe")
+        base = load("0004_users_et_verification")
+        migration = load("0006_reinitialisation_mot_de_passe")
         with (
             engine.begin() as connection,
             Operations.context(MigrationContext.configure(connection)),
@@ -73,8 +75,8 @@ class TestMigration0005:
         assert before <= after
 
     def test_downgrade_removes_only_its_tables(self, engine: Engine) -> None:
-        base = load("0002_users_et_verification")
-        migration = load("0005_reinitialisation_mot_de_passe")
+        base = load("0004_users_et_verification")
+        migration = load("0006_reinitialisation_mot_de_passe")
         with engine.begin() as connection:
             with Operations.context(MigrationContext.configure(connection)):
                 base.upgrade()
@@ -90,3 +92,10 @@ def _owned(object_: Any, name: str | None, type_: str, reflected: bool, compare_
     """Ne compare que les tables de cette migration (les autres ont leur propre test)."""
     table = object_ if type_ == "table" else getattr(object_, "table", None)
     return table is None or table.name in OWNED_TABLES
+
+
+def test_the_migration_chain_has_a_single_head() -> None:
+    config = Config()
+    config.set_main_option("script_location", str(MIGRATIONS.parent))
+
+    assert len(ScriptDirectory.from_config(config).get_heads()) == 1
