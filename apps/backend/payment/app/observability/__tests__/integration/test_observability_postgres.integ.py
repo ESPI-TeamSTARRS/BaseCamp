@@ -11,9 +11,6 @@ from pathlib import Path
 
 import pytest
 from alembic.config import Config
-from app.observability.infrastructure.repositories.sqlalchemy_service_state_reader import (
-    SqlAlchemyServiceStateReader,
-)
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.engine import make_url
@@ -22,6 +19,9 @@ from alembic import command
 from app.core.config import Settings
 from app.main import create_app
 from app.observability.__tests__.integration.seeding import add_entries, add_intent, add_outbox
+from app.observability.infrastructure.repositories.sqlalchemy_service_state_reader import (
+    SqlAlchemyServiceStateReader,
+)
 
 DATABASE_URL = os.environ.get("PAYMENT_TEST_DATABASE_URL")
 PROJECT_ROOT = Path(__file__).resolve().parents[4]

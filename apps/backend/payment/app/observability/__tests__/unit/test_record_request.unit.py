@@ -1,13 +1,13 @@
 import pytest
+
+from app.core.__tests__.in_memory_business_event_logger import InMemoryBusinessEventLogger
+from app.core.events import service_event_names as names
+from app.core.events.outcome import Outcome
 from app.observability.application.record_request import RecordRequestUseCase
 from app.observability.domain.value_objects.request_key import RequestKey
 from app.observability.infrastructure.metrics.in_process_request_metrics import (
     InProcessRequestMetrics,
 )
-
-from app.core.__tests__.in_memory_business_event_logger import InMemoryBusinessEventLogger
-from app.core.events import service_event_names as names
-from app.core.events.outcome import Outcome
 
 
 class Fixture:

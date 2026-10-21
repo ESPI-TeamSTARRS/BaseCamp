@@ -1,6 +1,10 @@
 from datetime import UTC, datetime
 
 import pytest
+
+from app.core.__tests__.in_memory_business_event_logger import InMemoryBusinessEventLogger
+from app.core.events import service_event_names as names
+from app.core.events.outcome import Outcome
 from app.observability.application.exceptions.metrics_not_exposed_error import (
     MetricsNotExposedError,
 )
@@ -11,10 +15,6 @@ from app.observability.domain.value_objects.request_key import RequestKey
 from app.observability.infrastructure.metrics.in_process_request_metrics import (
     InProcessRequestMetrics,
 )
-
-from app.core.__tests__.in_memory_business_event_logger import InMemoryBusinessEventLogger
-from app.core.events import service_event_names as names
-from app.core.events.outcome import Outcome
 
 NOW = datetime(2026, 10, 21, 9, 0, tzinfo=UTC)
 STATE = ServiceState(

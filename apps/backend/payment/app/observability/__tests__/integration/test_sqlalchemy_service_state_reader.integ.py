@@ -1,14 +1,14 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from app.observability.infrastructure.repositories.sqlalchemy_service_state_reader import (
-    SqlAlchemyServiceStateReader,
-)
 from sqlalchemy import Engine, StaticPool, create_engine, event
 from sqlalchemy.exc import OperationalError
 
 from app.intent.infrastructure.models.base import Base
 from app.observability.__tests__.integration.seeding import add_entries, add_intent, add_outbox
+from app.observability.infrastructure.repositories.sqlalchemy_service_state_reader import (
+    SqlAlchemyServiceStateReader,
+)
 
 NOW = datetime(2026, 10, 21, 9, 0, tzinfo=UTC)
 RECENT = NOW - timedelta(hours=1)
