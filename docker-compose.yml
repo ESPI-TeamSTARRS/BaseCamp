@@ -45,7 +45,7 @@ services:
 
   front:
     <<: *hardening
-    image: basecamp-front
+    image: ${COMPOSE_PROJECT_NAME:-basecamp}-front
     build:
       context: ./apps/frontend
       args:
@@ -69,7 +69,7 @@ services:
 
   shop-migrate:
     build: ./apps/backend/shop
-    image: basecamp-shop
+    image: ${COMPOSE_PROJECT_NAME:-basecamp}-shop
     restart: "no"
     command: ["alembic", "upgrade", "head"]
     environment: &shop-env
@@ -86,7 +86,7 @@ services:
   shop:
     <<: *hardening
     build: ./apps/backend/shop
-    image: basecamp-shop
+    image: ${COMPOSE_PROJECT_NAME:-basecamp}-shop
     environment: *shop-env
     networks: [app, data, payment-net]
     read_only: true
@@ -126,7 +126,7 @@ services:
 
   payment-migrate:
     build: ./apps/backend/payment
-    image: basecamp-payment
+    image: ${COMPOSE_PROJECT_NAME:-basecamp}-payment
     restart: "no"
     command: ["alembic", "upgrade", "head"]
     environment: &payment-env
@@ -144,7 +144,7 @@ services:
   payment:
     <<: *hardening
     build: ./apps/backend/payment
-    image: basecamp-payment
+    image: ${COMPOSE_PROJECT_NAME:-basecamp}-payment
     environment: *payment-env
     networks: [payment-net, payment-data]
     read_only: true
@@ -182,7 +182,7 @@ services:
 
   auth-migrate:
     build: ./apps/backend/auth
-    image: basecamp-auth
+    image: ${COMPOSE_PROJECT_NAME:-basecamp}-auth
     restart: "no"
     command: ["alembic", "upgrade", "head"]
     environment: &auth-env
@@ -196,10 +196,26 @@ services:
     depends_on:
       postgres-auth: { condition: service_healthy }
 
+  # Amorcage des clients de service (jetons entre services) : one-shot idempotent, seul porteur
+  # des secrets en clair (haches argon2id en base). auth, lui, ne voit jamais ces secrets.
+  auth-bootstrap:
+    build: ./apps/backend/auth
+    image: ${COMPOSE_PROJECT_NAME:-basecamp}-auth
+    restart: "no"
+    command: ["python", "-m", "app.service_token.bootstrap"]
+    environment:
+      <<: *auth-env
+      APP_SERVICE_CLIENTS: '{"shop": ["payments:write"]}'
+      APP_SERVICE_CLIENT_SECRET_SHOP: ${AUTH_SERVICE_CLIENT_SECRET_SHOP:?voir .env.example}
+      APP_SERVICE_CLIENT_SECRET_SHOP_PREVIOUS: ${AUTH_SERVICE_CLIENT_SECRET_SHOP_PREVIOUS:-}
+    networks: [auth-data]
+    depends_on:
+      auth-migrate: { condition: service_completed_successfully }
+
   auth:
     <<: *hardening
     build: ./apps/backend/auth
-    image: basecamp-auth
+    image: ${COMPOSE_PROJECT_NAME:-basecamp}-auth
     environment: *auth-env
     # Cles de signature generees par scripts/init-auth-keys.sh (jamais versionnees).
     secrets: [auth_jwt_private_key, auth_jwt_public_key]
@@ -207,6 +223,7 @@ services:
     read_only: true
     depends_on:
       auth-migrate: { condition: service_completed_successfully }
+      auth-bootstrap: { condition: service_completed_successfully }
     healthcheck:
       test:
         - CMD

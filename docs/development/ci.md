@@ -9,9 +9,11 @@ Workflow : `.github/workflows/ci.yml`, déclenché à chaque push (hors `main`) 
 | `secrets-scan` | gitleaks sur l'historique complet |
 | `outils-racine` | tests des scripts des hooks |
 | `deploy-rollback` | `bash scripts/deploy/test-deploy.sh` (`poe deploy-test`) : joue `scripts/deploy.sh` contre un registre local avec une panne volontaire, et vérifie le retour automatique ([deploy-script.md](../deployment/deploy-script.md)) |
-| `stack-e2e` | construit les images `shop`, `auth` et `front` (cache GitHub Actions), génère un `.env` factice depuis `.env.example`, démarre la pile minimale (`docker compose up --wait traefik` : Traefik, front, `shop`, `auth` et leurs bases), génère les clés de signature d'`auth` (`scripts/init-auth-keys.sh`), joue `poe test:e2e` de `shop` puis d'`auth` contre Traefik, publie les logs des conteneurs en artefact (`stack-e2e-logs`) en cas d'échec, puis supprime la pile |
+| `stack-e2e` | construit les images `shop`, `auth` et `front` (cache GitHub Actions), génère un `.env` factice depuis `.env.example`, démarre la pile minimale (`docker compose up --wait traefik` : Traefik, front, `shop`, `auth` et leurs bases), génère les clés de signature d'`auth` (`scripts/init-auth-keys.sh`), rejoue l'amorçage des clients de service (`auth-bootstrap`, idempotent), joue `poe test:e2e` de `shop` puis d'`auth` (dont les jetons de service, appelés depuis le conteneur `shop`) contre Traefik, puis de `payment`, publie les logs des conteneurs en artefact (`stack-e2e-logs`) en cas d'échec, puis supprime la pile |
 | `pr-title` (workflow séparé) | le titre de la PR respecte le format Conventional Commits (même script que le hook `commit-msg`); à rendre obligatoire avec `ci-ok` |
 | `ci-ok` | job final (attend aussi `stack-e2e`), seul check à rendre obligatoire dans la protection de branche |
+
+Le job `stack-e2e` tourne avec le nom de projet par défaut (`basecamp`) : les tags `basecamp-<service>` posés par les étapes de build correspondent aux images `${COMPOSE_PROJECT_NAME:-basecamp}-<service>` de `docker-compose.yml`.
 
 Chaque job appelle les tâches `poe` ou `npm` du service, jamais un outil en direct. Les permissions du jeton sont réduites au strict nécessaire (`contents: read`).
 

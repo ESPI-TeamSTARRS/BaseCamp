@@ -57,7 +57,8 @@ Le front est servi sur <http://127.0.0.1:8080/>. Arrêt : `docker compose down` 
 | Routage | `/api/shop/*` vers `shop`, `/api/auth/*` vers `auth` (préfixe retiré), tout le reste vers le front. `/api/auth/internal/*` n'est jamais routé : réservé aux appels entre services. |
 | Base | Postgres crée au premier démarrage un rôle et une base propres à `shop`; le compte administrateur n'est pas utilisé par les services. |
 | Clés de signature | `scripts/init-auth-keys.sh` génère une paire Ed25519 dans `.secrets/auth/`, montée en secret Docker dans `auth`. Jamais versionnée; `--force` pour la renouveler. |
-| Migrations | Les services one-shot `shop-migrate` et `auth-migrate` exécutent `alembic upgrade head` avant leur service; rejouables sans erreur. |
+| Migrations | Les services one-shot `shop-migrate` et `auth-migrate` exécutent `alembic upgrade head` avant leur service; rejouables sans erreur. `auth-bootstrap` amorce ensuite les clients de service (secrets lus dans `.env`, hachés en base). |
+| Images | Taguées `${COMPOSE_PROJECT_NAME:-basecamp}-<service>` (`basecamp-auth` par défaut) : deux piles aux noms de projet différents (`COMPOSE_PROJECT_NAME=basecamp-xyz`, avec un `GATEWAY_PORT` distinct) ne s'écrasent pas les images. |
 | Conteneurs | Utilisateur non-root, `no-new-privileges`, capacités retirées, redémarrage `unless-stopped`, healthcheck sur chaque service. |
 
 Les variables sont documentées dans `.env.example` (aucune valeur réelle). Les fins de ligne sont normalisées en LF par `.gitattributes` (Windows, WSL, Linux).

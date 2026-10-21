@@ -1,4 +1,4 @@
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
@@ -22,6 +22,15 @@ class Settings(BaseSettings):
     log_pseudonym_key: str = (
         ""  # cle HMAC des empreintes d'email dans les logs (APP_LOG_PSEUDONYM_KEY)
     )
+
+    # Jetons de service (WORK-39). Les cles sont montees en secrets Docker, jamais dans l'environnement.
+    jwt_private_key_file: str = "/run/secrets/auth_jwt_private_key"
+    jwt_public_key_file: str = "/run/secrets/auth_jwt_public_key"
+    jwt_issuer: str = "basecamp-auth"
+    service_token_rate_limit_per_minute: int = Field(default=60, gt=0)
+    # Clients de service a amorcer : {"shop": ["payments:write"]} (JSON, non secret). Les secrets
+    # se lisent a part (APP_SERVICE_CLIENT_SECRET_<CLIENT>) par la commande d'amorcage uniquement.
+    service_clients: dict[str, list[str]] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _require_pseudonym_key_outside_development(self) -> "Settings":

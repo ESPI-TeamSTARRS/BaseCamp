@@ -147,6 +147,8 @@ jobs:
           cache-to: type=gha,scope=front,mode=max
       - name: Pile minimale (Traefik, front, shop, auth, payment, bucket d images et leurs bases) healthy
         run: docker compose up -d --no-build --wait --wait-timeout 120 traefik payment seaweedfs
+      - name: Amorcage des clients de service (jetons entre services) rejouable sans effet
+        run: docker compose run --rm --no-deps auth-bootstrap
       - name: Amorcage du bucket (visuels du catalogue)
         run: docker compose run --rm --no-deps seaweedfs-seed
       - uses: astral-sh/setup-uv@v5
@@ -160,7 +162,7 @@ jobs:
         working-directory: apps/backend/shop
       - run: uv sync --frozen --no-build --python 3.13
         working-directory: apps/backend/auth
-      - name: Scenarios e2e auth contre Traefik
+      - name: Scenarios e2e auth (passerelle, jetons de service depuis le reseau app)
         run: uv run --frozen --no-build poe test:e2e
         working-directory: apps/backend/auth
       - name: Isolation de payment (reseau, bases, migrations, readiness)

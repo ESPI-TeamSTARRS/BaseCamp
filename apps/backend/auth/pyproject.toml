@@ -12,6 +12,8 @@ dependencies = [
     "sqlalchemy>=2.0",
     "structlog>=24.4.0",
     "uvicorn[standard]>=0.30.0",
+    "argon2-cffi>=25.1.0",
+    "pyjwt[crypto]>=2.15.1",
 ]
 
 [dependency-groups]
@@ -73,8 +75,9 @@ select = ["E", "W", "F", "I", "B", "C4", "UP", "N", "SIM", "RUF", "S"]
 ignore = ["E501", "N818"]
 
 [tool.ruff.lint.per-file-ignores]
-"**/__tests__/**/*.py" = ["S101"]
-"tests/**/*.py" = ["S101"]
+# Valeurs factices des tests (faux secrets, faux jetons) : S105 et S106 y sont des faux positifs.
+"**/__tests__/**/*.py" = ["S101", "S105", "S106"]
+"tests/**/*.py" = ["S101", "S105", "S106"]
 "conftest.py" = ["S101"]
 
 [tool.mypy]
