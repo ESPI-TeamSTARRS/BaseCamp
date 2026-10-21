@@ -183,7 +183,7 @@ def _psql(sql: str) -> str:
 
 
 def _status(client: httpx.Client, number: str, email: str) -> str:
-    response = client.post(f"{ORDERS_PATH}/lookup", json={"orderNumber": number, "email": email})
+    response = _post(client, f"{ORDERS_PATH}/lookup", {"orderNumber": number, "email": email})
     return str(response.json().get("status")) if response.status_code == 200 else ""
 
 
@@ -239,8 +239,8 @@ class TestFullJourney:
         order = _place_order(client, email)
 
         page = client.get("/success", params={"commande": order["number"]})
-        lookup = client.post(
-            f"{ORDERS_PATH}/lookup", json={"orderNumber": order["number"], "email": email}
+        lookup = _post(
+            client, f"{ORDERS_PATH}/lookup", {"orderNumber": order["number"], "email": email}
         )
 
         assert page.status_code == 200 and order["number"] in page.text
