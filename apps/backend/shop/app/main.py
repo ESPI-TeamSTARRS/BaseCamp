@@ -1,5 +1,6 @@
 import sys
 
+import httpx
 from fastapi import FastAPI
 from sqlalchemy import create_engine
 
@@ -27,6 +28,10 @@ from app.order.infrastructure.repositories.sqlalchemy_order_unit_of_work import 
     SqlAlchemyOrderUnitOfWork,
 )
 from app.order.presentation.router import router as order_router
+from app.pay.application.start_payment import StartPaymentUseCase
+from app.pay.error_handlers import register_pay_error_handlers
+from app.pay.infrastructure.clients.http_payment_gateway import HttpPaymentGateway
+from app.pay.presentation.router import router as pay_router
 
 DB_CONNECT_TIMEOUT_SECONDS = 2
 
@@ -59,7 +64,24 @@ def create_app() -> FastAPI:
         events,
         build_pseudonymizer(settings.log_pseudonym_key),
     )
+    payment_client = httpx.Client(
+        base_url=settings.payment_url,
+        timeout=httpx.Timeout(
+            connect=settings.payment_connect_timeout_seconds,
+            read=settings.payment_read_timeout_seconds,
+            write=settings.payment_read_timeout_seconds,
+            pool=settings.payment_connect_timeout_seconds,
+        ),
+        limits=httpx.Limits(max_connections=20, max_keepalive_connections=5),
+    )
+    application.state.start_payment_use_case = StartPaymentUseCase(
+        application.state.quote_cart_use_case,
+        HttpPaymentGateway(payment_client, settings.payment_service_token),
+        events,
+    )
     register_error_handlers(application, events)
+    register_pay_error_handlers(application)
+    application.include_router(pay_router)
     application.include_router(health_router)
     application.include_router(catalog_router)
     application.include_router(cart_router)
