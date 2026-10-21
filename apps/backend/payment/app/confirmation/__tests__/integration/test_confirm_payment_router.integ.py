@@ -255,12 +255,12 @@ class TestInputValidation:
 
 
 def _lines(env: Env) -> list[dict[str, Any]]:
-    """Lignes JSON du journal; chacune doit respecter le schéma commun."""
+    """Lignes JSON du journal; chacune respecte le schéma commun (hors lignes de requête, rendues)."""
     records = [json.loads(line) for line in env.log.getvalue().splitlines()]
     for record in records:
         errors = [error.message for error in VALIDATOR.iter_errors(record)]
         assert not errors, errors
-    return records
+    return [r for r in records if r["event"] != "service.request_completed"]
 
 
 def _confirm_logged(env: Env, intent_id: str, method: object, key: str = "confirm-0001") -> None:

@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     rate_limit_create_per_window: int = 60
     rate_limit_read_per_window: int = 120
 
+    # Fenêtre de contrôle du grand livre pour /metrics (intentions créées dans les N dernières heures).
+    metrics_ledger_lookback_hours: int = Field(default=24, ge=1, le=720)
+
     log_pseudonym_key: str = (
         ""  # cle HMAC des empreintes d'email dans les logs (APP_LOG_PSEUDONYM_KEY)
     )

@@ -40,8 +40,8 @@ Installation : `uv run pre-commit install --install-hooks`. Les hooks vérifient
 | Hook | Contrôles |
 |---|---|
 | `commit-msg` | format Conventional Commit |
-| `pre-commit` | gitleaks (secrets), lint et format du service modifié |
-| `pre-push` | types et tests unitaires du service modifié |
+| `pre-commit` | gitleaks sur l'index, lint et format du service modifié |
+| `pre-push` | gitleaks sur les commits poussés (`origin/main..HEAD`, même config que la CI; binaire `gitleaks` requis), types et tests unitaires du service modifié |
 
 Les corrections automatiques se lancent à la demande : `uv run poe fix` dans un service.
 
