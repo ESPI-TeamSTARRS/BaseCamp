@@ -27,6 +27,17 @@ services:
       - --entrypoints.web.transport.respondingTimeouts.idleTimeout=60s
       - --ping=true
       - --log.level=INFO
+      - --accesslog=true
+      - --accesslog.format=json
+      - --accesslog.fields.headers.defaultmode=drop
+      - --accesslog.fields.names.ClientAddr=drop
+      - --accesslog.fields.names.ClientHost=drop
+      - --accesslog.fields.names.ClientPort=drop
+      - --metrics.prometheus=true
+      - --metrics.prometheus.entryPoint=metrics
+      - --entrypoints.metrics.address=:9100
+      - --metrics.prometheus.addRoutersLabels=true
+      - --metrics.prometheus.addServicesLabels=true
     ports:
       - "127.0.0.1:${GATEWAY_PORT:-8080}:9080"
     volumes:

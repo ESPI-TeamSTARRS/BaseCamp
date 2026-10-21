@@ -49,6 +49,14 @@ Un appel vers un autre service joint `outbound_headers()` (`app/core/logging/cor
 - Une exception inattendue produit `service.unhandled_error` (`outcome=error`, `reason=internal_error`) et une réponse 500 générique, sans trace ni message. Une requête qui échoue à la validation produit `service.request_rejected` (`denied`, `invalid_request`), sans la valeur reçue.
 - Pas de duplication : chaque service garde sa copie du module (aucune bibliothèque partagée), sous `app/core/**`, exclu du calcul de duplication Sonar.
 
+## Journal d'accès de la passerelle
+
+Traefik écrit un journal d'accès JSON sur sa sortie standard (une ligne par requête), en local (`docker-compose.yml`) et en production (`deploy/docker-compose.prod.yml`) : `--accesslog=true` et `--accesslog.format=json`. Il complète les événements métier : il donne le service ciblé (`ServiceName`), le code de statut (`DownstreamStatus`) et la durée (`Duration`, en nanosecondes) de chaque appel traversant la passerelle. La collecte (Loki) et la normalisation vers `service`, `status_code` et `duration_ms` relèvent du dépôt Supervision.
+
+Minimisation des données personnelles : `--accesslog.fields.headers.defaultmode=drop` retire tous les en-têtes (`Authorization`, `Cookie`, `X-Correlation-ID`…), et `ClientAddr`, `ClientHost` et `ClientPort` sont supprimés. Le journal d'accès ne contient donc ni jeton, ni cookie, ni adresse du client ; l'adresse reste réservée aux refus d'`auth` et `payment` (`client_ip`).
+
+Les métriques Prometheus de Traefik sont exposées sur l'entrypoint interne `metrics` (`:9100`, chemin `/metrics`), avec les étiquettes de routeur et de service. Ce port n'est publié ni en local ni en production : seul un conteneur du même réseau Docker peut le lire.
+
 ## Règle pour chaque ticket
 
 Tout ticket qui ajoute ou modifie un cas d'usage émet, via le port `BusinessEventLogger`, un événement au succès et à chaque refus, nommés dans le catalogue de `docs/services/<service>.md`. Chaque critère d'acceptation de succès ou de refus a un test unitaire qui vérifie l'événement émis (nom, `outcome`, `reason`, ressource). Un événement n'est jamais renommé après publication. Aucun mot de passe, jeton, clé d'idempotence, numéro de carte ni email en clair.
