@@ -58,6 +58,20 @@ class Settings(BaseSettings):
     lockout_durations_seconds: str = "900,1800,3600"
     lockout_memory_seconds: int = Field(default=86400, gt=0)
 
+    # Verrouillage PAR ETAPE (WORK-56), sans escalade : `max_failures` echecs en `window_seconds`
+    # verrouillent pour `duration_seconds` fixes. Etapes du back-office (mot de passe operateur,
+    # visage) et compteur par adresse source (toutes etapes). Les etapes non listees gardent la
+    # regle progressive ci-dessus.
+    lockout_operator_password_max_failures: int = Field(default=3, ge=1)
+    lockout_operator_password_window_seconds: int = Field(default=600, gt=0)
+    lockout_operator_password_duration_seconds: int = Field(default=300, gt=0)
+    lockout_face_max_failures: int = Field(default=5, ge=1)
+    lockout_face_window_seconds: int = Field(default=600, gt=0)
+    lockout_face_duration_seconds: int = Field(default=300, gt=0)
+    lockout_address_max_failures: int = Field(default=20, ge=1)
+    lockout_address_window_seconds: int = Field(default=900, gt=0)
+    lockout_address_duration_seconds: int = Field(default=900, gt=0)
+
     @property
     def lockout_durations(self) -> tuple[int, ...]:
         return tuple(

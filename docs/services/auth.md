@@ -102,6 +102,21 @@ Composant **indépendant de la connexion** (domaine, port `LockoutRepository`, s
 - **Réponse** : un sujet verrouillé reçoit **exactement la réponse générique 401** (statut, corps, en-têtes, sans `Retry-After` ni cookie), **même avec le bon mot de passe**, et paie la même vérification argon2id. Le verrou est clé sur l'empreinte de l'adresse : une adresse inconnue se verrouille comme une adresse connue (rien ne trahit l'existence d'un compte). Un échec pendant un verrou ne compte pas et ne le prolonge pas; un succès remet le compteur et l'échelle à zéro.
 - **Stockage** : table `login_lockouts` (`scope`, `subject`, `failures`, `window_started_at`, `level`, `locked_until`, `updated_at`), donc il survit à un redémarrage et se partage entre instances. Chaque échec s'exécute dans une transaction qui verrouille la ligne du sujet (`SELECT ... FOR UPDATE` après un `INSERT ... ON CONFLICT DO NOTHING`) : des échecs simultanés ne se perdent pas. Les lignes inactives depuis plus de `memory` sont purgées à chaque échec (la table ne grossit pas indéfiniment sous un tir d'adresses inconnues).
 - **Journaux** : `auth.lockout_triggered` (une fois, au moment du verrou) et les événements `login` portent l'attribut `step` (étape), sans changer le schéma pour de futures étapes.
+#### Politique par étape et par adresse source (WORK-56)
+`LockoutService` choisit la règle selon l'**étape** (`step`, nom libre) et le **type de sujet** : `account` (empreinte de l'identifiant) ou `address` (empreinte de l'adresse source, qui a ses propres seuils : un tiers ne peut pas verrouiller un opérateur depuis sa seule adresse sans être bloqué lui-même). Chaque couple (étape, type de sujet) a **son compteur** : un visage refusé ne compte jamais comme un mot de passe faux, et inversement. L'appelant fournit l'empreinte; une adresse bloquée ne dépend d'aucun compte et ne révèle donc rien sur son existence. Une étape non configurée garde la règle progressive d'avant (aucune régression du login client).
+
+| Étape (`step`) | Sujet | Défaut | Variables |
+|---|---|---|---|
+| `password` (login client, existant) | compte | 5 échecs en 15 min, puis 15, 30, 60 min (palier plafonné, oubli après 24 h) | `APP_LOCKOUT_MAX_FAILURES`, `_WINDOW_SECONDS`, `_DURATIONS_SECONDS`, `_MEMORY_SECONDS` |
+| `operator_password` (back-office) | compte | 3 échecs en 10 min, blocage **fixe de 5 min**, sans escalade | `APP_LOCKOUT_OPERATOR_PASSWORD_MAX_FAILURES`, `_WINDOW_SECONDS`, `_DURATION_SECONDS` |
+| `face` (back-office) | compte | 5 refus en 10 min, blocage **fixe de 5 min**, sans escalade | `APP_LOCKOUT_FACE_MAX_FAILURES`, `_WINDOW_SECONDS`, `_DURATION_SECONDS` |
+| toute étape | adresse source | 20 échecs en 15 min, blocage fixe de 15 min | `APP_LOCKOUT_ADDRESS_MAX_FAILURES`, `_WINDOW_SECONDS`, `_DURATION_SECONDS` |
+
+- **Stockage** : même table `login_lockouts`, aucune migration. La clé `scope` est l'étape seule pour un compte (lignes existantes inchangées) et `étape@address` pour une adresse (par exemple `face@address`); les verrous survivent donc à un redémarrage.
+- **Remise à zéro** : `LockoutService.clear([...])` supprime en une transaction les compteurs de la personne et de son adresse une fois la connexion réussie **de bout en bout** (la connexion en trois temps l'appelle à la dernière étape).
+- **Journal** : `auth.lockout_triggered` porte `step`, `subject_type` (`account` ou `address`), `subject_hash` (empreinte, jamais l'identifiant) et `client_ip` **tronqué au réseau** (`/24` en IPv4, `/48` en IPv6) quand l'adresse est connue.
+- **Métriques** : `auth_lockouts_triggered_total{step}` reste calculé sur `step`; `auth_active_lockouts{step}` lit `scope`, donc les adresses bloquées apparaissent sous `étape@address`.
+
 - **Passerelle** : Traefik répond 429 avec `Retry-After` au-delà du débit par IP réelle (`/login` et `/register` partagent 60/min, rafale de 30; `/password/forgot` 20/min, rafale de 10); `X-Forwarded-For` est ignoré (clé = adresse de connexion); corps > 1 Mio : 413; délais d'expiration vers les services définis. Scénarios `test_zy_lockout.e2e.py` et `test_zz_gateway_protection.e2e.py` (placés en dernier : ils consomment le seuil par IP de la passerelle) (429, en-tête forgé, 413, 200 tentatives parallèles avec `/health` à 200 et p95 < 200 ms).
 
 ### Jetons d'accès clients
@@ -242,6 +257,7 @@ Les émissions, refus et limitations sont journalisés via le port `BusinessEven
 | `APP_ACCESS_TOKEN_TTL_SECONDS` | durée du jeton d'accès client (défaut 900, strictement positive) |
 | `APP_REFRESH_TOKEN_TTL_SECONDS` | durée du jeton de rafraîchissement et du cookie (défaut 604800, 7 jours) |
 | `APP_LOCKOUT_MAX_FAILURES`, `APP_LOCKOUT_WINDOW_SECONDS` | échecs qui verrouillent et fenêtre de comptage (défaut 5 et 900) |
+| `APP_LOCKOUT_OPERATOR_PASSWORD_*`, `APP_LOCKOUT_FACE_*`, `APP_LOCKOUT_ADDRESS_*` | seuil (`MAX_FAILURES`), fenêtre (`WINDOW_SECONDS`) et durée fixe (`DURATION_SECONDS`) des étapes du back-office et des adresses sources (voir [Politique par étape](#politique-par-étape-et-par-adresse-source-work-56)) |
 | `APP_LOCKOUT_DURATIONS_SECONDS` | échelle des durées de verrou en secondes, séparées par des virgules; la dernière est le plafond (défaut `900,1800,3600`) |
 | `APP_LOCKOUT_MEMORY_SECONDS` | durée sans verrou après laquelle l'échelle repart du premier palier (défaut 86400) |
 | `APP_SERVICE_TOKEN_RATE_LIMIT_PER_MINUTE` | demandes de jeton par client et par minute (défaut 60) |
@@ -307,7 +323,7 @@ La tranche `login` émet (mêmes règles : email seulement en `email_hash`, jama
 | `auth.refresh_rejected` | denied | `invalid_refresh_token` | `refresh_token`; `client_ip`; `cause` interne : `unknown_token`, `expired_token` ou `account_disabled`; `account_id` quand il est connu. Le jeton n'est jamais journalisé |
 | `auth.refresh_reuse_detected` | denied | `refresh_token_reused` | `account` + id; `client_ip`. Toute la famille a été révoquée |
 | `auth.logout_completed` | success | | `account` + id, acteur `user` + id; `sessions_revoked` (jetons supprimés). Rien n'est émis si le jeton est absent ou inconnu |
-| `auth.lockout_triggered` | denied | `too_many_failures` | `lockout_subject`; `step`, `subject_hash` (empreinte), `level` (rang du verrou), `locked_seconds`. Émis une fois, quand le verrou se pose |
+| `auth.lockout_triggered` | denied | `too_many_failures` | `lockout_subject`; `step`, `subject_type` (`account` ou `address`), `subject_hash` (empreinte), `level` (rang du verrou), `locked_seconds`; `client_ip` tronqué au réseau si connu. Émis une fois, quand le verrou se pose |
 | `auth.token_rejected` | denied | `expired`, `invalid`, `revoked` | `access_token`; acteur `user` + id pour `revoked` (compte inconnu ou désactivé). Émis par `/me` : le jeton n'est jamais journalisé |
 
 `client_ip` vient de `X-Forwarded-For` posé par la passerelle, accepté seulement s'il s'agit d'une adresse IP valide (sinon l'adresse de la connexion).

@@ -180,3 +180,51 @@ class TestSettingsLockout:
 
         with pytest.raises(ValueError, match=r"greater than"):
             Settings()
+
+
+class TestSettingsLockoutByStep:
+    NAMES = (
+        "OPERATOR_PASSWORD_MAX_FAILURES",
+        "OPERATOR_PASSWORD_WINDOW_SECONDS",
+        "OPERATOR_PASSWORD_DURATION_SECONDS",
+        "FACE_MAX_FAILURES",
+        "FACE_WINDOW_SECONDS",
+        "FACE_DURATION_SECONDS",
+        "ADDRESS_MAX_FAILURES",
+        "ADDRESS_WINDOW_SECONDS",
+        "ADDRESS_DURATION_SECONDS",
+    )
+
+    def test_the_steps_have_the_expected_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for name in self.NAMES:
+            monkeypatch.delenv(f"APP_LOCKOUT_{name}", raising=False)
+
+        settings = Settings()
+
+        assert settings.lockout_operator_password_max_failures == 3
+        assert settings.lockout_face_max_failures == 5
+        assert settings.lockout_operator_password_duration_seconds == 300
+        assert settings.lockout_face_duration_seconds == 300
+        assert settings.lockout_address_max_failures == 20
+
+    def test_every_step_value_is_read_from_the_environment(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("APP_LOCKOUT_FACE_MAX_FAILURES", "7")
+        monkeypatch.setenv("APP_LOCKOUT_FACE_WINDOW_SECONDS", "120")
+        monkeypatch.setenv("APP_LOCKOUT_FACE_DURATION_SECONDS", "60")
+
+        settings = Settings()
+
+        assert (
+            settings.lockout_face_max_failures,
+            settings.lockout_face_window_seconds,
+            settings.lockout_face_duration_seconds,
+        ) == (7, 120, 60)
+
+    @pytest.mark.parametrize("name", NAMES)
+    def test_a_zero_value_is_refused(self, monkeypatch: pytest.MonkeyPatch, name: str) -> None:
+        monkeypatch.setenv(f"APP_LOCKOUT_{name}", "0")
+
+        with pytest.raises(ValueError, match="greater than"):
+            Settings()
