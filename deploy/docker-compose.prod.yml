@@ -104,6 +104,9 @@ services:
       APP_DB_USER: ${SHOP_DB_USER:-shop}
       APP_DB_PASSWORD: ${SHOP_DB_PASSWORD:?voir deploy/prod.env.example}
       APP_LOG_PSEUDONYM_KEY: ${LOG_PSEUDONYM_KEY:?voir deploy/prod.env.example}
+      # Appels a payment (delais courts dans l'application : un payment arrete ne bloque pas shop).
+      APP_PAYMENT_URL: http://payment:8000
+      APP_PAYMENT_SERVICE_TOKEN: ${PAYMENT_SERVICE_TOKEN_SHOP:?voir deploy/prod.env.example}
     networks: [data]
     depends_on:
       postgres: { condition: service_healthy }
@@ -234,6 +237,22 @@ services:
     depends_on:
       postgres-auth: { condition: service_healthy }
 
+  # Amorcage des clients de service (jetons entre services) : tache ponctuelle idempotente, seule a
+  # lire les secrets en clair (haches en base). `auth` ne voit jamais ces secrets.
+  auth-bootstrap:
+    image: ${AUTH_IMAGE}
+    restart: "no"
+    mem_limit: 256m
+    command: ["python", "-m", "app.service_token.bootstrap"]
+    environment:
+      <<: *auth-env
+      APP_SERVICE_CLIENTS: '{"shop": ["payments:write"]}'
+      APP_SERVICE_CLIENT_SECRET_SHOP: ${AUTH_SERVICE_CLIENT_SECRET_SHOP:?voir deploy/prod.env.example}
+      APP_SERVICE_CLIENT_SECRET_SHOP_PREVIOUS: ${AUTH_SERVICE_CLIENT_SECRET_SHOP_PREVIOUS:-}
+    networks: [auth-data]
+    depends_on:
+      auth-migrate: { condition: service_completed_successfully }
+
   auth:
     <<: *hardening
     image: ${AUTH_IMAGE}
@@ -245,6 +264,7 @@ services:
     read_only: true
     depends_on:
       auth-migrate: { condition: service_completed_successfully }
+      auth-bootstrap: { condition: service_completed_successfully }
     healthcheck:
       test:
         - CMD

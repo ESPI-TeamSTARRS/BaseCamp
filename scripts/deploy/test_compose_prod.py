@@ -34,6 +34,7 @@ SAMPLE_ENV = {
     "PAYMENT_DB_PASSWORD": "x",
     "PAYMENT_SERVICE_TOKEN_SHOP": "x",
     "AUTH_DB_PASSWORD": "x",
+    "AUTH_SERVICE_CLIENT_SECRET_SHOP": "x",
     "LOG_PSEUDONYM_KEY": "x",
     "S3_ACCESS_KEY": "x",
     "S3_SECRET_KEY": "x",

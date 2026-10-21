@@ -81,3 +81,13 @@ L'ancienne pile (projet compose `basecamp-outdoor`, dossier `/home/anto/basecamp
 
 - **Limiteur de débit derrière Cloudflare** : dans les journaux d'accès, l'adresse cliente doit varier d'une requête à l'autre (voir [README](README.md)). Si toutes les requêtes montrent la même adresse, ajuster `PROXY_TRUSTED_IPS` et la liste `excludedIPs` de `deploy/traefik/dynamic.prod.yml`.
 - **Mises à jour de sécurité de la VM** : hors périmètre de ce runbook (infra).
+
+## Ajouter une variable obligatoire (ordre à respecter)
+
+Quand une évolution du code rend une variable obligatoire (secret, clé), la VM doit l'avoir **avant** de déployer l'image qui la requiert :
+
+1. Fusionner la PR qui ajoute la variable au compose de production et à `deploy/prod.env.example`. Sans effet immédiat : le manifeste n'a pas changé, le minuteur répond « ce manifeste est deja en place ».
+2. Sur la VM, relancer l'installation : `sudo bash /opt/basecamp/repo/infra/install-vm.sh`. Elle met le dépôt à jour, ajoute avec une valeur aléatoire chaque variable obligatoire absente ou vide (sans modifier ni afficher les valeurs existantes) et vérifie le résultat (`verification : OK`).
+3. Fusionner la PR de manifeste qui déploie la nouvelle version.
+
+Si l'ordre n'est pas respecté, la production n'est pas touchée : Compose refuse l'environnement incomplet **au tirage** (« required variable … is missing a value »), le script s'arrête avec « aucune modification effectuee » (code 1), la version en service continue de tourner et le manifeste n'est pas noté refusé. Le minuteur réessaie toutes les 3 minutes (le journal le répète) : dès que la variable est ajoutée, le déploiement passe seul. Une valeur présente mais inutilisable fait échouer le démarrage ou le test de fumée : retour automatique à la version précédente et manifeste noté refusé.

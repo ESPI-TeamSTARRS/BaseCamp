@@ -174,8 +174,7 @@ apply_release() {
 # forcement la derniere revision de schema : relancer `alembic upgrade head` avec elle echouerait.
 restore_previous() {
   local services
-  services="$(compose config --services | grep -v -- '-migrate$' | tr '
-' ' ')"
+  services="$(compose config --services | grep -v -e '-migrate$' -e '-bootstrap$' | tr '\n' ' ')"
   # shellcheck disable=SC2086
   compose up -d --wait --wait-timeout "$WAIT_TIMEOUT" --no-deps --remove-orphans $services || return 1
   sh -c "$SMOKE_CMD" || return 1
