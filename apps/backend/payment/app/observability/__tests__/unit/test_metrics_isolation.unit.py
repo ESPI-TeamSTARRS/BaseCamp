@@ -25,8 +25,11 @@ class TestGatewayDoesNotRoutePayment:
     def test_no_traefik_router_or_service_points_to_payment(self) -> None:
         active = "\n".join(_active_lines(GATEWAY))
 
+        # La passerelle exclut `/api/auth/metrics` du routeur auth : une exclusion, pas une route.
+        routed = active.replace("!PathPrefix(`/api/auth/metrics`)", "")
+
         assert "payment" not in active
-        assert "/metrics" not in active
+        assert "/metrics" not in routed
 
     def test_payment_is_not_on_the_network_traefik_uses(self) -> None:
         networks = re.search(r"networks: \[(.*?)\]", _service_block("payment"))
