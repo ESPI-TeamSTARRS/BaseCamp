@@ -13,6 +13,8 @@ Catalogue, commandes et stock. Demande les paiements au service [payment](paymen
 | POST | `/cart/quote` | devis d'un panier calculé par le serveur (voir ci-dessous) |
 | POST | `/orders` | crée une commande « en attente de paiement » (voir ci-dessous) |
 | POST | `/orders/lookup` | retrouve une commande par numéro et email (suivi, voir ci-dessous) |
+| POST | `/orders/{id}/pay` | demande l'intention de paiement d'une commande en attente |
+| POST | `/orders/{id}/pay/confirm` | confirme le paiement avec une méthode de test |
 | GET | `/products` | catalogue paginé, filtrable par catégorie (voir ci-dessous) |
 | GET | `/products/{slug}` | fiche détaillée d'un produit |
 | POST | `/pay` | démarre le paiement d'un panier : montant recalculé par le serveur, intention créée dans `payment` (voir ci-dessous) |
@@ -61,11 +63,30 @@ Corps strict : `{"order_reference", "lines": [{"productId", "quantity"}]}` (aucu
 
 L'appel à `payment` a des délais courts (connexion 1 s, lecture 3 s) et un pool borné. Si `payment` est arrêté, injoignable, saturé (429, 5xx) ou mal configuré (401), `shop` répond **`503 {"detail": "Paiement indisponible, reessayez plus tard."}`** avec `Retry-After: 5`, sans bloquer : le catalogue et `/cart/quote` continuent de répondre. Aucun détail technique (hôte, jeton) n'est renvoyé.
 
+### `POST /orders/{id}/pay` et `POST /orders/{id}/pay/confirm`
+Paiement d'une commande créée par `POST /orders` (`{id}` est l'identifiant renvoyé à la création, un UUID). Le montant est le total figé de la commande, jamais une valeur du client. `shop` passe par le port `PaymentGateway` (`app/pay`), dont l'adaptateur est choisi par `APP_PAYMENT_PROVIDER` : `http` (par défaut) appelle le service [payment](payment.md), `simulated` est un fournisseur sans réseau ni clé dont l'état est en base (tables `simulated_payment_intents`), utile hors de la pile. Aucune clé Stripe ni donnée bancaire n'existe nulle part.
+
+**Demande** (`POST /orders/{id}/pay`, sans corps) : `201` à la première demande, `200` si une intention attend déjà sa confirmation (rejeu sans nouvelle intention). Réponse : `payment_intent_id`, `status` (`requires_confirmation`), `amount_cents`, `currency`, `order_number`, `payment_methods` (`pm_test_success`, `pm_test_declined`). Après un refus, une nouvelle demande crée une nouvelle intention (référence `BC-…-2`, `-3`…) car une intention refusée est terminale.
+
+**Confirmation** (`POST /orders/{id}/pay/confirm`, corps strict `{"payment_method": "pm_test_success" | "pm_test_declined"}`) : un numéro de carte ou tout autre champ donne un `422` qui ne renvoie pas la valeur. Réponse `200` : `order_number`, `order_status` (`paid` ou `pending_payment`), `payment_status` (`succeeded` ou `failed`). **Seul le résultat renvoyé par le fournisseur marque la commande payée**; un refus est un résultat métier (200), la commande reste en attente.
+
+| Code | Cas |
+|---|---|
+| 201 / 200 | intention créée / déjà en attente |
+| 404 | commande inconnue (message fixe) |
+| 409 | commande déjà payée (`Commande deja payee.`), expirée (`Commande expiree.`) ou sans paiement en attente |
+| 422 | identifiant mal formé, méthode hors liste, champ en trop, refus métier du fournisseur |
+| 503 | fournisseur arrêté ou saturé, `Retry-After: 5` |
+
+Concurrence : la commande est lue avec un verrou de ligne (`SELECT … FOR UPDATE`) pour toute la transaction, appel au fournisseur compris. Deux confirmations parallèles ne paient qu'une fois (l'autre reçoit 409), deux demandes parallèles ne créent qu'une tentative (test sur Postgres).
+
 Les autres routes métier s'ajoutent par tranche et se documentent ici.
 
 ## Invariants
 - Les prix viennent toujours du catalogue serveur.
 - Une commande payée correspond à exactement une transaction.
+- Seul le résultat du fournisseur de paiement marque une commande payée; le client n'envoie qu'une méthode de test, jamais un montant ni une donnée de carte.
+- Une commande payée ou expirée ne peut plus être payée (409).
 - Le stock ne devient jamais négatif (contrainte en base et dans l'entité).
 - Les prix sont des entiers en centimes, jamais des flottants; le front convertit pour l'affichage.
 - Un produit à stock 0 est « rupture » et ne peut pas être commandé.
@@ -91,6 +112,7 @@ Variables d'environnement préfixées `APP_` (voir `.env.example` à la racine) 
 | `APP_DB_NAME` / `APP_DB_USER` | `shop` / `shop` | base et rôle propres à `shop` |
 | `APP_DB_PASSWORD` | vide | mot de passe du rôle (fourni par l'environnement, jamais versionné) |
 | `APP_MEDIA_BASE_URL` | `/media` | préfixe public des images du catalogue |
+| `APP_PAYMENT_PROVIDER` | `http` | fournisseur de paiement : `http` (service `payment`) ou `simulated` (sans réseau ni clé) |
 | `APP_PAYMENT_URL` | `http://payment:8000` | adresse interne de `payment` |
 | `APP_PAYMENT_SERVICE_TOKEN` | vide | jeton de service de `shop` auprès de `payment` (alimenté par `PAYMENT_SERVICE_TOKEN_SHOP`, jamais versionné) |
 | `APP_PAYMENT_CONNECT_TIMEOUT_SECONDS` / `APP_PAYMENT_READ_TIMEOUT_SECONDS` | `1` / `3` | délais des appels à `payment` |
@@ -114,6 +136,11 @@ Format et règles communes : [journalisation métier](../development/logging.md)
 | `cart.quote_rejected` | denied | `invalid_cart` (nombre de lignes), `quantity_out_of_range`, `duplicate_product`, `product_not_found` | |
 | `order.looked_up` | success | | ressource `order` (numéro); `status` |
 | `order.lookup_denied` | denied | `order_not_found`, `email_mismatch` | `email_hash` du demandeur; ressource `order` seulement si le numéro existe (jamais l'email reçu) |
+| `order.payment_requested` | success | | ressource `order` (numéro); `amount_cents`, `currency`, `attempt` |
+| `order.paid` | success | | ressource `order` (numéro); `amount_cents`, `currency`, `attempt` |
+| `order.payment_failed` | denied | `provider_declined` | ressource `order` (numéro); `attempt` |
+| `order.payment_rejected` | denied | `order_not_found`, `order_already_paid`, `order_expired`, `no_pending_payment` | ressource `order` (numéro) sauf `order_not_found`; couvre aussi un paiement reçu après expiration |
+| `order.payment_unavailable` | error | `payment_unavailable` | fournisseur arrêté, injoignable ou saturé |
 | `pay.payment_started` | success | | ressource `payment_intent` (id), `amount_cents`, `currency` |
 | `pay.payment_rejected` | denied | `insufficient_stock`, `payment_conflict`, `payment_refused` | refus avant ou par `payment` |
 | `pay.payment_unavailable` | error | `payment_unavailable` | `payment` arrêté, injoignable ou saturé (503 renvoyé) |
@@ -132,6 +159,8 @@ uv run alembic revision -m "ajoute les produits"  # nouvelle migration
 En Docker Compose, `shop-migrate` applique les migrations avant le démarrage de `shop`. La migration `0001` est vide : elle fixe le point de départ de l'historique.
 
 La migration `0003` crée `orders`, `order_lines` (prix figés en centimes) et `stock_reservations`, avec clés étrangères, unicité de la clé d'idempotence et contraintes de montants et de pays. Elle n'ajoute que des tables : l'ancienne version du code tourne sur le schéma migré, ce qui garde le retour arrière automatique sûr (voir `test_migrations_additive.unit.py`, qui impose la règle à toute migration après la 0002).
+
+La migration `0004` ajoute les tables `payment_attempts` (une ligne par tentative de paiement : intention, référence unique, statut) et `simulated_payment_intents` (état du fournisseur simulé), et **élargit** la contrainte `ck_orders_status` à `pending_payment`, `paid`, `expired`. L'ancien code n'écrit que `pending_payment` et reste valide sur le schéma migré. Limite assumée : il ne sait pas relire une commande déjà payée ou expirée (uniquement en rejouant la clé d'idempotence de sa création). `test_migrations_additive.unit.py` n'autorise ce remplacement que pour les contraintes de statut listées.
 
 La migration `0002` crée la table `products` (contraintes : prix > 0, stock ≥ 0, note 0 à 5, catégorie connue) et y charge le jeu de données initial : 15 produits, 3 par catégorie, dont un en rupture et un aux dernières pièces.
 

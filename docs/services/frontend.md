@@ -1,7 +1,7 @@
 # Front `apps/frontend`
 
 ## Rôle
-Vitrine Next.js (App Router) : catalogue, fiches produit, panier, pages légales, SEO.
+Vitrine Next.js (App Router) : catalogue, fiches produit, panier et commande, paiement simulé, pages légales, SEO.
 
 ## Stack
 Next.js 16 (App Router, React 19, Turbopack), TypeScript strict, Tailwind CSS, Framer Motion, Zod. ESLint 9 en configuration plate (`eslint.config.mjs`, `eslint .`), Node 20.9 ou plus.
@@ -17,6 +17,9 @@ Page `/compte/connexion` : `POST /api/auth/login` par la passerelle (`src/lib/lo
 
 ## Suivi de commande
 `/suivi` remplace l'ancien texte statique par un formulaire (numéro `BC-…` et email) qui appelle `POST /api/shop/orders/lookup`. Le résultat affiche le statut (en attente de paiement, payée, expirée), les lignes figées et les totaux. Un numéro inconnu et un email erroné affichent le même message, comme côté serveur.
+
+## Parcours de commande
+`/panier` (lignes, devis serveur, formulaire email et adresse) crée la commande (`POST /api/shop/orders`, clé d'idempotence par contenu) puis ouvre `/paiement/[orderId]` : écran de paiement simulé **sans champ de carte**, deux boutons (paiement réussi, refus) qui envoient une méthode de test à `POST /api/shop/orders/{id}/pay/confirm`. Un refus permet un nouvel essai; un succès vide le panier et mène à `/success?commande=BC-…` (le numéro n'est affiché que s'il a le format d'un numéro de commande). Stripe n'existe plus dans le front : aucune clé de paiement n'est requise au build ni à l'exécution.
 
 ## Organisation
 `src/app` (routes), `src/components`, `src/context` (panier), `src/lib` (utilitaires métier), `src/types`.

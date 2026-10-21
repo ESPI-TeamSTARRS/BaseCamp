@@ -514,7 +514,25 @@ Valeurs de départ pour un trafic faible (PromQL indicatif); les règles réelle
 Remarque : les intentions `requires_confirmation` abandonnées ne sont pas encore expirées (l'expiration arrive avec sa tranche) : leur stock croît et n'est pas, en soi, un signal.
 
 ## Intégration boutique
-Le service `shop` utilise l'interface `PaymentProvider`. L'adaptateur interne est celui par défaut; un fournisseur externe reste branchable.
+`shop` parle à `payment` par son port `PaymentGateway` (`apps/backend/shop/app/pay`). Ce contrat est ce que `payment` doit continuer à honorer; `shop` n'a pas à changer pour un autre fournisseur. L'adaptateur HTTP (`APP_PAYMENT_PROVIDER=http`, défaut) l'applique à l'API de ce service; un adaptateur simulé sans réseau (`APP_PAYMENT_PROVIDER=simulated`) le remplace hors pile.
+
+### Contrat `PaymentProvider` côté boutique
+| Opération du port | Appel à `payment` | Entrées | Résultat |
+|---|---|---|---|
+| `create_intent` | `POST /payments/intents` | `order_reference` (numéro de commande, suffixé `-2`, `-3`… pour une nouvelle tentative), `amount` en centimes, `currency` `EUR`, `Idempotency-Key` `order-<numéro>-<tentative>` | intention (`id`, `status`, `amount`, `currency`) |
+| `get_intent` (lire le statut) | `GET /payments/intents/{id}` | identifiant | intention |
+| `confirm_intent` | `POST /payments/intents/{id}/confirm` | `payment_method` `pm_test_success` ou `pm_test_declined`, `Idempotency-Key` `confirm-<tentative>` | intention `succeeded` ou `failed` |
+
+Les en-têtes `Authorization` (jeton de service) et `X-Correlation-ID` accompagnent chaque appel. Traduction des erreurs côté boutique : `404`, `409` et `422` de `payment` deviennent un refus métier (`409` : conflit), tout autre échec (`401`, `429`, `5xx`, délai) devient « indisponible » (`503` avec `Retry-After: 5` renvoyé au client). La boutique ne marque une commande payée que sur un statut `succeeded` renvoyé par ce contrat.
+
+### Format du webhook (contrat à implémenter par la tranche `webhook`)
+Quand elle existera, la tranche `webhook` de `payment` notifiera `shop` d'un changement d'état avec ce format; la réception côté boutique se branche sur le même statut `succeeded` / `failed` sans modifier le port.
+
+- Requête : `POST` JSON vers l'URL de la boutique, corps brut signé.
+- En-tête `X-Payment-Signature: t=<secondes epoch>,v1=<hex>` où `v1 = HMAC-SHA256(secret, "<t>.<corps brut>")`. Le secret est partagé par variable d'environnement, jamais versionné ni journalisé.
+- Corps : `{"id": "evt_<uuid>", "type": "payment_intent.succeeded" | "payment_intent.failed", "created": <secondes epoch>, "data": {"intent": {"id", "order_reference", "amount", "currency", "status"}}}`.
+- Vérification à la réception : signature recalculée sur le corps brut et comparée en temps constant; horodatage `t` à moins de 5 minutes de l'heure du serveur (anti-rejeu différé); identifiant d'événement `id` retenu en base, un événement déjà vu est ignoré (réponse `200`, aucun effet).
+- Réponses : `2xx` accusé de réception; `400` signature ou format invalide (sans détail); `5xx` ou délai : l'émetteur réessaie avec le même `id`.
 
 ## Structure
 Tranches verticales `app/<feature>/{domain,application,infrastructure,presentation}` (aujourd'hui `health`, `intent`, `ratelimit`, `confirmation`, `cancellation`, `expiration`, `ledger`, `ledgercheck`, `refund`, `webhook` et `observability`), configuration dans `app/core`. Migrations Alembic dans `alembic/` (`0001` vide, `0002` : tables `payment_intents` et `idempotency_keys`; montants en `BIGINT` de centimes, aucune colonne flottante; `0003` : table `rate_limit_windows`, ajout seul; `0004` : tables `confirmation_keys` et `ledger_entries` avec ses déclencheurs, ajout seul; `0005` : index partiel d'expiration, ajout seul; `0006` : table `outbox`, ajout seul; `0007` : table `refunds` avec ses déclencheurs, ajout seul). `confirmation` orchestre la confirmation (unité de travail transactionnelle, fournisseur, journal) et réutilise l'entité d'intention et le grand livre; elle ne partage que des modèles et des mappers avec `intent`. `webhook` fournit à `confirmation` l'événement à écrire dans l'outbox (fabrique de domaine et dépôt) et porte seule la livraison (cas d'usage, signature, envoi HTTP, worker, commande de relance). `refund` suit le même schéma que `confirmation` (unité de travail transactionnelle, verrou de l'intention, grand livre, outbox) et réutilise l'entité d'intention. `webhook` fournit à `confirmation` et à `refund` l'événement à écrire dans l'outbox (fabriques de domaine et dépôt). Règle de dépendance vérifiée par `app/__tests__/unit/test_architecture.unit.py`.

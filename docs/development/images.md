@@ -33,7 +33,7 @@ Les images et le dépôt sont publics : tout ce qui entre dans une image est lis
 
 ## Front : variables `NEXT_PUBLIC_*`
 
-Next.js remplace `process.env.NEXT_PUBLIC_SITE_URL` **au build**. Choix assumé : l'image du front est construite pour le site de production, avec `NEXT_PUBLIC_SITE_URL` = variable de dépôt ou d'organisation `SITE_URL` si elle existe, sinon `https://basecamp.tempulse.fr`. Une image du front n'est donc pas réutilisable sous un autre domaine : en changer impose une nouvelle version. `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` n'est pas fournie au build : le serveur la lit à l'exécution (`process.env` complet, validé par `lib/env.ts`).
+Next.js remplace `process.env.NEXT_PUBLIC_SITE_URL` **au build**. Choix assumé : l'image du front est construite pour le site de production, avec `NEXT_PUBLIC_SITE_URL` = variable de dépôt ou d'organisation `SITE_URL` si elle existe, sinon `https://basecamp.tempulse.fr`. Une image du front n'est donc pas réutilisable sous un autre domaine : en changer impose une nouvelle version. Aucune clé de paiement n'est nécessaire au build ni à l'exécution : le paiement passe par le service `payment`.
 
 ## Publier une version déjà taguée
 
@@ -60,4 +60,4 @@ Un scan rouge laisse seulement le tag provisoire `sha-…` dans le registre, san
 
 - Backends : `pip` est désinstallé de l'étape finale de l'image (`python -m pip uninstall`). L'application tourne depuis `/app/.venv` ; `pip` n'est pas utile à l'exécution et embarque des bibliothèques (msgpack, urllib3…) qui produisaient des alertes.
 - Front : `apk upgrade` applique les correctifs système (openssl), et npm/yarn sont retirés de l'image finale (le serveur est `node server.js`).
-- Le front ne contient plus de chaîne ressemblant à une clé Stripe : la valeur de repli de `lib/stripe.ts` est `placeholder_build_only`.
+- Le front ne contient plus de client de paiement tiers ni de chaîne ressemblant à une clé de paiement.
