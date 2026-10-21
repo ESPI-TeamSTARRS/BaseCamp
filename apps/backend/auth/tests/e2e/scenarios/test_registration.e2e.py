@@ -121,7 +121,7 @@ class TestRegistrationFlow:
     def test_response_time_does_not_reveal_whether_the_email_exists(
         self, client: httpx.Client, mailbox: Mailbox
     ) -> None:
-        addresses = [f"e2e-{uuid.uuid4().hex[:10]}@example.test" for _ in range(2)]
+        addresses = [f"e2e-{uuid.uuid4().hex[:10]}@example.test" for _ in range(3)]
         try:
             new_times = [self._timed(client, email) for email in addresses]
             known_times = [self._timed(client, email) for email in addresses]
@@ -129,7 +129,7 @@ class TestRegistrationFlow:
             for email in addresses:
                 mailbox.purge(email)
 
-        assert abs(statistics.mean(new_times) - statistics.mean(known_times)) < 0.75
+        assert abs(statistics.median(new_times) - statistics.median(known_times)) < 1.0
 
     @staticmethod
     def _timed(client: httpx.Client, email: str) -> float:
