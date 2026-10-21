@@ -1,9 +1,11 @@
 from sqlalchemy import create_engine
 
 from alembic import context
+from app.confirmation.infrastructure.models import confirmation_key_model  # noqa: F401
 from app.core.config import Settings
 from app.intent.infrastructure.models import idempotency_key_model, payment_intent_model  # noqa: F401
 from app.intent.infrastructure.models.base import Base
+from app.ledger.infrastructure.models import ledger_entry_model  # noqa: F401
 from app.ratelimit.infrastructure.models import rate_limit_window_model  # noqa: F401
 from app.ratelimit.infrastructure.models.base import Base as RateLimitBase
 

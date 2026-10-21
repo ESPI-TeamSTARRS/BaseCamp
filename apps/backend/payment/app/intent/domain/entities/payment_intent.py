@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -32,3 +32,13 @@ class PaymentIntent:
             expires_at=now + ttl,
             created_at=now,
         )
+
+    def can_be_confirmed(self, now: datetime) -> bool:
+        """Une intention se confirme une fois, tant qu'elle attend sa confirmation et n'a pas expiré."""
+        return self.status is IntentStatus.REQUIRES_CONFIRMATION and now < self.expires_at
+
+    def succeed(self) -> "PaymentIntent":
+        return replace(self, status=IntentStatus.SUCCEEDED)
+
+    def fail(self) -> "PaymentIntent":
+        return replace(self, status=IntentStatus.FAILED)
