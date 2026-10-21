@@ -78,6 +78,14 @@ http:
       middlewares: [security-headers]
       service: front
       priority: 1
+    backoffice:
+      # Back-office : repondu UNIQUEMENT sur l'origine admin (admin.<domaine>), jamais sur le domaine principal.
+      # Les routes /api/* de l'hote admin restent celles de leurs services (shop-admin, auth...).
+      rule: "HostRegexp(`^admin\\..+$`) && !PathPrefix(`/api`)"
+      entryPoints: [web]
+      middlewares: [security-headers]
+      service: backoffice
+      priority: 20
 
   middlewares:
     media-path:
@@ -285,3 +293,8 @@ http:
         serversTransport: default
         servers:
           - url: "http://front:3000"
+    backoffice:
+      loadBalancer:
+        serversTransport: default
+        servers:
+          - url: "http://backoffice:3000"

@@ -51,6 +51,9 @@ jobs:
           - service: frontend
             dir: apps/frontend
             config: releaserc.toml
+          - service: backoffice
+            dir: apps/backoffice
+            config: releaserc.toml
     defaults:
       run:
         working-directory: ${{ matrix.dir }}
