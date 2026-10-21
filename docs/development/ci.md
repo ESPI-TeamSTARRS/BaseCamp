@@ -4,12 +4,12 @@ Workflow : `.github/workflows/ci.yml`, déclenché à chaque push (hors `main`) 
 
 | Job | Contenu |
 |---|---|
-| `backend` (matrice par service) | `poe quality`, `poe test` (couverture ≥ 80 %), `poe security`, build de l'image Docker |
+| `backend` (matrice par service) | `poe quality`, `poe test` (couverture ≥ 80 %), `poe security`, build de l'image Docker; un service Postgres jetable (valeurs factices) fournit `PAYMENT_TEST_DATABASE_URL` aux tests Postgres de `payment` |
 | `frontend` | lint, format, types, tests et couverture, audit des dépendances (bloquant dès une vulnérabilité élevée ou critique), build |
 | `secrets-scan` | gitleaks sur l'historique complet |
 | `outils-racine` | tests des scripts des hooks |
 | `deploy-rollback` | `bash scripts/deploy/test-deploy.sh` (`poe deploy-test`) : joue `scripts/deploy.sh` contre un registre local avec une panne volontaire, et vérifie le retour automatique ([deploy-script.md](../deployment/deploy-script.md)) |
-| `stack-e2e` | construit les images `shop`, `auth` et `front` (cache GitHub Actions), génère un `.env` factice depuis `.env.example`, démarre la pile minimale (`docker compose up --wait traefik` : Traefik, front, `shop`, `auth` et leurs bases), génère les clés de signature d'`auth` (`scripts/init-auth-keys.sh`), rejoue l'amorçage des clients de service (`auth-bootstrap`, idempotent), joue `poe test:e2e` de `shop` puis d'`auth` (dont les jetons de service, appelés depuis le conteneur `shop`) contre Traefik, puis de `payment`, publie les logs des conteneurs en artefact (`stack-e2e-logs`) en cas d'échec, puis supprime la pile |
+| `stack-e2e` | construit les images `shop`, `auth`, `payment` et `front` (cache GitHub Actions), génère un `.env` factice depuis `.env.example`, démarre la pile minimale (`docker compose up --wait traefik` : Traefik, front, `shop`, `auth` et leurs bases), génère les clés de signature d'`auth` (`scripts/init-auth-keys.sh`), rejoue l'amorçage des clients de service (`auth-bootstrap`, idempotent), joue `poe test:e2e` de `shop` puis d'`auth` (dont les jetons de service, appelés depuis le conteneur `shop`) contre Traefik, puis de `payment` (lancé avec `--scale payment=2` : charge, attaque, 413, 429, deux instances, arrêt de payment), publie les logs des conteneurs en artefact (`stack-e2e-logs`) en cas d'échec, puis supprime la pile |
 | `pr-title` (workflow séparé) | le titre de la PR respecte le format Conventional Commits (même script que le hook `commit-msg`); à rendre obligatoire avec `ci-ok` |
 | `ci-ok` | job final (attend aussi `stack-e2e`), seul check à rendre obligatoire dans la protection de branche |
 
