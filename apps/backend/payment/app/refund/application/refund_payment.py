@@ -107,7 +107,7 @@ class RefundPaymentUseCase:
         if record.request_hash != fingerprint:
             self._reject(command, "idempotency_key_reused", str(intent.id), intent)
             raise RefundKeyReusedError
-        return RefundView.from_entities(record, intent)
+        return RefundView.from_entities(record, intent, replayed=True)
 
     def _log_refund(
         self,

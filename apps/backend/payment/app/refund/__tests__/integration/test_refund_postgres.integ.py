@@ -236,12 +236,14 @@ class TestCeilingIsEnforcedByTheDatabase:
     ) -> None:
         intent = _paid_intent(engine)
 
-        with pytest.raises(DBAPIError, match="ck_payment_intents_refunded_within_amount"):
-            with engine.begin() as connection:
-                connection.execute(
-                    text("UPDATE payment_intents SET refunded_amount = :n WHERE id = :id"),
-                    {"n": CAPTURED + 1, "id": intent.id},
-                )
+        with (
+            pytest.raises(DBAPIError, match="ck_payment_intents_refunded_within_amount"),
+            engine.begin() as connection,
+        ):
+            connection.execute(
+                text("UPDATE payment_intents SET refunded_amount = :n WHERE id = :id"),
+                {"n": CAPTURED + 1, "id": intent.id},
+            )
 
     def test_the_same_key_cannot_be_inserted_twice_for_a_caller(self, engine: Engine) -> None:
         intent = _paid_intent(engine)
@@ -249,6 +251,21 @@ class TestCeilingIsEnforcedByTheDatabase:
 
         with pytest.raises(DBAPIError, match="uq_refunds_caller_key"):
             self._insert_refund(engine, intent, "direct-0001", 100)
+
+    @pytest.mark.parametrize(
+        "statement",
+        ["UPDATE refunds SET amount = 1", "DELETE FROM refunds", "TRUNCATE refunds"],
+    )
+    def test_refunds_cannot_be_updated_deleted_or_truncated(
+        self, engine: Engine, statement: str
+    ) -> None:
+        intent = _paid_intent(engine)
+        self._insert_refund(engine, intent, "direct-0001", 4000)
+
+        with pytest.raises(DBAPIError, match="ajout seul"), engine.begin() as connection:
+            connection.execute(text(statement))
+
+        assert _count(engine, RefundModel) == 1
 
     def test_the_ledger_stays_balanced_and_append_only_for_refund_lines(
         self, engine: Engine

@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from app.intent.domain.entities.payment_intent import PaymentIntent
@@ -16,9 +16,13 @@ class RefundView:
     currency: str
     status: str
     created_at: datetime
+    # Rejeu d'une clé déjà traitée : ne fait pas partie de l'identité du remboursement.
+    replayed: bool = field(default=False, compare=False)
 
     @classmethod
-    def from_entities(cls, refund: Refund, intent: PaymentIntent) -> "RefundView":
+    def from_entities(
+        cls, refund: Refund, intent: PaymentIntent, replayed: bool = False
+    ) -> "RefundView":
         return cls(
             id=str(refund.id),
             payment_intent_id=str(refund.intent_id),
@@ -27,4 +31,5 @@ class RefundView:
             currency=intent.currency.value,
             status="succeeded",
             created_at=refund.created_at.astimezone(UTC),
+            replayed=replayed,
         )

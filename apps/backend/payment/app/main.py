@@ -28,6 +28,9 @@ from app.intent.presentation.router import router as intent_router
 from app.intent.wiring import build_intent_services
 from app.ratelimit.error_handlers import register_rate_limit_error_handlers
 from app.ratelimit.wiring import build_rate_limiter
+from app.refund.error_handlers import register_refund_error_handlers
+from app.refund.presentation.router import router as refund_router
+from app.refund.wiring import build_refund_services
 
 
 def create_app(
@@ -48,14 +51,17 @@ def create_app(
     application.state.intent_services = build_intent_services(engine, settings, events)
     application.state.confirmation_services = build_confirmation_services(engine, settings, events)
     application.state.cancellation_services = build_cancellation_services(engine, events)
+    application.state.refund_services = build_refund_services(engine, events)
     application.state.rate_limiter = build_rate_limiter(engine, settings, events)
     application.include_router(health_router)
     application.include_router(intent_router)
     application.include_router(confirmation_router)
     application.include_router(cancellation_router)
+    application.include_router(refund_router)
     register_error_handlers(application, events)
     register_confirmation_error_handlers(application)
     register_cancellation_error_handlers(application)
+    register_refund_error_handlers(application)
     register_rate_limit_error_handlers(application)
     register_database_unavailable_handler(application, events)
     register_unhandled_error_handler(application, events)
