@@ -56,8 +56,8 @@ http:
       service: auth
       priority: 200
     auth:
-      # Les routes /internal/* ne sont jamais exposees : elles sortent du routeur.
-      rule: "PathPrefix(`/api/auth`) && !PathPrefix(`/api/auth/internal`)"
+      # Les routes /internal/* et /metrics ne sont jamais exposees : elles sortent du routeur.
+      rule: "PathPrefix(`/api/auth`) && !PathPrefix(`/api/auth/internal`) && !PathPrefix(`/api/auth/metrics`)"
       entryPoints: [web]
       middlewares: [body-limit, security-headers, strip-api-auth]
       service: auth
