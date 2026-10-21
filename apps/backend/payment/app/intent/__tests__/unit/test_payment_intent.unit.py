@@ -61,3 +61,44 @@ class TestConfirmationTransitions:
 
     def test_fail_returns_a_failed_copy(self) -> None:
         assert self._intent().fail().status is IntentStatus.FAILED
+
+
+class TestRefunds:
+    @staticmethod
+    def _succeeded(refunded: int = 0) -> PaymentIntent:
+        created = PaymentIntent.create(
+            "CMD-1", Amount(10000), Currency.EUR, NOW, timedelta(minutes=30)
+        )
+        return replace(created, status=IntentStatus.SUCCEEDED, refunded_amount=refunded)
+
+    def test_a_succeeded_intent_can_be_refunded(self) -> None:
+        assert self._succeeded().can_be_refunded()
+
+    @pytest.mark.parametrize(
+        "status",
+        [
+            IntentStatus.REQUIRES_CONFIRMATION,
+            IntentStatus.FAILED,
+            IntentStatus.CANCELED,
+            IntentStatus.EXPIRED,
+        ],
+    )
+    def test_an_intent_that_did_not_succeed_cannot_be_refunded(self, status: IntentStatus) -> None:
+        assert not replace(self._succeeded(), status=status).can_be_refunded()
+
+    def test_the_refundable_amount_is_what_remains_of_the_captured_amount(self) -> None:
+        assert self._succeeded().refundable_cents == 10000
+        assert self._succeeded(refunded=4000).refundable_cents == 6000
+
+    def test_refunding_returns_a_copy_with_the_cumulated_refunded_amount(self) -> None:
+        intent = self._succeeded(refunded=4000)
+
+        refunded = intent.refund(Amount(6000))
+
+        assert refunded.refunded_amount == 10000
+        assert refunded.refundable_cents == 0
+        assert intent.refunded_amount == 4000
+
+    def test_refunding_more_than_the_remaining_amount_is_refused(self) -> None:
+        with pytest.raises(ValueError, match="refundable"):
+            self._succeeded(refunded=4000).refund(Amount(6001))
