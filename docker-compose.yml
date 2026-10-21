@@ -96,6 +96,11 @@ services:
       APP_SMTP_HOST: mailpit
       APP_SMTP_PORT: "1025"
       APP_SMTP_FROM: ${SHOP_SMTP_FROM:-commandes@basecamp.local}
+      # Televersement des images produit (API d'administration) : API S3 de SeaweedFS, cles de la pile.
+      APP_S3_ENDPOINT: http://seaweedfs:8333
+      APP_S3_BUCKET: ${S3_BUCKET:-product-images}
+      APP_S3_ACCESS_KEY: ${S3_ACCESS_KEY:?voir .env.example}
+      APP_S3_SECRET_KEY: ${S3_SECRET_KEY:?voir .env.example}
     networks: [app, data, payment-net]
     read_only: true
     depends_on:
