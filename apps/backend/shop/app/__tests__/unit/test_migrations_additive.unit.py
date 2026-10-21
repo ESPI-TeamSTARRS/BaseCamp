@@ -79,3 +79,13 @@ def test_only_the_listed_status_constraints_may_be_replaced(tmp_path: Path) -> N
     )
 
     assert _upgrade_operations(migration) == ["drop_constraint"]
+
+
+def test_the_webhook_migration_adds_its_table_and_only_widens_the_reservation_status() -> None:
+    (path,) = VERSIONS.glob("0006_*.py")
+    source = path.read_text(encoding="utf-8")
+
+    assert _upgrade_operations(path) == ["create_table"]
+    assert "payment_webhook_events" in source
+    assert "uq_payment_webhook_events_paid_order_id" in source
+    assert "'reserved', 'released', 'committed'" in source
