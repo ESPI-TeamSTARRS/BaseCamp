@@ -10,7 +10,7 @@ from app.registration.infrastructure.clients.smtp_registration_mailer import (
     SmtpRegistrationMailer,
 )
 
-TOKEN = "jeton-de-test-0123456789-abcdefghijklmnopqrstu"  # noqa: S105
+TOKEN = "jeton-de-test-0123456789-abcdefghijklmnopqrstu"
 
 
 class FakeSmtp:
@@ -87,7 +87,7 @@ class TestSmtpRegistrationMailer:
         assert FakeSmtp.events == ["connect:mailpit:1025:5.0"]
 
     def test_uses_starttls_and_login_when_configured(self) -> None:
-        mailer = make_mailer(starttls=True, username="relay", password="x")  # noqa: S106
+        mailer = make_mailer(starttls=True, username="relay", password="x")
 
         mailer.send_account_exists(EmailAddress.of("camille@example.com"))
 

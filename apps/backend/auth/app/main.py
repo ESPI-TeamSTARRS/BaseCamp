@@ -10,14 +10,14 @@ from app.core.logging.structlog_business_event_logger import StructlogBusinessEv
 from app.health.application.get_readiness import GetReadinessUseCase
 from app.health.infrastructure.clients.sqlalchemy_database_probe import SqlAlchemyDatabaseProbe
 from app.health.presentation.router import router as health_router
+from app.registration.composition import wire_registration
+from app.registration.presentation.error_handlers import register_registration_error_handlers
+from app.registration.presentation.router import router as registration_router
 from app.service_token.error_handlers import (
     register_error_handlers as register_service_token_error_handlers,
 )
 from app.service_token.presentation.router import router as service_token_router
 from app.service_token.wiring import build_service_token_services
-from app.registration.composition import wire_registration
-from app.registration.presentation.error_handlers import register_registration_error_handlers
-from app.registration.presentation.router import router as registration_router
 
 DB_CONNECT_TIMEOUT_SECONDS = 2
 
