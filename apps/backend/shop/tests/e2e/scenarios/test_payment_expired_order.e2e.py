@@ -11,32 +11,28 @@ cohérent (`ledger-check`). Le worker doit viser le vrai récepteur de la boutiq
 """
 
 import json
-import os
-import shutil
-import subprocess
 import time
 import uuid
-from collections.abc import Callable
-from pathlib import Path
-from typing import Any
 
 import httpx
 import pytest
 
-BASE_URL = os.environ.get("E2E_BASE_URL", "")
-REPO_ROOT = Path(__file__).resolve().parents[6]  # COMPOSE_FILE est relatif à la racine du dépôt
-ORDERS_PATH = "/api/shop/orders"
-PRODUCT = "boussole-orientation-pro"  # 29,00 EUR, gros stock
-QUANTITY = 2
-RATE_LIMIT_PAUSE_SECONDS = 6.5  # la passerelle limite /orders a 10/min (un jeton toutes les 6 s)
-RATE_LIMIT_ATTEMPTS = 8
-DELIVERY_SECONDS = 40
-SETTLE_SECONDS = 6  # laisse au worker le temps de livrer un événement qui n'aurait pas dû exister
-LEDGER_CHECK = ["python", "-m", "app.ledgercheck.presentation.cli"]
-
-pytestmark = pytest.mark.skipif(
-    not shutil.which("docker"), reason="docker compose requis (conteneur shop)"
+from app.__tests__.payment_stack import (
+    LEDGER_CHECK,
+    ORDERS_PATH,
+    compose,
+    needs_docker,
+    new_client,
+    place_order,
+    post,
+    run,
+    shop_psql,
+    wait_for,
 )
+
+SETTLE_SECONDS = 6  # laisse au worker le temps de livrer un événement qui n'aurait pas dû exister
+
+pytestmark = needs_docker
 
 # Exécuté DANS le conteneur shop : appelle payment avec le jeton de service de la boutique.
 CONFIRM_SCRIPT = r"""
@@ -63,45 +59,11 @@ except urllib.error.HTTPError as error:
 
 @pytest.fixture
 def client() -> httpx.Client:
-    return httpx.Client(base_url=BASE_URL, timeout=15.0)
-
-
-def _post(client: httpx.Client, path: str, body: Any, headers: dict[str, str] | None = None) -> Any:
-    """POST ; sur 429 de la passerelle on patiente puis on rejoue (les routes sont idempotentes)."""
-    response = client.post(path, json=body, headers=headers)
-    for _ in range(RATE_LIMIT_ATTEMPTS):
-        if response.status_code != 429:
-            break
-        time.sleep(RATE_LIMIT_PAUSE_SECONDS)
-        response = client.post(path, json=body, headers=headers)
-    return response
-
-
-def _run(*args: str, timeout: int = 120) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603 - commande fixe, arguments des tests uniquement
-        ["docker", "compose", *args],  # noqa: S607
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        check=False,
-        cwd=REPO_ROOT,
-    )
-
-
-def _compose(*args: str) -> str:
-    result = _run(*args)
-    assert result.returncode == 0, result.stderr[-300:]
-    return result.stdout
-
-
-def _shop_psql(sql: str) -> str:
-    return _compose(
-        "exec", "-T", "postgres", "psql", "-U", "postgres", "-d", "shop", "-At", "-c", sql
-    ).strip()
+    return new_client()
 
 
 def _payment_psql(sql: str) -> str:
-    return _compose(
+    return compose(
         "exec",
         "-T",
         "payment-db",
@@ -112,63 +74,32 @@ def _payment_psql(sql: str) -> str:
     ).strip()
 
 
-def _wait_for(check: Callable[[], Any], message: str) -> Any:
-    deadline = time.monotonic() + DELIVERY_SECONDS
-    while time.monotonic() < deadline:
-        value = check()
-        if value:
-            return value
-        time.sleep(1.0)
-    pytest.fail(message)
-
-
 class _LateOrder:
     """Une commande expirée dont l'intention de paiement existe chez payment mais n'est pas confirmée."""
 
     def __init__(self, client: httpx.Client) -> None:
-        body = {
-            "email": f"e2e.tardif.{uuid.uuid4().hex[:12]}@example.org",
-            "shippingAddress": {
-                "fullName": "Client E2E",
-                "line1": "1 rue du Test",
-                "postalCode": "75001",
-                "city": "Paris",
-                "country": "FR",
-            },
-            "lines": [{"productId": PRODUCT, "quantity": QUANTITY}],
-        }
-        order = _post(client, ORDERS_PATH, body, {"Idempotency-Key": f"e2e-{uuid.uuid4().hex}"})
-        assert order.status_code == 201
-        placed = order.json()
+        placed, _ = place_order(client, "e2e.tardif")
         self.id = str(uuid.UUID(placed["id"]))  # UUID validé : aucune injection possible
         self.total = int(placed["total_cents"])
-        intent = _post(client, f"{ORDERS_PATH}/{self.id}/pay", None)
+        intent = post(client, f"{ORDERS_PATH}/{self.id}/pay", None)
         assert intent.status_code == 201
         self.intent_id = str(uuid.UUID(intent.json()["payment_intent_id"]))
         self._expire()
 
     def _expire(self) -> None:
-        _shop_psql(
+        shop_psql(
             f"update orders set created_at = now() - interval '2 hours' where id = '{self.id}'"  # noqa: S608
         )
-        _compose("exec", "-T", "shop", "python", "-m", "app.order_expiration", "--once")
+        compose("exec", "-T", "shop", "python", "-m", "app.order_expiration", "--once")
         assert self.status() == "expired"
 
     def status(self) -> str:
-        return _shop_psql(f"select status from orders where id = '{self.id}'")  # noqa: S608
+        return shop_psql(f"select status from orders where id = '{self.id}'")  # noqa: S608
 
     def pay_at_payment(self) -> int:
         """Le client lent paie quand même : confirmation directe chez payment (shop refuserait en 409)."""
-        output = _compose(
-            "exec",
-            "-T",
-            "shop",
-            "python",
-            "-c",
-            CONFIRM_SCRIPT,
-            self.intent_id,
-            f"e2e-{uuid.uuid4().hex}",
-        )
+        key = f"e2e-{uuid.uuid4().hex}"
+        output = compose("exec", "-T", "shop", "python", "-c", CONFIRM_SCRIPT, self.intent_id, key)
         return int(json.loads(output.strip().splitlines()[-1])["status"])
 
     def outbox_status(self) -> str:
@@ -196,7 +127,7 @@ class TestPaymentAfterExpiration:
         order = _LateOrder(client)
 
         assert order.pay_at_payment() == 200
-        _wait_for(
+        wait_for(
             lambda: order.outbox_status() == "rejected_by_receiver",
             "l'événement n'est pas passé rejected_by_receiver",
         )
@@ -212,9 +143,9 @@ class TestPaymentAfterExpiration:
         order = _LateOrder(client)
 
         order.pay_at_payment()
-        _wait_for(lambda: order.outbox_status() == "rejected_by_receiver", "événement non clos")
+        wait_for(lambda: order.outbox_status() == "rejected_by_receiver", "événement non clos")
 
-        reservations = _shop_psql(
+        reservations = shop_psql(
             f"select status from stock_reservations where order_id = '{order.id}'"  # noqa: S608
         ).split()
         assert reservations == ["released"]
@@ -222,6 +153,6 @@ class TestPaymentAfterExpiration:
 
 class TestLedgerStaysConsistent:
     def test_the_ledger_check_is_green_after_the_automatic_refunds(self) -> None:
-        result = _run("exec", "-T", "payment", *LEDGER_CHECK)
+        result = run("exec", "-T", "payment", *LEDGER_CHECK)
 
         assert result.returncode == 0, result.stdout[-300:]
