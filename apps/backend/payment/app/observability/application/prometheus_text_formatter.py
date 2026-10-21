@@ -88,7 +88,7 @@ class PrometheusTextFormatter:
             lines,
             "payment_webhook_events",
             "status",
-            "Événements webhook de l'outbox par statut (pending, delivered, dead).",
+            "Événements webhook de l'outbox par statut (pending, delivered, dead, rejected_by_receiver).",
             state.webhook_events_by_status,
         )
         self._gauge(

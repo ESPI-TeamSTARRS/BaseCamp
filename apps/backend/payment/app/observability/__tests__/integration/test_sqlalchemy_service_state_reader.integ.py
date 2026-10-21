@@ -47,7 +47,12 @@ class TestEmptyDatabase:
             "canceled": 0,
             "expired": 0,
         }
-        assert state.webhook_events_by_status == {"pending": 0, "delivered": 0, "dead": 0}
+        assert state.webhook_events_by_status == {
+            "pending": 0,
+            "delivered": 0,
+            "dead": 0,
+            "rejected_by_receiver": 0,
+        }
         assert state.webhook_oldest_pending_age_seconds == 0
         assert (state.captured_amount_cents, state.refunded_amount_cents) == (0, 0)
         assert state.refunded_intents == 0
@@ -94,7 +99,12 @@ class TestWebhookEvents:
 
         state = _read(engine)
 
-        assert state.webhook_events_by_status == {"pending": 2, "delivered": 1, "dead": 1}
+        assert state.webhook_events_by_status == {
+            "pending": 2,
+            "delivered": 1,
+            "dead": 1,
+            "rejected_by_receiver": 0,
+        }
         assert state.webhook_oldest_pending_age_seconds == 90
 
 

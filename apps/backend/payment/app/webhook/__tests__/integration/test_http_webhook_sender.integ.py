@@ -130,3 +130,50 @@ class TestSend:
 
         assert "hunter2" not in repr(result)
         assert "hunter2" not in repr(HttpWebhookSender(url, 1.0))
+
+
+class TestRejectionByTheReceiver:
+    @staticmethod
+    def _answer(status: int, body: bytes) -> Callable[[BaseHTTPRequestHandler], None]:
+        def respond(handler: BaseHTTPRequestHandler) -> None:
+            handler.send_response(status)
+            handler.send_header("Content-Type", "application/json")
+            handler.send_header("Content-Length", str(len(body)))
+            handler.end_headers()
+            handler.wfile.write(body)
+
+        return respond
+
+    def test_a_409_for_an_expired_order_is_a_rejection_not_a_failure(
+        self, receiver: Receiver
+    ) -> None:
+        receiver.respond = self._answer(409, b'{"status":"rejected","reason":"order_expired"}')
+
+        result = HttpWebhookSender(receiver.url, 2.0).send(uuid4(), BODY, SIGNATURE)
+
+        assert (result.delivered, result.rejected) == (False, True)
+        assert (result.reason, result.status_code) == ("order_expired", 409)
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            b"",
+            b"pas du json",
+            b'{"status":"rejected","reason":"autre"}',
+            b'{"reason":["order_expired"]}',
+        ],
+    )
+    def test_any_other_409_stays_a_retryable_failure(self, receiver: Receiver, body: bytes) -> None:
+        receiver.respond = self._answer(409, body)
+
+        result = HttpWebhookSender(receiver.url, 2.0).send(uuid4(), BODY, SIGNATURE)
+
+        assert (result.delivered, result.rejected) == (False, False)
+        assert (result.reason, result.status_code) == ("http_409", 409)
+
+    def test_a_5xx_never_looks_like_a_rejection(self, receiver: Receiver) -> None:
+        receiver.respond = self._answer(503, b'{"status":"rejected","reason":"order_expired"}')
+
+        result = HttpWebhookSender(receiver.url, 2.0).send(uuid4(), BODY, SIGNATURE)
+
+        assert (result.rejected, result.reason) == (False, "http_503")

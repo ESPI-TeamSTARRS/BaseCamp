@@ -142,3 +142,24 @@ class TestWorkersDoNotOverlap:
         assert claimed_two is not None
         assert {claimed_one.id, claimed_two.id} == {first.id, second.id}
         assert nothing_left is None
+
+
+class TestRejectedByReceiverIsPersisted:
+    def test_a_rejected_event_is_saved_closed_and_never_claimed_again(self, engine: Engine) -> None:
+        event = _event(engine, "CMD-REJ")
+        now = datetime.now(UTC)
+
+        with SqlAlchemyDeliveryUnitOfWork(engine).begin() as session:
+            claimed = session.claim_next_due(now)
+            assert claimed is not None
+            session.save(claimed.mark_rejected(now, "order_expired"))
+        with SqlAlchemyDeliveryUnitOfWork(engine).begin() as session:
+            again = session.claim_next_due(now + timedelta(hours=1))
+
+        with engine.begin() as connection:
+            row = connection.execute(
+                text("SELECT status, attempts, last_error FROM outbox WHERE id = :id"),
+                {"id": event.id},
+            ).one()
+        assert tuple(row) == ("rejected_by_receiver", 1, "order_expired")
+        assert again is None

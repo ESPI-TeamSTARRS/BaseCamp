@@ -83,3 +83,21 @@ class TestRequeue:
 
         with pytest.raises(ValueError, match="dead"):
             event.requeue(NOW)
+
+
+class TestRejectedByReceiver:
+    def test_a_rejection_is_final_counts_the_attempt_and_keeps_the_reason_code(self) -> None:
+        later = NOW + timedelta(seconds=3)
+
+        event = _event().mark_rejected(later, "order_expired")
+
+        assert event.status is OutboxStatus.REJECTED_BY_RECEIVER
+        assert (event.attempts, event.last_error, event.delivered_at) == (1, "order_expired", None)
+
+    def test_a_message_instead_of_a_code_is_refused(self) -> None:
+        with pytest.raises(ValueError, match="snake_case"):
+            _event().mark_rejected(NOW, "Commande expirée !")
+
+    def test_a_rejected_event_cannot_be_requeued_like_a_dead_one(self) -> None:
+        with pytest.raises(ValueError, match="dead"):
+            _event().mark_rejected(NOW, "order_expired").requeue(NOW)

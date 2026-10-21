@@ -10,34 +10,29 @@ la boutique (`http://shop:8000/webhooks/payment`) avec des relances rapprochées
 il doit rester cohérent.
 """
 
-import json
-import os
-import shutil
-import subprocess
 import time
 import uuid
-from collections.abc import Callable
-from pathlib import Path
-from typing import Any
 
 import httpx
 import pytest
 
-BASE_URL = os.environ.get("E2E_BASE_URL", "")
-REPO_ROOT = Path(__file__).resolve().parents[6]  # COMPOSE_FILE est relatif à la racine du dépôt
-ORDERS_PATH = "/api/shop/orders"
-PRODUCT = "boussole-orientation-pro"  # 29,00 EUR, gros stock
-QUANTITY = 2
-PARTIAL_CENTS = 1000
-RATE_LIMIT_PAUSE_SECONDS = 6.5  # la passerelle limite /orders a 10/min (un jeton toutes les 6 s)
-RATE_LIMIT_ATTEMPTS = 8
-DELIVERY_SECONDS = 40
-SETTLE_SECONDS = 5  # laisse au worker le temps de livrer un événement qui n'aurait pas dû exister
-LEDGER_CHECK = ["python", "-m", "app.ledgercheck.presentation.cli"]
-
-pytestmark = pytest.mark.skipif(
-    not shutil.which("docker"), reason="docker compose requis (conteneur shop)"
+from app.__tests__.payment_stack import (
+    LEDGER_CHECK,
+    ORDERS_PATH,
+    in_shop,
+    needs_docker,
+    new_client,
+    place_order,
+    post,
+    run,
+    shop_psql,
+    wait_for,
 )
+
+PARTIAL_CENTS = 1000
+SETTLE_SECONDS = 5  # laisse au worker le temps de livrer un événement qui n'aurait pas dû exister
+
+pytestmark = needs_docker
 
 # Exécuté DANS le conteneur shop : appelle payment avec le jeton de service de la boutique.
 REFUND_SCRIPT = r"""
@@ -101,109 +96,46 @@ print(json.dumps({
 
 @pytest.fixture
 def client() -> httpx.Client:
-    return httpx.Client(base_url=BASE_URL, timeout=15.0)
-
-
-def _post(client: httpx.Client, path: str, body: Any, headers: dict[str, str] | None = None) -> Any:
-    """POST ; sur 429 de la passerelle on patiente puis on rejoue (les routes sont idempotentes)."""
-    response = client.post(path, json=body, headers=headers)
-    for _ in range(RATE_LIMIT_ATTEMPTS):
-        if response.status_code != 429:
-            break
-        time.sleep(RATE_LIMIT_PAUSE_SECONDS)
-        response = client.post(path, json=body, headers=headers)
-    return response
-
-
-def _run(*args: str, timeout: int = 120) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603 - commande fixe, arguments des tests uniquement
-        ["docker", "compose", *args],  # noqa: S607
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        check=False,
-        cwd=REPO_ROOT,
-    )
-
-
-def _compose(*args: str) -> str:
-    result = _run(*args)
-    assert result.returncode == 0, result.stderr[-300:]
-    return result.stdout
-
-
-def _psql(sql: str) -> str:
-    return _compose(
-        "exec", "-T", "postgres", "psql", "-U", "postgres", "-d", "shop", "-At", "-c", sql
-    ).strip()
-
-
-def _in_shop(script: str, *args: str) -> dict[str, Any]:
-    output = _compose("exec", "-T", "shop", "python", "-c", script, *args)
-    return dict(json.loads(output.strip().splitlines()[-1]))
-
-
-def _wait_for(check: Callable[[], Any], message: str) -> Any:
-    deadline = time.monotonic() + DELIVERY_SECONDS
-    while time.monotonic() < deadline:
-        value = check()
-        if value:
-            return value
-        time.sleep(1.0)
-    pytest.fail(message)
+    return new_client()
 
 
 class _PaidOrder:
     """Une commande payée par la passerelle, dont le webhook `payment.succeeded` est arrivé."""
 
     def __init__(self, client: httpx.Client) -> None:
-        self.email = f"e2e.remboursement.{uuid.uuid4().hex[:12]}@example.org"
-        body = {
-            "email": self.email,
-            "shippingAddress": {
-                "fullName": "Client E2E",
-                "line1": "1 rue du Test",
-                "postalCode": "75001",
-                "city": "Paris",
-                "country": "FR",
-            },
-            "lines": [{"productId": PRODUCT, "quantity": QUANTITY}],
-        }
-        order = _post(client, ORDERS_PATH, body, {"Idempotency-Key": f"e2e-{uuid.uuid4().hex}"})
-        assert order.status_code == 201
-        placed = order.json()
+        placed, self.email = place_order(client, "e2e.remboursement")
         self.id = str(uuid.UUID(placed["id"]))  # UUID validé : aucune injection possible
         self.number = str(placed["number"])
         self.total = int(placed["total_cents"])
         pay = f"{ORDERS_PATH}/{self.id}/pay"
-        intent = _post(client, pay, None)
+        intent = post(client, pay, None)
         assert intent.status_code == 201
         self.intent_id = str(uuid.UUID(intent.json()["payment_intent_id"]))
-        paid = _post(client, f"{pay}/confirm", {"payment_method": "pm_test_success"})
+        paid = post(client, f"{pay}/confirm", {"payment_method": "pm_test_success"})
         assert paid.status_code == 200 and paid.json()["order_status"] == "paid"
-        _wait_for(self._payment_webhook_received, "le webhook payment.succeeded n'est pas arrivé")
+        wait_for(self._payment_webhook_received, "le webhook payment.succeeded n'est pas arrivé")
 
     def _payment_webhook_received(self) -> bool:
-        count = _psql(
+        count = shop_psql(
             f"select count(*) from payment_webhook_events where paid_order_id = '{self.id}'"  # noqa: S608
         )
         return count == "1"
 
     def refund(self, amount: int, key: str | None = None) -> int:
-        result = _in_shop(
+        result = in_shop(
             REFUND_SCRIPT, self.intent_id, str(amount), key or f"e2e-{uuid.uuid4().hex}"
         )
         return int(result["status"])
 
     def status(self) -> str:
-        return _psql(f"select status from orders where id = '{self.id}'")  # noqa: S608
+        return shop_psql(f"select status from orders where id = '{self.id}'")  # noqa: S608
 
     def refunded(self) -> int:
-        value = _psql(f"select refunded_cents from order_refunds where order_id = '{self.id}'")  # noqa: S608
+        value = shop_psql(f"select refunded_cents from order_refunds where order_id = '{self.id}'")  # noqa: S608
         return int(value) if value else 0
 
     def lookup_status(self, client: httpx.Client) -> str:
-        response = _post(
+        response = post(
             client, f"{ORDERS_PATH}/lookup", {"orderNumber": self.number, "email": self.email}
         )
         return str(response.json().get("status"))
@@ -214,13 +146,11 @@ class TestRefundJourney:
         order = _PaidOrder(client)
 
         assert order.refund(PARTIAL_CENTS) == 201
-        _wait_for(
-            lambda: order.refunded() == PARTIAL_CENTS, "le remboursement partiel n'arrive pas"
-        )
+        wait_for(lambda: order.refunded() == PARTIAL_CENTS, "le remboursement partiel n'arrive pas")
         assert order.status() == "paid"
 
         assert order.refund(order.total - PARTIAL_CENTS) == 201
-        _wait_for(lambda: order.status() == "refunded", "la commande n'est pas remboursée")
+        wait_for(lambda: order.status() == "refunded", "la commande n'est pas remboursée")
         assert order.refunded() == order.total
         assert order.lookup_status(client) == "refunded"
 
@@ -229,7 +159,7 @@ class TestRefundJourney:
     ) -> None:
         order = _PaidOrder(client)
         assert order.refund(order.total) == 201
-        _wait_for(lambda: order.status() == "refunded", "la commande n'est pas remboursée")
+        wait_for(lambda: order.status() == "refunded", "la commande n'est pas remboursée")
 
         second = order.refund(order.total)
         time.sleep(SETTLE_SECONDS)
@@ -245,7 +175,7 @@ class TestRefundJourney:
 
         first = order.refund(PARTIAL_CENTS, key)
         replay = order.refund(PARTIAL_CENTS, key)
-        _wait_for(lambda: order.refunded() == PARTIAL_CENTS, "le remboursement n'arrive pas")
+        wait_for(lambda: order.refunded() == PARTIAL_CENTS, "le remboursement n'arrive pas")
         time.sleep(SETTLE_SECONDS)
 
         assert (first, replay) == (201, 200)
@@ -258,7 +188,7 @@ class TestForgedRefundEvents:
     ) -> None:
         order = _PaidOrder(client)
 
-        results = _in_shop(FORGE_SCRIPT, str(uuid.uuid4()), order.number, "500")
+        results = in_shop(FORGE_SCRIPT, str(uuid.uuid4()), order.number, "500")
 
         assert results["first"] == [200, {"status": "applied"}]
         assert results["replay"] == [200, {"status": "replayed"}]
@@ -270,7 +200,7 @@ class TestForgedRefundEvents:
     ) -> None:
         order = _PaidOrder(client)
 
-        results = _in_shop(FORGE_SCRIPT, str(uuid.uuid4()), order.number, str(order.total + 1))
+        results = in_shop(FORGE_SCRIPT, str(uuid.uuid4()), order.number, str(order.total + 1))
 
         assert results["first"] == [200, {"status": "ignored"}]
         assert (order.status(), order.refunded()) == ("paid", 0)
@@ -278,6 +208,6 @@ class TestForgedRefundEvents:
 
 class TestLedgerStaysConsistent:
     def test_the_ledger_check_is_green_after_the_scenario(self) -> None:
-        result = _run("exec", "-T", "payment", *LEDGER_CHECK)
+        result = run("exec", "-T", "payment", *LEDGER_CHECK)
 
         assert result.returncode == 0, result.stdout[-300:]

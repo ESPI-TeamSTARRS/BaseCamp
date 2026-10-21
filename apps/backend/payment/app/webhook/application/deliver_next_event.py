@@ -6,9 +6,12 @@ from app.core.events.business_event_logger import BusinessEventLogger
 from app.webhook.application import webhook_event_names as names
 from app.webhook.domain.entities.outbox_event import OutboxEvent
 from app.webhook.domain.enums.outbox_status import OutboxStatus
+from app.webhook.domain.enums.webhook_event_type import WebhookEventType
 from app.webhook.domain.interfaces.delivery_unit_of_work import DeliveryUnitOfWork
+from app.webhook.domain.interfaces.expired_order_refunder import ExpiredOrderRefunder
 from app.webhook.domain.interfaces.webhook_sender import WebhookSender
 from app.webhook.domain.services.webhook_signer import WebhookSigner
+from app.webhook.domain.value_objects.delivery_result import DeliveryResult
 from app.webhook.domain.value_objects.retry_policy import RetryPolicy
 
 
@@ -30,6 +33,7 @@ class DeliverNextEventUseCase:
         policy: RetryPolicy,
         clock: Callable[[], datetime],
         events: BusinessEventLogger,
+        refunder: ExpiredOrderRefunder | None = None,
     ) -> None:
         self._unit_of_work = unit_of_work
         self._sender = sender
@@ -37,6 +41,7 @@ class DeliverNextEventUseCase:
         self._policy = policy
         self._clock = clock
         self._events = events
+        self._refunder = refunder
 
     def execute(self) -> bool:
         """Vrai si un événement échu a été traité (livré ou reprogrammé), faux s'il n'y en a pas."""
@@ -47,13 +52,27 @@ class DeliverNextEventUseCase:
             header = self._signer.header(int(self._clock().timestamp()), event.body)
             result = self._sender.send(event.id, event.body, header)
             now = self._clock()
-            if result.delivered:
-                settled = event.mark_delivered(now)
-            else:
-                settled = event.mark_failed(now, result.reason or "unknown_error", self._policy)
+            settled = self._settle(event, result, now)
             session.save(settled)
         self._log(settled, result.status_code)
         return True
+
+    def _settle(self, event: OutboxEvent, result: DeliveryResult, now: datetime) -> OutboxEvent:
+        if result.delivered:
+            return event.mark_delivered(now)
+        reason = result.reason or "unknown_error"
+        if result.rejected and self._refunder is not None and self._is_refundable(event):
+            try:
+                self._refunder.refund_in_full(event)
+            except Exception:
+                return event.mark_failed(now, "auto_refund_failed", self._policy)
+            return event.mark_rejected(now, reason)
+        return event.mark_failed(now, reason, self._policy)
+
+    @staticmethod
+    def _is_refundable(event: OutboxEvent) -> bool:
+        """Seul un paiement réussi refusé par la boutique se rembourse (jamais un échec ni un remboursement)."""
+        return event.event_type is WebhookEventType.PAYMENT_SUCCEEDED
 
     def _log(self, event: OutboxEvent, status_code: int | None) -> None:
         resource = {"resource_type": "webhook_event", "resource_id": str(event.id)}
@@ -65,6 +84,16 @@ class DeliverNextEventUseCase:
             attributes = {**common, "attempt": event.attempts, "status_code": status_code}
             self._events.log(
                 BusinessEvent.success(names.WEBHOOK_DELIVERED, attributes=attributes, **resource)
+            )
+        elif event.status is OutboxStatus.REJECTED_BY_RECEIVER:
+            attributes = {**common, "attempt": event.attempts, "status_code": status_code}
+            self._events.log(
+                BusinessEvent.error(
+                    names.WEBHOOK_REJECTED_BY_RECEIVER,
+                    event.last_error or "rejected_by_receiver",
+                    attributes=attributes,
+                    **resource,
+                )
             )
         elif event.status is OutboxStatus.DEAD:
             attributes = {**common, "attempts": event.attempts, "last_error": event.last_error}

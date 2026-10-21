@@ -123,6 +123,28 @@ class TestAcceptedWebhook:
         assert client.sender.sent == []
 
 
+class TestPaymentAfterExpiration:
+    async def test_a_payment_for_an_expired_order_is_answered_409_with_its_reason(self) -> None:
+        client = _Client(store_with(OrderStatus.EXPIRED))
+
+        response = await client.post(event_body())
+
+        assert response.status_code == 409
+        assert response.json() == {"status": "rejected", "reason": "order_expired"}
+        assert client.store.targets[REFERENCE].order_status is OrderStatus.EXPIRED
+        assert client.sender.sent == []
+        ignored = [e for e in client.events.events if e.event == "payment.webhook_ignored"]
+        assert [e.reason for e in ignored] == ["order_expired"]
+
+    async def test_the_replay_of_a_rejected_payment_is_answered_409_again(self) -> None:
+        client = _Client(store_with(OrderStatus.EXPIRED))
+        await client.post(event_body())
+
+        response = await client.post(event_body())
+
+        assert (response.status_code, response.json()["reason"]) == (409, "order_expired")
+
+
 class TestRejectedWebhook:
     async def test_a_missing_or_invalid_signature_returns_401_and_changes_nothing(self) -> None:
         client = _Client()

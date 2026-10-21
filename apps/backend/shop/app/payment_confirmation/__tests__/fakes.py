@@ -78,6 +78,10 @@ class _Events(WebhookEvents):
     def exists(self, event_id: str) -> bool:
         return event_id in self._store.events
 
+    def reason_of(self, event_id: str) -> str | None:
+        recorded = self._store.events.get(event_id)
+        return None if recorded is None else recorded[2]
+
     def is_order_confirmed(self, order_id: str) -> bool:
         return order_id in self._store.confirmed_orders
 

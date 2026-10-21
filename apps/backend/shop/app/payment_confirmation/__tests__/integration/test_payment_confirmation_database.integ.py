@@ -274,9 +274,12 @@ class TestEventsThatMustNotPay:
 
         receipt = shop.webhook(reference, total)
 
-        assert (receipt.outcome, receipt.reason) == (WebhookOutcome.IGNORED, "order_expired")
+        assert (receipt.outcome, receipt.reason) == (WebhookOutcome.REJECTED, "order_expired")
         assert shop.order_status(order_id) == "expired"
         assert (shop.stock(), shop.reservations(order_id)) == (10, ["released"])
+        assert shop.stored_events() == {EVENT_1: ("ignored", None)}
+        replay = shop.webhook(reference, total)
+        assert (replay.outcome, replay.reason) == (WebhookOutcome.REJECTED, "order_expired")
 
     def test_a_declined_payment_marks_the_attempt_failed_and_leaves_the_order_payable(
         self, shop: _Shop

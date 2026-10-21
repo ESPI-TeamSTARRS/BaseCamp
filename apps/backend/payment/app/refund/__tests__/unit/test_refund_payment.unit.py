@@ -1,8 +1,6 @@
-from collections.abc import Iterator
-from contextlib import contextmanager
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 
@@ -13,65 +11,21 @@ from app.intent.domain.enums.currency import Currency
 from app.intent.domain.enums.intent_status import IntentStatus
 from app.intent.domain.exceptions.payment_intent_not_found_error import PaymentIntentNotFoundError
 from app.intent.domain.value_objects.amount import Amount
-from app.ledger.domain.entities.ledger_transaction import LedgerTransaction
 from app.ledger.domain.enums.entry_direction import EntryDirection
 from app.ledger.domain.enums.ledger_account import LedgerAccount
+from app.refund.__tests__.support import InMemoryStore, InMemoryUnitOfWork
 from app.refund.application import refund_event_names as names
 from app.refund.application.commands.refund_payment_command import RefundPaymentCommand
 from app.refund.application.refund_payment import RefundPaymentUseCase
-from app.refund.domain.entities.refund import Refund
 from app.refund.domain.exceptions.intent_not_refundable_error import IntentNotRefundableError
 from app.refund.domain.exceptions.refund_exceeds_captured_error import RefundExceedsCapturedError
 from app.refund.domain.exceptions.refund_key_reused_error import RefundKeyReusedError
-from app.refund.domain.interfaces.refund_session import RefundSession
-from app.refund.domain.interfaces.refund_unit_of_work import RefundUnitOfWork
 from app.webhook.application import webhook_event_names as webhook_names
-from app.webhook.domain.entities.outbox_event import OutboxEvent
 from app.webhook.domain.enums.outbox_status import OutboxStatus
 from app.webhook.domain.enums.webhook_event_type import WebhookEventType
 from app.webhook.domain.services.refund_event_factory import RefundEventFactory
 
 NOW = datetime(2026, 10, 21, 9, 0, tzinfo=UTC)
-
-
-class InMemoryStore:
-    def __init__(self) -> None:
-        self.intents: dict[UUID, PaymentIntent] = {}
-        self.refunds: dict[tuple[str, str], Refund] = {}
-        self.ledger: list[LedgerTransaction] = []
-        self.outbox: list[OutboxEvent] = []
-
-
-class InMemorySession(RefundSession):
-    def __init__(self, store: InMemoryStore) -> None:
-        self._store = store
-
-    def lock_intent(self, intent_id: UUID) -> PaymentIntent | None:
-        return self._store.intents.get(intent_id)
-
-    def find_refund(self, caller: str, key: str) -> Refund | None:
-        return self._store.refunds.get((caller, key))
-
-    def save(
-        self,
-        intent: PaymentIntent,
-        refund: Refund,
-        ledger: LedgerTransaction,
-        outbox_event: OutboxEvent,
-    ) -> None:
-        self._store.intents[intent.id] = intent
-        self._store.refunds[(refund.caller, refund.key)] = refund
-        self._store.ledger.append(ledger)
-        self._store.outbox.append(outbox_event)
-
-
-class InMemoryUnitOfWork(RefundUnitOfWork):
-    def __init__(self, store: InMemoryStore) -> None:
-        self._store = store
-
-    @contextmanager
-    def begin(self) -> Iterator[RefundSession]:
-        yield InMemorySession(self._store)
 
 
 class Fixture:

@@ -22,6 +22,11 @@ class SqlAlchemyWebhookEvents(WebhookEvents):
             is not None
         )
 
+    def reason_of(self, event_id: str) -> str | None:
+        return self._session.scalars(
+            select(PaymentWebhookEventModel.reason).where(PaymentWebhookEventModel.id == event_id)
+        ).first()
+
     def is_order_confirmed(self, order_id: str) -> bool:
         return (
             self._session.scalars(

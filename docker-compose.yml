@@ -190,7 +190,7 @@ services:
   payment-worker:
     <<: *hardening
     build: ./apps/backend/payment
-    image: basecamp-payment
+    image: ${COMPOSE_PROJECT_NAME:-basecamp}-payment
     command: ["python", "-m", "app.webhook.presentation.worker_main"]
     environment:
       <<: *payment-env

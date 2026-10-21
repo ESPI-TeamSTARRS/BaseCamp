@@ -71,6 +71,17 @@ class OutboxEvent:
             next_attempt_at=now + policy.delay_after(attempts),
         )
 
+    def mark_rejected(self, now: datetime, reason_code: str) -> "OutboxEvent":
+        """Refus définitif de la boutique (ex. paiement après expiration de la commande) : pas de relance."""
+        if not _ERROR_CODE.match(reason_code):
+            raise ValueError("last_error must be a snake_case code, not a message")
+        return replace(
+            self,
+            status=OutboxStatus.REJECTED_BY_RECEIVER,
+            attempts=self.attempts + 1,
+            last_error=reason_code,
+        )
+
     def requeue(self, now: datetime) -> "OutboxEvent":
         """Relance d'exploitation d'un événement `dead` : même identifiant, nouveau budget."""
         if self.status is not OutboxStatus.DEAD:
