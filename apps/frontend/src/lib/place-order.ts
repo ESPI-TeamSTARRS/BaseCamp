@@ -8,11 +8,13 @@ const GENERIC_INVALID_MESSAGE =
   'Votre commande ne peut pas être enregistrée. Vérifiez les informations saisies.';
 
 const ApiOrderSchema = z.object({
+  id: z.string(),
   number: z.string(),
   total_cents: z.number().int(),
 });
 
 export interface PlacedOrder {
+  id: string;
   number: string;
   totalEur: number;
   /** true : la même clé a été rejouée, la commande existait déjà (pas de doublon). */
@@ -71,7 +73,12 @@ export async function placeOrder(
     const raw = ApiOrderSchema.parse(await response.json());
     return {
       ok: true,
-      order: { number: raw.number, totalEur: raw.total_cents / 100, replayed: response.status === 200 },
+      order: {
+        id: raw.id,
+        number: raw.number,
+        totalEur: raw.total_cents / 100,
+        replayed: response.status === 200,
+      },
     };
   } catch {
     return { ok: false, reason: 'unavailable' };

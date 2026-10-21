@@ -24,6 +24,14 @@ class RecordingGateway(PaymentGateway):
         self.calls.append((order_reference, amount_cents, currency, idempotency_key))
         return PaymentIntentRef("intent-1", "requires_confirmation", amount_cents, currency)
 
+    def get_intent(self, intent_id: str) -> PaymentIntentRef:
+        raise NotImplementedError
+
+    def confirm_intent(
+        self, intent_id: str, payment_method: str, idempotency_key: str
+    ) -> PaymentIntentRef:
+        raise NotImplementedError
+
 
 EVENTS = InMemoryBusinessEventLogger()
 

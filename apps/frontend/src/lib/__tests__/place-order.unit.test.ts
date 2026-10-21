@@ -107,7 +107,10 @@ describe('placeOrder', () => {
     const fetchImpl = reply(201, apiOrder);
     const result = await placeOrder(lines, form, 'cle-12345678', fetchImpl);
 
-    expect(result).toEqual({ ok: true, order: { number: 'BC-ABCDEFGHJK', totalEur: 83.9, replayed: false } });
+    expect(result).toEqual({
+      ok: true,
+      order: { id: 'o-1', number: 'BC-ABCDEFGHJK', totalEur: 83.9, replayed: false },
+    });
     const [url, init] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(url).toBe('/api/shop/orders');
     expect(init.method).toBe('POST');

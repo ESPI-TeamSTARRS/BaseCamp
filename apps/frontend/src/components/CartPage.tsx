@@ -2,6 +2,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Minus, Plus } from 'lucide-react';
 import { useCart } from '../context/CartContext';
@@ -29,28 +30,12 @@ const STOCK_MESSAGE =
   "Un article n'est plus disponible en quantité suffisante. Ajustez les quantités signalées puis réessayez.";
 const UNAVAILABLE_MESSAGE =
   'Le service de commande est momentanément indisponible. Réessayez dans un instant.';
-const PAYMENT_MESSAGE =
-  "Votre commande est enregistrée, mais l'étape de paiement n'a pas pu démarrer. Cliquez de nouveau pour réessayer : aucune commande en double ne sera créée.";
-
 const inputClass =
   'w-full rounded-lg border border-granite/20 bg-white px-3 py-2.5 text-sm text-granite focus:border-forest focus:outline-none focus:ring-2 focus:ring-forest/30';
 
-async function startPayment(lines: { productId: string; quantity: number }[]): Promise<string | null> {
-  try {
-    const response = await fetch('/api/checkout', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ lines }),
-    });
-    const data: { url?: string } = await response.json();
-    return typeof data.url === 'string' ? data.url : null;
-  } catch {
-    return null;
-  }
-}
-
 export function CartPage() {
-  const { lines, items, quote, quoteStatus, setQuantity, removeItem } = useCart();
+  const router = useRouter();
+  const { lines, quote, quoteStatus, setQuantity, removeItem, items } = useCart();
   const [form, setForm] = useState<OrderForm>(EMPTY_FORM);
   const [errors, setErrors] = useState<OrderFormErrors>({});
   const [phase, setPhase] = useState<Phase>('idle');
@@ -89,15 +74,7 @@ export function CartPage() {
       return;
     }
     setPhase('redirecting');
-    const url = await startPayment(
-      items.map((item) => ({ productId: item.product.id, quantity: item.quantity }))
-    );
-    if (url === null) {
-      setPhase('idle');
-      setMessage(PAYMENT_MESSAGE);
-      return;
-    }
-    window.location.href = url;
+    router.push(`/paiement/${result.order.id}`);
   }
 
   if (items.length === 0) {

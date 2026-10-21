@@ -12,8 +12,6 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'lcov'],
       include: [
-        'src/lib/rate-limit.ts',
-        'src/lib/validations.ts',
         'src/lib/seo.ts',
         'src/lib/shop-api.ts',
         'src/lib/cart-lines.ts',
@@ -28,6 +26,7 @@ export default defineConfig({
         'src/lib/login-flow.ts',
         'src/lib/session-store.ts',
         'src/lib/order-lookup.ts',
+        'src/lib/order-payment.ts',
       ],
       thresholds: { lines: 80, functions: 80, branches: 80, statements: 80 },
     },

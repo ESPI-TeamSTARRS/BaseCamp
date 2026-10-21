@@ -4,9 +4,6 @@ const envSchema = z.object({
   NEXT_PUBLIC_SITE_URL: z.string().url(),
   // URL interne de l'API shop : lue cote serveur uniquement (jamais prefixee NEXT_PUBLIC_).
   SHOP_API_URL: z.string().url(),
-  STRIPE_SECRET_KEY: z.string().min(1, 'STRIPE_SECRET_KEY manquante'),
-  NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: z.string().min(1, 'NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY manquante'),
-  STRIPE_WEBHOOK_SECRET: z.string().min(1, 'STRIPE_WEBHOOK_SECRET manquante'),
   RESEND_API_KEY: z.string().min(1, 'RESEND_API_KEY manquante'),
   RESEND_FROM_EMAIL: z.string().email(),
 });

@@ -29,6 +29,14 @@ class FakeGateway(PaymentGateway):
         self.amounts.append(amount_cents)
         return PaymentIntentRef("intent-1", "requires_confirmation", amount_cents, currency)
 
+    def get_intent(self, intent_id: str) -> PaymentIntentRef:
+        raise NotImplementedError
+
+    def confirm_intent(
+        self, intent_id: str, payment_method: str, idempotency_key: str
+    ) -> PaymentIntentRef:
+        raise NotImplementedError
+
 
 async def _post(
     gateway: FakeGateway, body: Any = BODY, headers: dict[str, str] | None = None
