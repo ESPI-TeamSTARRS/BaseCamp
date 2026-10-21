@@ -86,7 +86,11 @@ class TestConfirmOrderPayment:
 
     @pytest.mark.parametrize(
         ("status", "reason"),
-        [(OrderStatus.PAID, "order_already_paid"), (OrderStatus.EXPIRED, "order_expired")],
+        [
+            (OrderStatus.PAID, "order_already_paid"),
+            (OrderStatus.EXPIRED, "order_expired"),
+            (OrderStatus.REFUNDED, "order_already_paid"),
+        ],
     )
     def test_a_payment_on_a_paid_or_expired_order_is_rejected_and_logged(
         self, harness: _Harness, status: OrderStatus, reason: str

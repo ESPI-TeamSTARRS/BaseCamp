@@ -21,7 +21,11 @@ from app.payment_request.domain.entities.payment_attempt import (
 from app.payment_request.domain.enums.payment_method import PaymentMethod
 from app.payment_request.domain.interfaces.payment_unit_of_work import PaymentUnitOfWork
 
-_REFUSALS = {OrderStatus.PAID: "order_already_paid", OrderStatus.EXPIRED: "order_expired"}
+_REFUSALS = {
+    OrderStatus.PAID: "order_already_paid",
+    OrderStatus.EXPIRED: "order_expired",
+    OrderStatus.REFUNDED: "order_already_paid",
+}
 
 
 class ConfirmOrderPaymentUseCase:
