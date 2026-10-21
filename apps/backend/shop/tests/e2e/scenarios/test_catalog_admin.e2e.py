@@ -39,10 +39,12 @@ def _b64(raw: bytes) -> str:
 def _token(roles: list[str], amr: list[str]) -> str:
     """Jeton au format d'`auth`, signé par sa clé de développement (kid = empreinte RFC 7638)."""
     from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
     pem = KEY_PATH.read_bytes()
     private = serialization.load_pem_private_key(pem, password=None)
-    x = _b64(private.public_key().public_bytes_raw())  # type: ignore[attr-defined]
+    assert isinstance(private, Ed25519PrivateKey)
+    x = _b64(private.public_key().public_bytes_raw())
     canonical = json.dumps({"crv": "Ed25519", "kty": "OKP", "x": x}, separators=(",", ":"))
     kid = _b64(hashlib.sha256(canonical.encode()).digest())
     now = int(time.time())
