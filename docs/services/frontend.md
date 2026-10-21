@@ -13,6 +13,8 @@ Pages `/compte/inscription` (formulaire, états d'erreur sans détail technique)
 
 Réinitialisation du mot de passe : pages `/compte/mot-de-passe-oublie` (saisie de l'adresse; le message de succès est le même que le compte existe ou non) et `/compte/reinitialiser` (jeton dans le fragment `#token=`, retiré de la barre d'adresse avant tout appel; mot de passe et confirmation, mêmes règles que l'inscription, refus serveur affiché sur le champ; lien invalide, expiré ou déjà utilisé : un seul message). Appels à `/api/auth/password/forgot` et `/api/auth/password/reset`; logique testée dans `src/lib/account-api.ts` et `src/lib/password-reset-flow.ts`, composants `ForgotPasswordForm` et `ResetPasswordForm`.
 
+Page `/compte/connexion` : `POST /api/auth/login` par la passerelle (`src/lib/login-api.ts`, `src/lib/login-flow.ts`, composant `LoginForm`). Un refus affiche toujours « Email ou mot de passe incorrect. », sans distinguer la cause. Le jeton d'accès est gardé **uniquement en mémoire** du module `src/lib/session-store.ts` (jamais `localStorage`, `sessionStorage` ni un cookie lisible par le script; un rechargement complet de la page l'efface); le jeton de rafraîchissement est un cookie `HttpOnly` que le script ne voit pas.
+
 ## Organisation
 `src/app` (routes), `src/components`, `src/context` (panier), `src/lib` (utilitaires métier), `src/types`.
 

@@ -26,6 +26,7 @@ Un reverse proxy (Traefik) est le seul point d'entrée publié. Il route les req
 | `/api/shop/*` | `shop` |
 | `/media/*` | images du catalogue (bucket `product-images`, lecture seule) |
 | `/api/auth/*` | `auth` |
+| `/.well-known/jwks.json` | `auth` (clés publiques de vérification des jetons, lecture seule) |
 | `/api/payment/*` | `payment` (accès restreint) |
 
 La passerelle porte les préoccupations transverses : TLS, limitation de débit par IP réelle, taille maximale des corps de requête, délais d'expiration, en-têtes de sécurité et filtrage applicatif. Les services restent sur un réseau interne et ne sont jamais publiés directement. Les appels entre services (par exemple `shop` vers `payment`) passent par le réseau interne avec un jeton de service.
