@@ -15,7 +15,9 @@ class SqlAlchemyCartProductReader(CartProductReader):
         self._engine = engine
 
     def find_by_ids(self, product_ids: Sequence[str]) -> list[CartProduct]:
-        statement = select(CartProductModel).where(CartProductModel.id.in_(list(product_ids)))
+        statement = select(CartProductModel).where(
+            CartProductModel.id.in_(list(product_ids)), CartProductModel.archived_at.is_(None)
+        )
         with Session(self._engine) as session:
             return [
                 CartProduct(id=row.id, name=row.name, price_cents=row.price_cents, stock=row.stock)

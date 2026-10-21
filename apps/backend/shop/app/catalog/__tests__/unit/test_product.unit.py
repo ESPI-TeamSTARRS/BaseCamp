@@ -22,9 +22,10 @@ class TestProductAvailability:
 
 
 class TestProductInvariants:
-    def test_rejects_non_positive_price(self) -> None:
+    def test_rejects_a_negative_price_but_accepts_zero(self) -> None:
         with pytest.raises(ValueError):
-            make_product(price_cents=0)
+            make_product(price_cents=-1)
+        assert make_product(price_cents=0).price_cents == 0
 
     def test_rejects_negative_stock(self) -> None:
         with pytest.raises(ValueError):
