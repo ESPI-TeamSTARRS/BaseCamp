@@ -14,10 +14,6 @@ from pathlib import Path
 
 import pytest
 from alembic.config import Config
-from app.confirmation.infrastructure.repositories.sqlalchemy_confirmation_unit_of_work import (
-    SqlAlchemyConfirmationUnitOfWork,
-)
-from app.ledger.infrastructure.models.ledger_entry_model import LedgerEntryModel
 from sqlalchemy import Engine, create_engine, func, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError
@@ -32,6 +28,9 @@ from app.confirmation.domain.exceptions.intent_not_confirmable_error import (
     IntentNotConfirmableError,
 )
 from app.confirmation.domain.interfaces.payment_provider import PaymentProvider
+from app.confirmation.infrastructure.repositories.sqlalchemy_confirmation_unit_of_work import (
+    SqlAlchemyConfirmationUnitOfWork,
+)
 from app.intent.domain.entities.idempotency_record import IdempotencyRecord
 from app.intent.domain.entities.payment_intent import PaymentIntent
 from app.intent.domain.enums.currency import Currency
@@ -39,6 +38,7 @@ from app.intent.domain.value_objects.amount import Amount
 from app.intent.infrastructure.repositories.sqlalchemy_payment_intent_repository import (
     SqlAlchemyPaymentIntentRepository,
 )
+from app.ledger.infrastructure.models.ledger_entry_model import LedgerEntryModel
 
 DATABASE_URL = os.environ.get("PAYMENT_TEST_DATABASE_URL")
 PROJECT_ROOT = Path(__file__).resolve().parents[4]

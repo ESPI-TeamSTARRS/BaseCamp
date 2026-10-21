@@ -2,10 +2,6 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
-from app.confirmation.infrastructure.repositories.sqlalchemy_confirmation_unit_of_work import (
-    SqlAlchemyConfirmationUnitOfWork,
-)
-from app.ledger.infrastructure.models.ledger_entry_model import LedgerEntryModel
 from sqlalchemy import Engine, StaticPool, create_engine, event, func, select, text
 from sqlalchemy.exc import DatabaseError, IntegrityError
 from sqlalchemy.orm import Session
@@ -13,6 +9,9 @@ from sqlalchemy.orm import Session
 from app.confirmation.domain.entities.confirmation_record import ConfirmationRecord
 from app.confirmation.domain.exceptions.confirmation_key_reused_error import (
     ConfirmationKeyReusedError,
+)
+from app.confirmation.infrastructure.repositories.sqlalchemy_confirmation_unit_of_work import (
+    SqlAlchemyConfirmationUnitOfWork,
 )
 from app.intent.domain.entities.idempotency_record import IdempotencyRecord
 from app.intent.domain.entities.payment_intent import PaymentIntent
@@ -24,6 +23,7 @@ from app.intent.infrastructure.repositories.sqlalchemy_payment_intent_repository
     SqlAlchemyPaymentIntentRepository,
 )
 from app.ledger.domain.entities.ledger_transaction import LedgerTransaction
+from app.ledger.infrastructure.models.ledger_entry_model import LedgerEntryModel
 
 NOW = datetime(2026, 10, 20, 9, 0, tzinfo=UTC)
 
