@@ -7,3 +7,4 @@ class RefundPaymentCommand:
     idempotency_key: str
     intent_id: str
     amount: int
+    actor_type: str = "service"  # `operator` quand un humain rembourse (identite dans `caller`)

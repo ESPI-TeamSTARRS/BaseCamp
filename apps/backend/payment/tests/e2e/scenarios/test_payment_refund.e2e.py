@@ -16,6 +16,8 @@ from typing import Any
 import pytest
 from jsonschema import Draft202012Validator
 
+from app.caller_identity.__tests__.real_auth import customer_token, operator_token, service_token
+
 REPO_ROOT = Path(__file__).resolve().parents[6]
 SCHEMA = json.loads(
     (REPO_ROOT / "docs/development/log-event.schema.json").read_text(encoding="utf-8")
@@ -95,13 +97,18 @@ def _env_value(name: str) -> str:
 
 
 def _call(
-    method: str, path: str, *, key: str = "", body: Mapping[str, object] | None = None
+    method: str,
+    path: str,
+    *,
+    key: str = "",
+    body: Mapping[str, object] | None = None,
+    token: str | None = None,
 ) -> tuple[int, Any]:
     output = _compose(
         *["exec", "-T", "shop", "python", "-c", CALL_SCRIPT],
         method,
         path,
-        _env_value("PAYMENT_SERVICE_TOKEN_SHOP"),
+        token or service_token(),
         key,
         json.dumps(body) if body is not None else "",
         timeout=60,
@@ -142,12 +149,15 @@ def _paid_intent(method: str = "pm_test_success") -> str:
     return intent_id
 
 
-def _refund(intent_id: str, amount: object, key: str | None = None) -> tuple[int, Any]:
+def _refund(
+    intent_id: str, amount: object, key: str | None = None, token: str | None = None
+) -> tuple[int, Any]:
     return _call(
         "POST",
         f"/payments/intents/{intent_id}/refunds",
         key=key or f"e2e-refund-{uuid.uuid4().hex}",
         body={"amount": amount},
+        token=token or operator_token(),
     )
 
 
@@ -228,7 +238,7 @@ class TestCeilingUnderAttack:
         output = _compose(
             *["exec", "-T", "shop", "python", "-c", PARALLEL_SCRIPT],
             f"/payments/intents/{intent_id}/refunds",
-            _env_value("PAYMENT_SERVICE_TOKEN_SHOP"),
+            operator_token(),
             "3000",
             "8",
             f"e2e-par-{uuid.uuid4().hex}-",
@@ -304,4 +314,32 @@ class TestOutboxAndLogs:
             for e in events
         )
         assert key not in output
-        assert _env_value("PAYMENT_SERVICE_TOKEN_SHOP") not in output
+        assert operator_token() not in output and service_token() not in output
+
+
+class TestWhoMayRefund:
+    def test_a_service_without_refunds_write_is_forbidden(self) -> None:
+        intent_id = _paid_intent()
+
+        assert _refund(intent_id, 1000, token=service_token())[0] == 403
+        assert _refund_rows(intent_id) == 0
+
+    def test_a_customer_is_forbidden(self) -> None:
+        intent_id = _paid_intent()
+
+        assert _refund(intent_id, 1000, token=customer_token())[0] == 403
+        assert _refund_rows(intent_id) == 0
+
+    def test_an_operator_refunds_and_is_the_recorded_caller(self) -> None:
+        intent_id = _paid_intent()
+
+        status, _ = _refund(intent_id, 1000)
+
+        assert status == 201
+        caller = _query(f"SELECT caller FROM refunds WHERE intent_id = '{intent_id}'")[0][0]
+        assert caller and caller != "shop"
+
+    def test_no_token_is_a_401(self) -> None:
+        intent_id = _paid_intent()
+
+        assert _refund(intent_id, 1000, token="not-a-token")[0] == 401

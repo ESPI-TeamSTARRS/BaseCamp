@@ -12,8 +12,16 @@ http:
       middlewares: [orders-rate-limit, body-limit, security-headers, strip-api-shop]
       service: shop
       priority: 200
+    shop-admin:
+      # API d'administration du catalogue : repondue UNIQUEMENT sur l'origine admin (admin.<domaine>).
+      # Sur le domaine principal, /api/shop/admin n'est pas route vers shop (le front repond 404).
+      rule: "HostRegexp(`^admin\\..+$`) && PathPrefix(`/api/shop/admin`)"
+      entryPoints: [web]
+      middlewares: [admin-rate-limit, admin-body-limit, security-headers, strip-api-shop]
+      service: shop
+      priority: 300
     shop:
-      rule: "PathPrefix(`/api/shop`) && !PathPrefix(`/api/shop/webhooks`)"
+      rule: "PathPrefix(`/api/shop`) && !PathPrefix(`/api/shop/webhooks`) && !PathPrefix(`/api/shop/admin`)"
       entryPoints: [web]
       middlewares: [body-limit, security-headers, strip-api-shop]
       service: shop
@@ -193,6 +201,49 @@ http:
               - 2405:8100::/32
               - 2a06:98c0::/29
               - 2c0f:f248::/32
+
+    admin-rate-limit:
+      # PRODUCTION : la requete arrive via Cloudflare puis le Traefik du serveur, donc X-Forwarded-For
+      # vaut "client, <Cloudflare>, <proxy Docker>". La cle du limiteur est la premiere adresse
+      # (en partant de la droite) qui n'est ni un reseau Docker ni une plage Cloudflare : le vrai
+      # client. Sans cela, tous les clients partageraient la limite du proxy.
+      # Les plages Cloudflare sont publiques (https://www.cloudflare.com/ips/) : a tenir a jour.
+      rateLimit:
+        average: 30
+        period: 1m
+        burst: 10
+        sourceCriterion:
+          ipStrategy:
+            excludedIPs:
+              - 172.16.0.0/12
+              - 173.245.48.0/20
+              - 103.21.244.0/22
+              - 103.22.200.0/22
+              - 103.31.4.0/22
+              - 141.101.64.0/18
+              - 108.162.192.0/18
+              - 190.93.240.0/20
+              - 188.114.96.0/20
+              - 197.234.240.0/22
+              - 198.41.128.0/17
+              - 162.158.0.0/15
+              - 104.16.0.0/13
+              - 104.24.0.0/14
+              - 172.64.0.0/13
+              - 131.0.72.0/22
+              - 2400:cb00::/32
+              - 2606:4700::/32
+              - 2803:f800::/32
+              - 2405:b500::/32
+              - 2405:8100::/32
+              - 2a06:98c0::/29
+              - 2c0f:f248::/32
+
+    admin-body-limit:
+      # Televersement d'image : 2 Mio de fichier au plus, plus la marge des en-tetes -> 413 au-dela.
+      buffering:
+        maxRequestBodyBytes: 3145728 # 3 Mio
+        memRequestBodyBytes: 3145728 # tout en memoire : le conteneur est en lecture seule (pas de fichier temporaire)
 
     body-limit:
       buffering:

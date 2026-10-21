@@ -2,7 +2,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Response, status
 
-from app.intent.presentation.dependencies import get_calling_service
+from app.caller_identity.application.caller_view import Caller as AuthenticatedCaller
+from app.intent.presentation.dependencies import get_refund_caller
 from app.refund.application.commands.refund_payment_command import RefundPaymentCommand
 from app.refund.application.refund_services import RefundServices
 from app.refund.presentation.dependencies import get_refund_services
@@ -15,7 +16,7 @@ router = APIRouter(
 )
 
 Services = Annotated[RefundServices, Depends(get_refund_services)]
-Caller = Annotated[str, Depends(get_calling_service)]
+Caller = Annotated[AuthenticatedCaller, Depends(get_refund_caller)]
 
 
 @router.post(
@@ -33,7 +34,8 @@ def refund_intent(
 ) -> RefundResponse:
     view = services.refund.execute(
         RefundPaymentCommand(
-            caller=caller,
+            caller=caller.subject,
+            actor_type=caller.actor_type,
             idempotency_key=idempotency_key,
             intent_id=intent_id,
             amount=body.amount,

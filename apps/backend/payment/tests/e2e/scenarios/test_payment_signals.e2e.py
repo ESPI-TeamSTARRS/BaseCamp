@@ -16,6 +16,8 @@ import httpx
 import pytest
 from jsonschema import Draft202012Validator
 
+from app.caller_identity.__tests__.real_auth import service_token
+
 BASE_URL = os.environ.get("E2E_BASE_URL", "")
 REPO_ROOT = Path(__file__).resolve().parents[6]
 SCHEMA = json.loads(
@@ -93,7 +95,7 @@ def _call(
         CALL_SCRIPT,
         method,
         path,
-        token or _env_value("PAYMENT_SERVICE_TOKEN_SHOP"),
+        token or service_token(),
         key,
         json.dumps(body) if body else "",
     ).stdout
@@ -166,7 +168,7 @@ class TestMetricsOnTheInternalNetwork:
         text = _scrape()["body"]
 
         for forbidden in (
-            _env_value("PAYMENT_SERVICE_TOKEN_SHOP"),
+            service_token(),
             _env_value("PAYMENT_WEBHOOK_SECRET"),
             order,
             intent_id,

@@ -13,7 +13,11 @@ VERSIONS = Path(__file__).resolve().parents[3] / "alembic" / "versions"
 ADDITIVE_OPERATIONS = {"create_table", "create_index", "add_column"}
 # Elargir une contrainte CHECK de statut (ajout d'une valeur) reste compatible : l'ancien code
 # n'ecrit que les anciennes valeurs. Seules les contraintes listees ici peuvent etre remplacees.
-WIDENABLE_CONSTRAINTS = {"ck_orders_status", "ck_stock_reservations_status"}
+WIDENABLE_CONSTRAINTS = {
+    "ck_orders_status",
+    "ck_stock_reservations_status",
+    "ck_products_price_positive",
+}
 CONSTRAINT_OPERATIONS = {"drop_constraint", "create_check_constraint"}
 LAST_BASELINE_REVISION = 2
 NL = chr(10)
@@ -50,10 +54,11 @@ def _upgrade_operations(path: Path) -> list[str]:
 
 
 def _is_nullable_column(call: ast.Call) -> bool:
-    """Une colonne ajoutee doit etre nullable : l'ancien code ne la renseigne pas."""
+    """Une colonne ajoutee doit etre nullable ou avoir une valeur par defaut serveur : l'ancien code ne la renseigne pas."""
     for argument in call.args:
         if isinstance(argument, ast.Call):
-            return any(
+            has_default = any(keyword.arg == "server_default" for keyword in argument.keywords)
+            return has_default or any(
                 keyword.arg == "nullable"
                 and isinstance(keyword.value, ast.Constant)
                 and keyword.value.value is True
@@ -130,3 +135,28 @@ def test_an_added_column_must_be_nullable(tmp_path: Path) -> None:
 
     assert _upgrade_operations(good) == ["add_column"]
     assert _upgrade_operations(bad) == ["add_column_not_nullable"]
+
+
+def test_the_catalog_admin_migration_adds_archive_and_version_with_safe_defaults() -> None:
+    (path,) = VERSIONS.glob("0009_*.py")
+    source = path.read_text(encoding="utf-8")
+
+    assert set(_upgrade_operations(path)) == {"add_column"}
+    assert "archived_at" in source and "nullable=True" in source
+    assert (
+        'server_default="1"' in source
+    )  # l'ancien code n'écrit pas `version` : le défaut s'applique
+    assert "ck_products_price_positive" in source and "price_cents >= 0" in source
+
+
+def test_a_not_null_column_with_a_server_default_is_additive(tmp_path: Path) -> None:
+    migration = tmp_path / "0098_x.py"
+    migration.write_text(
+        "import sqlalchemy as sa\n"
+        "from alembic import op\n"
+        "def upgrade():\n"
+        "    op.add_column('t', sa.Column('c', sa.Integer(), nullable=False, server_default='1'))\n",
+        encoding="utf-8",
+    )
+
+    assert _upgrade_operations(migration) == ["add_column"]

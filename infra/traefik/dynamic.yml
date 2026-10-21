@@ -10,8 +10,16 @@ http:
       middlewares: [orders-rate-limit, body-limit, security-headers, strip-api-shop]
       service: shop
       priority: 200
+    shop-admin:
+      # API d'administration du catalogue : repondue UNIQUEMENT sur l'origine admin (admin.<domaine>).
+      # Sur le domaine principal, /api/shop/admin n'est pas route vers shop (le front repond 404).
+      rule: "HostRegexp(`^admin\\..+$`) && PathPrefix(`/api/shop/admin`)"
+      entryPoints: [web]
+      middlewares: [admin-rate-limit, admin-body-limit, security-headers, strip-api-shop]
+      service: shop
+      priority: 300
     shop:
-      rule: "PathPrefix(`/api/shop`) && !PathPrefix(`/api/shop/webhooks`)"
+      rule: "PathPrefix(`/api/shop`) && !PathPrefix(`/api/shop/webhooks`) && !PathPrefix(`/api/shop/admin`)"
       entryPoints: [web]
       middlewares: [body-limit, security-headers, strip-api-shop]
       service: shop
@@ -104,6 +112,19 @@ http:
         average: 20
         period: 1m
         burst: 10
+
+    admin-rate-limit:
+      # Cle = adresse reelle de la connexion (comme orders-rate-limit) : 30 requetes/min, rafale de 10.
+      rateLimit:
+        average: 30
+        period: 1m
+        burst: 10
+
+    admin-body-limit:
+      # Televersement d'image : 2 Mio de fichier au plus, plus la marge des en-tetes -> 413 au-dela.
+      buffering:
+        maxRequestBodyBytes: 3145728 # 3 Mio
+        memRequestBodyBytes: 3145728 # tout en memoire : le conteneur est en lecture seule (pas de fichier temporaire)
 
     body-limit:
       buffering:

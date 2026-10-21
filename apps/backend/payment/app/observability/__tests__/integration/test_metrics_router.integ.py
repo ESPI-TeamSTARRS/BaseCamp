@@ -12,13 +12,14 @@ from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
 from sqlalchemy import Engine, StaticPool, create_engine, event
 
+from app.caller_identity.__tests__.tokens import SHOP_TOKEN
 from app.core.config import Settings
 from app.core.logging.structlog_business_event_logger import StructlogBusinessEventLogger
 from app.intent.infrastructure.models.base import Base
 from app.main import create_app
 from app.ratelimit.infrastructure.models.base import Base as RateLimitBase
 
-TOKEN = "tok-shop-test-0001"
+TOKEN = SHOP_TOKEN
 IDEMPOTENCY_KEY = "create-secret-key-0001"
 ORDER = "CMD-PRIVATE-0001"
 CORRELATION_ID = "7c1f0e52-3a0b-4f1e-9a52-1d6f7a9b2c10"
@@ -57,7 +58,7 @@ def env() -> Iterator[Env]:
     engine = _engine()
     Base.metadata.create_all(engine)
     RateLimitBase.metadata.create_all(engine)
-    settings = Settings(service_tokens={"shop": TOKEN})
+    settings = Settings()
     log = io.StringIO()
     application = create_app(
         settings, engine, StructlogBusinessEventLogger(settings.service_name, log)
@@ -120,7 +121,7 @@ class TestMetricsEndpoint:
         assert 'payment_ledger_discrepancies{kind="amount_mismatch"} 0' in text
 
     def test_an_unreachable_database_degrades_to_state_down_not_to_an_error(self) -> None:
-        settings = Settings(service_tokens={"shop": TOKEN})
+        settings = Settings()
         application = create_app(settings, _engine())  # aucune table
 
         with TestClient(application) as client:

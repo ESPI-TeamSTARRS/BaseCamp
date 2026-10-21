@@ -1,4 +1,6 @@
-from sqlalchemy import Integer, String
+from datetime import datetime
+
+from sqlalchemy import DateTime, Integer, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -15,3 +17,4 @@ class CartProductModel(CartBase):
     name: Mapped[str] = mapped_column(String(200))
     price_cents: Mapped[int] = mapped_column(Integer)
     stock: Mapped[int] = mapped_column(Integer)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

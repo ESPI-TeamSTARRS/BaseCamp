@@ -3,6 +3,7 @@ import sys
 from fastapi import FastAPI
 from sqlalchemy import Engine
 
+from app.caller_identity.domain.interfaces.jwks_source import JwksSource
 from app.cancellation.error_handlers import register_cancellation_error_handlers
 from app.cancellation.presentation.router import router as cancellation_router
 from app.cancellation.wiring import build_cancellation_services
@@ -40,6 +41,7 @@ def create_app(
     settings: Settings | None = None,
     engine: Engine | None = None,
     events: BusinessEventLogger | None = None,
+    jwks_source: JwksSource | None = None,
 ) -> FastAPI:
     settings = settings or Settings()
     engine = engine or build_engine(settings)
@@ -51,7 +53,7 @@ def create_app(
     application.state.readiness_use_case = GetReadinessUseCase(
         settings.service_name, SqlAlchemyDatabaseProbe(engine)
     )
-    application.state.intent_services = build_intent_services(engine, settings, events)
+    application.state.intent_services = build_intent_services(engine, settings, events, jwks_source)
     application.state.confirmation_services = build_confirmation_services(engine, settings, events)
     application.state.cancellation_services = build_cancellation_services(engine, events)
     application.state.refund_services = build_refund_services(engine, events)

@@ -1,17 +1,20 @@
 """Parcours d'intention de paiement sur la pile : appels faits depuis `shop`, le seul appelant.
 
 payment n'est pas joignable depuis l'hôte : on exécute donc les requêtes dans le conteneur shop
-(`docker compose exec`). Le jeton vient de PAYMENT_SERVICE_TOKEN_SHOP (environnement ou .env).
+(`docker compose exec`). Le jeton est un vrai jeton de service d'auth (emis par la vraie auth).
 """
 
+import base64
 import json
-import os
 import subprocess
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
+
+from app.caller_identity.__tests__.real_auth import customer_token, service_token
+from app.caller_identity.__tests__.tokens import SigningKey
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
 SCRIPT = """
@@ -34,13 +37,7 @@ except urllib.error.HTTPError as error:
 
 
 def _service_token() -> str:
-    token = os.environ.get("PAYMENT_SERVICE_TOKEN_SHOP")
-    if token:
-        return token
-    for line in (REPO_ROOT / ".env").read_text(encoding="utf-8").splitlines():
-        if line.startswith("PAYMENT_SERVICE_TOKEN_SHOP="):
-            return line.split("=", 1)[1].strip()
-    raise RuntimeError("PAYMENT_SERVICE_TOKEN_SHOP introuvable")
+    return service_token()
 
 
 def _call(
@@ -117,6 +114,26 @@ class TestPaymentIntents:
 
         assert missing == wrong
         assert missing[0] == 401
+
+    def test_forged_tampered_and_replayed_client_tokens_get_the_same_401(self, token: str) -> None:
+        header, payload, signature = token.split(".")
+        claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+        claims["sub"] = "someone-else"
+        raw = json.dumps(claims).encode()
+        tampered = ".".join(
+            [header, base64.urlsafe_b64encode(raw).rstrip(b"=").decode(), signature]
+        )
+        forged = SigningKey().token()  # signe par une autre cle que celle d'auth
+        replayed = customer_token()  # vrai jeton CLIENT d'auth, autre audience
+
+        results = {
+            _call("POST", "/payments/intents", token=candidate, key="e2e-key-0002", body=_order())[
+                0
+            ]
+            for candidate in (tampered, forged, replayed)
+        }
+
+        assert results == {401}
 
     def test_unknown_intent_is_a_generic_404(self, token: str) -> None:
         status, body = _call("GET", f"/payments/intents/{uuid.uuid4()}", token=token)

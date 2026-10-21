@@ -35,13 +35,16 @@ class SqlAlchemyProductRepository(ProductRepository, ProductLookup):
             return session.scalar(statement) or 0
 
     def get_by_slug(self, slug: str) -> Product | None:
-        statement = select(ProductModel).where(ProductModel.slug == slug)
+        statement = select(ProductModel).where(
+            ProductModel.slug == slug, ProductModel.archived_at.is_(None)
+        )
         with Session(self._engine) as session:
             row = session.scalars(statement).first()
             return ProductMapper.to_entity(row) if row else None
 
     @staticmethod
     def _filtered(statement: Select[Any], category: ProductCategory | None) -> Select[Any]:
+        visible = statement.where(ProductModel.archived_at.is_(None))  # archivé = disparu
         if category is None:
-            return statement
-        return statement.where(ProductModel.category == category.value)
+            return visible
+        return visible.where(ProductModel.category == category.value)

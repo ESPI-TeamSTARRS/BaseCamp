@@ -4,13 +4,14 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine
 
+from app.caller_identity.__tests__.tokens import ADMIN_TOKEN, SHOP_TOKEN
 from app.core.config import Settings
 from app.intent.infrastructure.models.base import Base
 from app.main import create_app
 from app.ratelimit.infrastructure.models.base import Base as RateLimitBase
 
-TOKEN = "tok-shop-test-0001"
-OTHER_TOKEN = "tok-admin-test-0002"
+TOKEN = SHOP_TOKEN
+OTHER_TOKEN = ADMIN_TOKEN
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
 
 
@@ -31,7 +32,7 @@ def client() -> Iterator[TestClient]:
     )
     Base.metadata.create_all(engine)
     RateLimitBase.metadata.create_all(engine)
-    settings = Settings(service_tokens={"shop": TOKEN, "admin": OTHER_TOKEN})
+    settings = Settings()
     application = create_app(settings, engine)
     with TestClient(application) as test_client:
         yield test_client

@@ -25,7 +25,14 @@ class Settings(BaseSettings):
     # `http` : service payment (par défaut) ; `simulated` : fournisseur simulé en base, sans réseau ni clé.
     payment_provider: Literal["http", "simulated"] = "http"
     payment_url: str = "http://payment:8000"
-    payment_service_token: str = ""  # jeton de service de shop aupres de payment, via l'env
+    # Jeton de service de shop aupres de payment : emis par `auth` (`POST /internal/token`) a partir
+    # des identifiants du client `shop`; le secret vient de l'environnement (APP_AUTH_CLIENT_SECRET).
+    auth_issue_url: str = "http://auth:8000/internal/token"
+    auth_client_id: str = "shop"
+    auth_client_secret: str = ""
+    payment_audience: str = "payment"
+    payment_scope: str = "payments:write"
+    payment_renew_margin_seconds: float = 30.0
     payment_connect_timeout_seconds: float = 1.0
     payment_read_timeout_seconds: float = 3.0
 
@@ -49,6 +56,16 @@ class Settings(BaseSettings):
     )
     auth_issuer: str = "basecamp-auth"
     auth_audience: str = "basecamp-client-api"
+    # Administration du catalogue : méthode d'authentification (`amr`) exigée en plus du rôle `operator`.
+    admin_required_amr: str = "face"
+
+    # Stockage des images produit : API S3 de SeaweedFS (clés S3 lues dans l'environnement, jamais versionnées).
+    s3_endpoint: str = "http://seaweedfs:8333"
+    s3_bucket: str = "product-images"
+    s3_access_key: str = ""
+    s3_secret_key: str = ""
+    s3_region: str = "us-east-1"
+
     auth_jwks_ttl_seconds: float = 300.0
     auth_jwks_min_refetch_seconds: float = 10.0
     auth_connect_timeout_seconds: float = 1.0

@@ -22,6 +22,7 @@ from app.__tests__.payment_stack import (
     in_shop,
     needs_docker,
     new_client,
+    operator_token,
     place_order,
     post,
     run,
@@ -34,17 +35,18 @@ SETTLE_SECONDS = 5  # laisse au worker le temps de livrer un événement qui n'a
 
 pytestmark = needs_docker
 
-# Exécuté DANS le conteneur shop : appelle payment avec le jeton de service de la boutique.
+# Exécuté DANS le conteneur shop : appelle payment avec le jeton d'un opérateur (la boutique, elle,
+# n'a pas le droit de rembourser).
 REFUND_SCRIPT = r"""
 import json, os, sys, urllib.error, urllib.request
 
-intent_id, amount, key = sys.argv[1:4]
+intent_id, amount, key, token = sys.argv[1:5]
 request = urllib.request.Request(
     f"http://payment:8000/payments/intents/{intent_id}/refunds",
     data=json.dumps({"amount": int(amount)}).encode(),
     headers={
         "Content-Type": "application/json",
-        "Authorization": "Bearer " + os.environ["APP_PAYMENT_SERVICE_TOKEN"],
+        "Authorization": "Bearer " + token,
         "Idempotency-Key": key,
     },
     method="POST",
@@ -123,7 +125,11 @@ class _PaidOrder:
 
     def refund(self, amount: int, key: str | None = None) -> int:
         result = in_shop(
-            REFUND_SCRIPT, self.intent_id, str(amount), key or f"e2e-{uuid.uuid4().hex}"
+            REFUND_SCRIPT,
+            self.intent_id,
+            str(amount),
+            key or f"e2e-{uuid.uuid4().hex}",
+            operator_token(),
         )
         return int(result["status"])
 

@@ -25,6 +25,7 @@ RATE_LIMITERS = {
     "orders-rate-limit",
     "auth-signup-rate-limit",
     "auth-password-rate-limit",
+    "admin-rate-limit",
 }  # cle IP differente en prod
 
 SAMPLE_ENV = {
@@ -36,7 +37,6 @@ SAMPLE_ENV = {
     "POSTGRES_ADMIN_PASSWORD": "x",
     "SHOP_DB_PASSWORD": "x",
     "PAYMENT_DB_PASSWORD": "x",
-    "PAYMENT_SERVICE_TOKEN_SHOP": "x",
     "AUTH_DB_PASSWORD": "x",
     "AUTH_SERVICE_CLIENT_SECRET_SHOP": "x",
     "PAYMENT_WEBHOOK_SECRET": "x",
@@ -167,3 +167,19 @@ def test_webhook_de_paiement_recu_par_shop_seulement_et_jamais_route_par_la_pass
     for chemin in (DYNAMIC_PROD, DYNAMIC_DEV):
         routeurs = yaml.safe_load(chemin.read_text(encoding="utf-8"))["http"]["routers"]
         assert "!PathPrefix(`/api/shop/webhooks`)" in routeurs["shop"]["rule"], chemin.name
+
+def test_administration_du_catalogue_seulement_sur_l_origine_admin(compose: dict) -> None:
+    environment = compose["services"]["shop"]["environment"]
+    assert environment["APP_S3_ACCESS_KEY"].startswith("${S3_ACCESS_KEY:?")
+    assert environment["APP_S3_SECRET_KEY"].startswith("${S3_SECRET_KEY:?")
+    for chemin in (DYNAMIC_PROD, DYNAMIC_DEV):
+        http = yaml.safe_load(chemin.read_text(encoding="utf-8"))["http"]
+        admin = http["routers"]["shop-admin"]
+        assert admin["rule"].startswith("HostRegexp("), chemin.name
+        assert "PathPrefix(`/api/shop/admin`)" in admin["rule"]
+        assert "admin-rate-limit" in admin["middlewares"]
+        assert "!PathPrefix(`/api/shop/admin`)" in http["routers"]["shop"]["rule"]
+        limite = http["middlewares"]["admin-body-limit"]["buffering"]["maxRequestBodyBytes"]
+        assert 2 * 1024 * 1024 < limite <= 4 * 1024 * 1024
+    labels = compose["services"]["traefik"]["labels"]
+    assert "Host(`admin.${BASECAMP_DOMAIN}`)" in labels["traefik.http.routers.basecamp-gw.rule"]

@@ -17,6 +17,11 @@ Catalogue, commandes et stock. Demande les paiements au service [payment](paymen
 | GET | `/me/orders/{id}` | **client connecté** : une de ses commandes, 404 identique pour une commande inconnue ou d'un autre compte |
 | POST | `/orders/{id}/pay` | demande l'intention de paiement d'une commande en attente |
 | POST | `/orders/{id}/pay/confirm` | confirme le paiement avec une méthode de test |
+| GET | `/admin/products` | **administration** (origine admin seulement) : liste paginée, archivés optionnels |
+| POST | `/admin/products` | **administration** : crée un produit (201) |
+| GET / PATCH | `/admin/products/{id}` | **administration** : lit, modifie partiellement (version optimiste) |
+| POST | `/admin/products/{id}/archive` | **administration** : archive (soft delete) |
+| POST | `/admin/products/{id}/image` | **administration** : téléverse une image (JPEG, PNG, WebP, 2 Mo) |
 | POST | `/webhooks/payment` | **interne** : webhook signé de `payment` (jamais routé par la passerelle, voir ci-dessous) |
 | GET | `/products` | catalogue paginé, filtrable par catégorie (voir ci-dessous) |
 | GET | `/products/{slug}` | fiche détaillée d'un produit |
@@ -125,6 +130,27 @@ Les autres routes métier s'ajoutent par tranche et se documentent ici.
 - Nom et prix unitaire des lignes sont figés à la commande (`order_lines`) : un changement de catalogue ne modifie jamais une commande existante.
 - Une réservation (`stock_reservations.status = reserved`) est liée à une commande; sa libération est décrite plus bas (expiration) et le paiement la rend définitive (`committed`, voir la confirmation par webhook).
 
+## Administration du catalogue (WORK-58)
+API réservée aux opérateurs du back-office, **répondue uniquement sur l'origine admin** : la passerelle ne route `/api/shop/admin/*` vers `shop` que pour un hôte `admin.<domaine>` (routeur `shop-admin`, `infra/traefik/dynamic.yml` et `deploy/traefik/dynamic.prod.yml`). Sur le domaine principal ces chemins tombent sur le front (404). La passerelle applique un limiteur de débit propre (`admin-rate-limit` : 30 requêtes par minute et par adresse, rafale de 10) et une limite de corps de 3 Mio (`admin-body-limit`, 413 au-delà).
+
+**Garde** (`app/customer_identity`, `AuthorizeOperatorUseCase`, dépendance `current_operator`) : même vérificateur JWKS que les routes client (EdDSA, `kid`, émetteur, audience, expiration; clé publique d'`auth`, cache 5 min). Sans jeton valide : **401**; jeton valide dont `roles` ne contient pas `operator`, ou dont `amr` ne contient pas la méthode exigée (`APP_ADMIN_REQUIRED_AMR`, `face` par défaut) : **403**; clés illisibles sans cache : **503**, jamais un accès par défaut. `roles` et `amr` doivent être de vraies listes de textes (sinon vides). Événements : `customer.token_rejected` (401), `operator.access_denied` (motifs `not_operator`, `second_factor_missing`).
+
+| Code | Cas |
+|---|---|
+| 200 / 201 | succès (création : 201) |
+| 401 / 403 / 503 | voir la garde |
+| 404 | produit inconnu (`Produit introuvable.`) |
+| 409 | version périmée (`Version perimee.`), produit archivé (`Produit archive.`), identifiant déjà pris (`Produit deja existant.`), 10 images déjà présentes |
+| 413 | corps de plus de 3 Mio (passerelle) |
+| 422 | données refusées (`Requete invalide.`, sans écho de la valeur ni de la clé reçue) ou image refusée (`Image invalide.`) |
+| 503 | stockage d'images arrêté (`Stockage des images indisponible.`, `Retry-After: 5`) |
+
+- **Création** (`POST /admin/products`) : `name` (1 à 200), `category` (une des catégories du catalogue), `price_cents` entier **≥ 0**, `short_description` (1 à 300), `description` (1 à 5000), `stock` entier **≥ 0**; optionnels `slug` (`a-z0-9` séparés par des tirets, dérivé du nom sinon; il sert d'identifiant), `compare_at_price_cents`, `specs` (poids, imperméabilité, température de confort, saisons, capacité, matériau). Entiers **stricts** (ni flottant, ni texte, ni booléen). `extra="forbid"` : tout autre champ (`id`, `version`, `rating_*`, `archived_at`…) est refusé en 422. Les notes partent de zéro.
+- **Modification** (`PATCH /admin/products/{id}`) : `version` obligatoire (celle lue) et au moins un champ parmi `name`, `category`, `price_cents`, `compare_at_price_cents`, `short_description`, `description`, `specs`, `stock`. Le slug, l'identifiant et les images ne se modifient pas ici.
+- **Concurrence** : `products.version` (défaut 1) est incrémentée à chaque modification d'administration, à chaque image ajoutée, à l'archivage **et à chaque variation de stock d'une commande ou d'une expiration**. La mise à jour est un `UPDATE … WHERE version = :lue` : une version périmée est un 409 sans aucun effet, y compris face à une commande arrivée entre-temps. Le stock ne devient jamais négatif (validation, puis contrainte `ck_products_stock_non_negative`).
+- **Archivage** (`POST …/archive`) : soft delete, `archived_at` renseigné, **aucune ligne effacée**, idempotent. Un produit archivé disparaît du catalogue client (`GET /products`, fiche), du devis de panier et de la création de commande; il reste lisible dans les commandes passées (nom et prix figés dans `order_lines`) et dans l'administration (`?include_archived=true`). Il ne peut plus être modifié ni recevoir d'image.
+- **Image** (`POST …/image`) : le corps de la requête est **les octets de l'image** (pas de formulaire). Types acceptés **vérifiés sur les premiers octets** (JPEG `FF D8 FF`, PNG, WebP `RIFF…WEBP`), jamais sur l'extension ni l'en-tête `Content-Type` annoncés; 2 Mio au plus, lus au plus jusqu'à la limite. Un fichier vide, trop gros, SVG, déguisé ou d'un autre type est refusé en 422 **avant** toute écriture (aucun effet de bord). Le nom est tiré au hasard (`<32 hex>.jpg|png|webp`), jamais dérivé du client. Le fichier part dans le bucket `product-images` par le port `ProductImageStorage` : adaptateur S3 (`S3ProductImageStorage`, signature SigV4 sur l'API S3 de SeaweedFS, clés `APP_S3_ACCESS_KEY` / `APP_S3_SECRET_KEY` de l'environnement, jamais versionnées) et adaptateur mémoire pour les tests. La clé est ajoutée à `images`; l'image est servie par `/media/<clé>` comme toutes les autres. 10 images au plus par produit.
+- **Journal** : `catalog_admin.change` à chaque changement (`action` = `create`, `update`, `image` ou `archive`), acteur `user` pseudonymisé (empreinte HMAC de l'identifiant du compte, jamais l'identifiant), ressource `product`, attributs `old_price_cents`, `new_price_cents`, `new_stock`, `version`. Jamais de description, de jeton ni de donnée personnelle. Le schéma commun n'a pas changé (`actor_type` = `user`).
 ## Confirmation de paiement par webhook (WORK-13)
 `payment` notifie la boutique de chaque règlement par un `POST /webhooks/payment` signé (contrat publié : [payment.md, « Webhook sortant vers la boutique »](payment.md)). La route n'est **pas** publique : seul `payment-worker` l'appelle, sur le réseau interne `payment-net`, et la passerelle ne route pas `/api/shop/webhooks` (le chemin tombe sur le front, 404).
 
@@ -165,13 +191,19 @@ Variables d'environnement préfixées `APP_` (voir `.env.example` à la racine) 
 | `APP_DB_PASSWORD` | vide | mot de passe du rôle (fourni par l'environnement, jamais versionné) |
 | `APP_MEDIA_BASE_URL` | `/media` | préfixe public des images du catalogue |
 | `APP_ORDER_EXPIRATION_MINUTES` | `30` | délai au bout duquel une commande impayée expire et rend son stock |
+| `APP_ADMIN_REQUIRED_AMR` | `face` | méthode d'authentification (`amr`) exigée en plus du rôle `operator` pour l'administration |
+| `APP_S3_ENDPOINT` / `APP_S3_BUCKET` / `APP_S3_REGION` | `http://seaweedfs:8333` / `product-images` / `us-east-1` | stockage des images (API S3 de SeaweedFS) |
+| `APP_S3_ACCESS_KEY` / `APP_S3_SECRET_KEY` | vides | clés S3 (alimentées par `S3_ACCESS_KEY` / `S3_SECRET_KEY`, jamais versionnées); sans clé, un téléversement répond 503 |
 | `APP_PAYMENT_WEBHOOK_SECRET` / `APP_PAYMENT_WEBHOOK_SECRET_PREVIOUS` | vides | secrets du webhook signé de `payment` (alimentés par `PAYMENT_WEBHOOK_SECRET` / `_PREVIOUS`, jamais versionnés); sans secret tout webhook est refusé |
 | `APP_PAYMENT_WEBHOOK_TOLERANCE_SECONDS` | `300` | fenêtre d'acceptation de l'horodatage de la signature |
 | `APP_SMTP_HOST` / `APP_SMTP_PORT` | `mailpit` / `1025` | serveur d'envoi de l'email de confirmation (Mailpit en développement) |
 | `APP_SMTP_FROM` / `APP_SMTP_TIMEOUT_SECONDS` | `commandes@basecamp.local` / `3` | expéditeur et délai d'envoi |
 | `APP_PAYMENT_PROVIDER` | `http` | fournisseur de paiement : `http` (service `payment`) ou `simulated` (sans réseau ni clé) |
 | `APP_PAYMENT_URL` | `http://payment:8000` | adresse interne de `payment` |
-| `APP_PAYMENT_SERVICE_TOKEN` | vide | jeton de service de `shop` auprès de `payment` (alimenté par `PAYMENT_SERVICE_TOKEN_SHOP`, jamais versionné) |
+| `APP_AUTH_ISSUE_URL` | `http://auth:8000/internal/token` | où `shop` demande son jeton de service (réseau interne, jamais routé par la passerelle) |
+| `APP_AUTH_CLIENT_ID` / `APP_AUTH_CLIENT_SECRET` | `shop` / vide | identifiants du client de service `shop` (le secret est `AUTH_SERVICE_CLIENT_SECRET_SHOP`, jamais versionné) |
+| `APP_PAYMENT_AUDIENCE` / `APP_PAYMENT_SCOPE` | `payment` / `payments:write` | audience et scope demandés (`shop` n'a pas `refunds:write`) |
+| `APP_PAYMENT_RENEW_MARGIN_SECONDS` | `30` | le jeton est renouvelé 30 s avant son expiration (il vit 5 min, en mémoire seulement) |
 | `APP_PAYMENT_CONNECT_TIMEOUT_SECONDS` / `APP_PAYMENT_READ_TIMEOUT_SECONDS` | `1` / `3` | délais des appels à `payment` |
 | `APP_AUTH_JWKS_URL` | `http://auth:8000/.well-known/jwks.json` | clés publiques de vérification des jetons clients (réseau interne) |
 | `APP_AUTH_PROFILE_URL` | `http://auth:8000/me` | profil du porteur du jeton (adresse, vérifiée ou non), pour le rattachement |
@@ -209,6 +241,8 @@ Format et règles communes : [journalisation métier](../development/logging.md)
 | `payment.webhook_replayed` | success | | identifiant déjà reçu : `event_id`, `event_type` |
 | `payment.webhook_ignored` | denied | `order_not_found`, `amount_mismatch`, `currency_mismatch`, `order_expired`, `order_already_confirmed`, `attempt_settled`, `unsupported_type`, `order_not_paid`, `refund_exceeds_total`, `refund_already_recorded`, `refund_amount_missing` | acquitté en 200 sans effet (sauf `order_expired` sur `payment.succeeded` : 409); ressource `order` si connue |
 | `order.confirmation_email_sent` | success | | ressource `order` (numéro) |
+| `catalog_admin.change` | success | | acteur `user` (empreinte), ressource `product`; `action`, `old_price_cents`, `new_price_cents`, `new_stock`, `version` |
+| `operator.access_denied` | denied | `not_operator`, `second_factor_missing` | jeton valide sans les droits d'administration (403) |
 | `order.confirmation_email_failed` | error | `delivery_failed` | ressource `order`; `email_hash` (HMAC de l'adresse); le webhook reste en succès |
 | `order.expired` | success | | ressource `order` (numéro); `released_units`, `line_count`, `age_minutes` |
 | `order.expiration_completed` | success | | un par passage qui a expiré au moins une commande : `expired_orders`, `released_units` |
@@ -241,6 +275,8 @@ La migration `0006` ajoute la table `payment_webhook_events` (identifiant d'év�
 La migration `0007` (WORK-29) élargit `ck_orders_status` à `refunded` et ajoute la table `order_refunds` (cumul remboursé par commande, une ligne dès le premier remboursement, liée à `orders`). Ajout seul : l'ancien code n'écrit que les anciens statuts et ignore la table.
 
 La migration `0008` ajoute `orders.user_id` (identifiant du compte d'`auth`, **nullable**, indexé, sans clé étrangère : le compte vit dans une autre base). Les commandes existantes restent invitées (`user_id` nul); l'ancienne version, qui ignore la colonne, tourne sur le schéma migré (expand/contract; le test `test_migrations_additive` n'autorise l'ajout de colonne que si elle est nullable).
+
+La migration `0009` ajoute `products.archived_at` (nullable : null = produit visible) et `products.version` (entier, défaut serveur 1), et élargit `ck_products_price_positive` à `price_cents >= 0`. L'ancien code n'écrit ni l'un ni l'autre : les défauts s'appliquent et il reste valide sur le schéma migré (test d'additivité : une colonne ajoutée doit être nullable ou avoir un défaut serveur).
 
 La migration `0002` crée la table `products` (contraintes : prix > 0, stock ≥ 0, note 0 à 5, catégorie connue) et y charge le jeu de données initial : 15 produits, 3 par catégorie, dont un en rupture et un aux dernières pièces.
 

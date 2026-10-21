@@ -5,7 +5,7 @@ Exploitation de la pile de production sur la VM. Le déploiement est **par tirag
 ## Le flux
 
 1. Une PR est fusionnée dans `main` : la CI tourne, puis le workflow `Release` calcule les versions, construit les images, les scanne (Trivy) et les publie sur GHCR ([images.md](../development/images.md)).
-2. Si au moins une image est publiée, le workflow ouvre (ou met à jour) la PR **`chore(release): déploie …`** qui modifie `deploy/manifest.json`. Elle est ouverte par la GitHub App `basecamp-release-bot`, ce qui lance la CI normalement. Si la CI, le build ou le scan échoue pour un composant, ce composant n'entre pas dans le manifeste.
+2. À la fin du workflow, le job `manifeste-de-deploiement` recalcule le manifeste **depuis `main`** : pour chaque composant, la dernière version dont le tag git `<composant>-vX.Y.Z` existe ET dont l'image est publiée sur GHCR (`scripts/deploy/latest_images.py`). Si le manifeste change, il régénère la branche `release/manifest` à partir de `main` (écrasement contrôlé, branche du bot uniquement) et ouvre ou met à jour la PR **`chore(release): déploie …`**; la PR ne contient donc jamais de conflit et rattrape les versions manquées par une exécution précédente. Si le manifeste de `main` est déjà à jour, la PR ouverte est fermée. Elle est ouverte par la GitHub App `basecamp-release-bot` (permission « Pull requests: Read and write », à accepter par un propriétaire de l'organisation après toute modification), ce qui lance la CI normalement. Un composant dont le build ou le scan a échoué n'a pas d'image publiée : sa version précédente reste dans le manifeste.
 3. **Fusionner cette PR est l'approbation du déploiement** (relecture : quels composants, quelles versions).
 4. Sur la VM, le minuteur `basecamp-deploy.timer` (toutes les 3 minutes) récupère `main` et lance `scripts/deploy.sh deploy/manifest.json` ([deploy-script.md](deploy-script.md)) : tirage par digest, sauvegarde, migrations, démarrage, test de fumée, retour automatique si échec.
 
@@ -35,6 +35,8 @@ L'ancienne pile (projet compose `basecamp-outdoor`, dossier `/home/anto/basecamp
 2. **Arrêter** (pas supprimer) l'ancienne pile : `cd /home/anto/basecamp-outdoor && docker compose stop`. Ses conteneurs et ses volumes sont conservés.
 3. Exposer la nouvelle pile : retirer `GATEWAY_EXPOSE` de `/opt/basecamp/.env` (`sudo sed -i '/^GATEWAY_EXPOSE=/d' /opt/basecamp/.env`) puis relancer le déploiement avec `--force` (les labels changent, le manifeste non).
 4. Vérifier depuis l'extérieur : `https://basecamp.tempulse.fr` (page d'accueil, une fiche produit avec ses images, `/api/shop/health`).
+
+**Origine d'administration.** L'API d'administration du catalogue (/api/shop/admin) ne répond que sur dmin.<domaine> (par exemple dmin.basecamp.tempulse.fr) : créer l'enregistrement DNS de cet hôte vers le même serveur. Les étiquettes du Traefik de la pile le déclarent à côté du domaine principal, et le Traefik du serveur y émet son certificat. Sur le domaine principal, /api/shop/admin reste un 404. Les clés S3 (S3_ACCESS_KEY, S3_SECRET_KEY) sont aussi lues par shop pour les images.
 5. Activer le minuteur seulement après ce déploiement manuel réussi : `sudo bash /opt/basecamp/repo/infra/install-vm.sh --enable-timer`. Suivre : `journalctl -u basecamp-deploy -f`.
 
 **Revenir à l'ancienne pile** (une commande) : `sudo systemctl disable --now basecamp-deploy.timer; docker compose -p basecamp-prod -f /opt/basecamp/repo/deploy/docker-compose.prod.yml --env-file /opt/basecamp/state/compose.env stop && (cd /home/anto/basecamp-outdoor && docker compose start)`. Rien n'est supprimé : la nouvelle pile est seulement arrêtée.
@@ -100,3 +102,11 @@ Si l'ordre n'est pas respecté, la production n'est pas touchée : Compose refus
 - **Retour arrière** : les services applicatifs reviennent aux images précédentes. Le worker est relancé avec elles ; s'il ne démarre pas (image sans worker), il est arrêté et le journal le dit. Les événements restent en base et partiront après le prochain déploiement réussi.
 - **Relancer des événements en échec** (état `dead`) : `docker compose -p basecamp-prod -f /opt/basecamp/repo/deploy/docker-compose.prod.yml --env-file /opt/basecamp/state/compose.env run --rm --no-deps payment-worker python -m app.webhook.presentation.requeue_main --all` (ou `--event-id <uuid>`).
 - **Vérifier le secret sans l'afficher** : `sudo awk -F= '/^PAYMENT_WEBHOOK_SECRET=/{print $1, length($2)}' /opt/basecamp/.env` doit afficher 48 ; de même pour `AUTH_SERVICE_CLIENT_SECRET_SHOP`.
+
+### Jetons d'auth pour payment (WORK-41)
+`payment` n'a plus de jeton statique : il vérifie les jetons signés par `auth`, et `shop` en demande un à `auth` avant d'appeler `payment`.
+- **Variables** : retirer `PAYMENT_SERVICE_TOKEN_SHOP` du `.env` (ignoré désormais). `shop` réutilise `AUTH_SERVICE_CLIENT_SECRET_SHOP`, déjà présent pour `auth-bootstrap` : rien à ajouter.
+- **Ordre** : l'image `auth` (scope `refunds:write`, réseau `payment-net`) doit être en service avant ou avec `payment` et `shop`; déployer les trois images dans le même manifeste. Avec une ancienne image `payment`, `shop` fonctionnerait encore mal (jeton refusé) : ne pas mélanger.
+- **Contrôle sans afficher de secret** : `sudo awk -F= '/^AUTH_SERVICE_CLIENT_SECRET_SHOP=/{print $1, length($2)}' /opt/basecamp/.env` doit afficher la longueur attendue (au moins 32); `docker compose ... exec -T payment python -c "import urllib.request as u; print(u.urlopen('http://auth:8000/.well-known/jwks.json', timeout=3).status)"` doit afficher 200.
+- **Symptôme** : `/pay` répond 503 si `auth` est injoignable et que `shop` n'a pas de jeton valide en mémoire; `payment` répond 503 s'il n'a jamais lu les clés d'`auth`. Relancer `auth`, le service repart seul.
+- **Retour arrière** : revenir aux images précédentes réintroduit le jeton statique : y remettre `PAYMENT_SERVICE_TOKEN_SHOP` dans le `.env` avant de revenir (sinon `payment` refuse de démarrer).

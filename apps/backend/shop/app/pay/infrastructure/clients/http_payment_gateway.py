@@ -8,7 +8,9 @@ from app.pay.domain.entities.payment_intent_ref import PaymentIntentRef
 from app.pay.domain.exceptions.payment_rejected_error import PaymentRejectedError
 from app.pay.domain.exceptions.payment_unavailable_error import PaymentUnavailableError
 from app.pay.domain.interfaces.payment_gateway import PaymentGateway
+from app.pay.domain.interfaces.service_token_provider import ServiceTokenProvider
 
+HTTP_UNAUTHORIZED = 401
 HTTP_NOT_FOUND = 404
 HTTP_CONFLICT = 409
 HTTP_UNPROCESSABLE = 422
@@ -23,9 +25,9 @@ class HttpPaymentGateway(PaymentGateway):
     arrêté ou saturé fait échouer l'appel vite, jamais bloquer la boutique.
     """
 
-    def __init__(self, client: httpx.Client, service_token: str) -> None:
+    def __init__(self, client: httpx.Client, tokens: ServiceTokenProvider) -> None:
         self._client = client
-        self._service_token = service_token
+        self._tokens = tokens
 
     def create_intent(
         self, order_reference: str, amount_cents: int, currency: str, idempotency_key: str
@@ -59,7 +61,8 @@ class HttpPaymentGateway(PaymentGateway):
         idempotency_key: str | None = None,
         body: dict[str, Any] | None = None,
     ) -> httpx.Response:
-        headers = {**outbound_headers(), "Authorization": f"Bearer {self._service_token}"}
+        token = self._tokens.token()  # PaymentUnavailableError si `auth` n'en donne aucun
+        headers = {**outbound_headers(), "Authorization": f"Bearer {token}"}
         if idempotency_key is not None:
             headers["Idempotency-Key"] = idempotency_key
         try:
@@ -70,7 +73,9 @@ class HttpPaymentGateway(PaymentGateway):
             return response
         if response.status_code in REJECTION_STATUSES:
             raise PaymentRejectedError(conflict=response.status_code == HTTP_CONFLICT)
-        raise PaymentUnavailableError  # 401 (config), 429 (saturé), 5xx
+        if response.status_code == HTTP_UNAUTHORIZED:
+            self._tokens.discard(token)  # jeton refusé : le prochain appel en demande un nouveau
+        raise PaymentUnavailableError  # 401, 429 (saturé), 5xx
 
     @staticmethod
     def _to_intent(response: httpx.Response) -> PaymentIntentRef:

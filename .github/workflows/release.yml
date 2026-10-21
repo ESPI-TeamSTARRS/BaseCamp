@@ -176,28 +176,19 @@ jobs:
         run: |
           minor="${VERSION%.*}"
           docker buildx imagetools create -t "$IMAGE:$VERSION" -t "$IMAGE:$minor" "$IMAGE@$DIGEST"
-          printf '{"service":"%s","version":"%s","image":"%s@%s"}\n' \
-            "$SERVICE" "$VERSION" "$IMAGE" "$DIGEST" > "$RUNNER_TEMP/image-$SERVICE.json"
-          cat "$RUNNER_TEMP/image-$SERVICE.json"
           echo "### $SERVICE $VERSION" >> "$GITHUB_STEP_SUMMARY"
           echo "$IMAGE@$DIGEST" >> "$GITHUB_STEP_SUMMARY"
-      - name: Digest en artefact (entree du manifeste de deploiement)
-        if: steps.target.outputs.version != '' && steps.exists.outputs.skip != 'true'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: image-${{ matrix.service }}
-          path: ${{ runner.temp }}/image-${{ matrix.service }}.json
-          retention-days: 90
 
   manifest:
     name: manifeste-de-deploiement
     needs: version
-    # Meme si un composant echoue (ex. scan Trivy), les autres, deja publies, entrent dans le manifeste.
+    # Meme si un composant echoue (ex. scan Trivy), les versions deja publiees entrent dans le manifeste.
     if: ${{ !cancelled() && needs.version.result != 'skipped' }}
     runs-on: ubuntu-latest
-    # Aucun droit par defaut : les ecritures passent par le jeton court de la GitHub App.
+    # Lecture seule : les ecritures passent par le jeton court de la GitHub App.
     permissions:
       contents: read
+      packages: read
     env:
       BRANCH: release/manifest
     steps:
@@ -205,28 +196,26 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - name: Connexion a GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
-          pattern: image-*
-          path: ${{ runner.temp }}/images
-          merge-multiple: true
-      - name: Images publiees par ce run
-        id: images
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Derniere version publiee de chaque composant (tag git + digest GHCR)
         run: |
-          if ls "$RUNNER_TEMP"/images/image-*.json > /dev/null 2>&1; then
-            echo "found=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "Aucune nouvelle image : le manifeste ne change pas."
-          fi
+          set -euo pipefail
+          services="$(jq -r '.services | keys[]' deploy/manifest.json)"
+          # shellcheck disable=SC2086
+          python3 scripts/deploy/latest_images.py "$GITHUB_REPOSITORY_OWNER" $services > "$RUNNER_TEMP/latest.jsonl"
+          cat "$RUNNER_TEMP/latest.jsonl"
       - name: Jeton de la GitHub App
         id: app
-        if: steps.images.outputs.found == 'true'
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           app-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
       - name: Proposer la mise a jour du manifeste
-        if: steps.images.outputs.found == 'true'
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           APP_SLUG: ${{ steps.app.outputs.app-slug }}
@@ -237,36 +226,41 @@ jobs:
           git config user.name "${APP_SLUG}[bot]"
           git config user.email "${APP_SLUG}[bot]@users.noreply.github.com"
 
-          # Base : le manifeste de la PR ouverte (elle cumule les releases non fusionnees), sinon celui de main.
-          cp deploy/manifest.json "$RUNNER_TEMP/base.json"
           open_pr="$(gh api "repos/$REPO/pulls?state=open&head=${REPO%%/*}:$BRANCH" --jq '.[0].number // empty')"
-          if [[ -n "$open_pr" ]] && git fetch --quiet origin "$BRANCH"; then
-            git show "origin/$BRANCH:deploy/manifest.json" > "$RUNNER_TEMP/base.json"
-          fi
 
+          # Le manifeste est toujours recalcule depuis main : jamais de conflit apres la fusion d'une PR precedente.
           set +e
-          jq -c . "$RUNNER_TEMP/base.json" "$RUNNER_TEMP"/images/image-*.json | python3 scripts/deploy/update_manifest.py > "$RUNNER_TEMP/new.json"
+          { jq -c . deploy/manifest.json; cat "$RUNNER_TEMP/latest.jsonl"; } | python3 scripts/deploy/update_manifest.py > "$RUNNER_TEMP/new.json"
           rc=$?
           set -e
-          if [[ "$rc" == 10 ]]; then echo "Manifeste deja a jour."; exit 0; fi
+          if [[ "$rc" == 10 ]]; then
+            echo "Manifeste deja a jour."
+            if [[ -n "$open_pr" ]]; then
+              gh api --method POST "repos/$REPO/issues/$open_pr/comments" -f body="Le manifeste de main est déjà à jour : PR fermée." --jq .html_url
+              gh api --method PATCH "repos/$REPO/pulls/$open_pr" -f state=closed --jq .html_url
+            fi
+            exit 0
+          fi
           [[ "$rc" == 0 ]] || exit "$rc"
 
-          # Differences par rapport a main : titre et description de la PR.
           jq -c . deploy/manifest.json "$RUNNER_TEMP/new.json" | python3 scripts/deploy/update_manifest.py describe > "$RUNNER_TEMP/changes.txt"
           title="chore(release): deploie $(paste -sd, "$RUNNER_TEMP/changes.txt" | sed 's/ -> /->/g; s/,/, /g')"
           {
-            echo "Mise a jour du manifeste de deploiement (images par digest, tests et scan Trivy passes) :"
+            echo "Mise a jour du manifeste de deploiement (dernieres versions publiees, images par digest, tests et scan Trivy passes) :"
             echo
             sed 's/^/- /' "$RUNNER_TEMP/changes.txt"
             echo
             echo "La fusion declenche le deploiement sur la VM (minuteur), avec retour automatique si le test de fumee echoue."
           } > "$RUNNER_TEMP/body.md"
 
+          git fetch --quiet origin main
+          git fetch --quiet origin "$BRANCH" || true
           git checkout -B "$BRANCH" origin/main
           cp "$RUNNER_TEMP/new.json" deploy/manifest.json
           git add deploy/manifest.json
           git commit --quiet -m "$title"
-          git push --force --quiet origin "$BRANCH"
+          # Branche du bot uniquement : on n'ecrase que ce qu'on vient de lire.
+          git push --force-with-lease="$BRANCH" --quiet origin "$BRANCH"
 
           # API REST (et non `gh pr create`, qui passe par GraphQL et a ete refuse pour l'App).
           if [[ -n "$open_pr" ]]; then
