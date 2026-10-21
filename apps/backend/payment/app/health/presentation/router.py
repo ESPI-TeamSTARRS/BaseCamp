@@ -1,8 +1,7 @@
-from typing import Annotated
+from typing import Annotated, cast
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Request, Response, status
 
-from app.core.config import Settings
 from app.health.application.get_health import GetHealthUseCase
 from app.health.application.get_readiness import GetReadinessUseCase
 from app.health.presentation.dependencies import get_readiness_use_case
@@ -12,8 +11,9 @@ router = APIRouter(tags=["health"])
 
 
 @router.get("/health", response_model=HealthResponse)
-def get_health() -> HealthResponse:
-    result = GetHealthUseCase(service_name=Settings().service_name).execute()
+async def get_health(request: Request) -> HealthResponse:
+    """Liveness sur la boucle d'événements : jamais en file derrière les handlers synchrones."""
+    result = cast(GetHealthUseCase, request.app.state.health_use_case).execute()
     return HealthResponse(service=result.service, status=result.status.value)
 
 

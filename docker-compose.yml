@@ -79,6 +79,9 @@ services:
       APP_DB_NAME: ${SHOP_DB_NAME:-shop}
       APP_DB_USER: ${SHOP_DB_USER:-shop}
       APP_DB_PASSWORD: ${SHOP_DB_PASSWORD:?voir .env.example}
+      # Appels a payment (delais courts dans l application : un payment arrete ne bloque pas shop).
+      APP_PAYMENT_URL: http://payment:8000
+      APP_PAYMENT_SERVICE_TOKEN: ${PAYMENT_SERVICE_TOKEN_SHOP:?voir .env.example}
     networks: [data]
     depends_on:
       postgres: { condition: service_healthy }
@@ -148,6 +151,10 @@ services:
     environment: *payment-env
     networks: [payment-net, payment-data]
     read_only: true
+    # Ressources bornees par instance (compatible avec --scale payment=2) : un abus ne prive pas le reste.
+    mem_limit: 256m
+    cpus: 1.0
+    pids_limit: 128
     depends_on:
       payment-migrate: { condition: service_completed_successfully }
     healthcheck:

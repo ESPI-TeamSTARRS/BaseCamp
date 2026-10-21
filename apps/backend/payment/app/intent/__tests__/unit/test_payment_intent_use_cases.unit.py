@@ -103,3 +103,40 @@ class TestGetPaymentIntent:
             GetPaymentIntentByOrderUseCase(
                 InMemoryRepository(), InMemoryBusinessEventLogger()
             ).execute("CMD-404")
+
+
+class _LosingTheRaceRepository(InMemoryRepository):
+    """Une autre instance enregistre la même demande entre la lecture et l'écriture."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.armed = True
+
+    def find_by_idempotency(self, caller: str, key: str):  # type: ignore[no-untyped-def]
+        found = super().find_by_idempotency(caller, key)
+        if self.armed and found is None:
+            self.armed = False
+            # le gagnant s'insère juste après notre lecture à vide
+            _create_use_case(self).execute(make_command())
+            return None
+        return found
+
+
+class TestConcurrentCreationAcrossInstances:
+    def test_losing_the_race_on_the_order_reference_replays_the_winner_instead_of_a_409(
+        self,
+    ) -> None:
+        repo = _LosingTheRaceRepository()
+
+        result = _create_use_case(repo).execute(make_command())
+
+        assert result.created is False
+        assert len(repo.intents) == 1
+        assert result.intent.id == str(next(iter(repo.intents)))
+
+    def test_a_real_duplicate_order_with_another_key_is_still_a_conflict(self) -> None:
+        repo = InMemoryRepository()
+        _create_use_case(repo).execute(make_command())
+
+        with pytest.raises(DuplicateOrderReferenceError):
+            _create_use_case(repo).execute(make_command(idempotency_key="key-0002"))

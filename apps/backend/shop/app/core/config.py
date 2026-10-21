@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     db_user: str = "shop"
     db_password: str = ""  # fournie par l'environnement (APP_DB_PASSWORD), jamais versionnee
 
+    # Appels a payment : delais courts pour qu'un payment arrete ou lent ne bloque jamais la boutique.
+    payment_url: str = "http://payment:8000"
+    payment_service_token: str = ""  # jeton de service de shop aupres de payment, via l'env
+    payment_connect_timeout_seconds: float = 1.0
+    payment_read_timeout_seconds: float = 3.0
+
     media_base_url: str = "/media"  # prefixe public des images (servies par la passerelle)
 
     log_pseudonym_key: str = (

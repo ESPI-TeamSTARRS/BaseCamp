@@ -24,6 +24,25 @@ class Settings(BaseSettings):
 
     db_password: str = ""  # fournie par l'environnement (APP_DB_PASSWORD), jamais versionnee
 
+    # Pool de connexions borne : taille totale max = pool + debordement, par instance.
+    db_pool_size: int = 5
+    db_max_overflow: int = 5
+    db_pool_timeout_seconds: float = 3.0  # attente d'une connexion libre avant 503
+    db_connect_timeout_seconds: int = 2
+    db_statement_timeout_ms: int = 5_000
+
+    # Garde-fous HTTP (par instance).
+    max_body_bytes: int = 16_384
+    read_timeout_seconds: float = 5.0  # lecture du corps de la requete
+    write_timeout_seconds: float = 5.0  # envoi de la reponse
+    request_timeout_seconds: float = 10.0  # duree totale d'une requete
+    max_concurrent_requests: int = 64  # au-dela : 503 immediat (/health exclu)
+
+    # Limitation de debit par appelant et par route, compteurs partages en base (fenetre fixe).
+    rate_limit_window_seconds: int = 60
+    rate_limit_create_per_window: int = 60
+    rate_limit_read_per_window: int = 120
+
     log_pseudonym_key: str = (
         ""  # cle HMAC des empreintes d'email dans les logs (APP_LOG_PSEUDONYM_KEY)
     )

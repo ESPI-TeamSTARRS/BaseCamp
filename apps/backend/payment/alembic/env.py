@@ -4,8 +4,10 @@ from alembic import context
 from app.core.config import Settings
 from app.intent.infrastructure.models import idempotency_key_model, payment_intent_model  # noqa: F401
 from app.intent.infrastructure.models.base import Base
+from app.ratelimit.infrastructure.models import rate_limit_window_model  # noqa: F401
+from app.ratelimit.infrastructure.models.base import Base as RateLimitBase
 
-target_metadata = Base.metadata
+target_metadata = [Base.metadata, RateLimitBase.metadata]
 
 
 def run_migrations_offline() -> None:

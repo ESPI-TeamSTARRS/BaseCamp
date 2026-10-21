@@ -14,6 +14,7 @@ Catalogue, commandes et stock. Demande les paiements au service [payment](paymen
 | POST | `/orders` | crée une commande « en attente de paiement » (voir ci-dessous) |
 | GET | `/products` | catalogue paginé, filtrable par catégorie (voir ci-dessous) |
 | GET | `/products/{slug}` | fiche détaillée d'un produit |
+| POST | `/pay` | démarre le paiement d'un panier : montant recalculé par le serveur, intention créée dans `payment` (voir ci-dessous) |
 
 Derrière la passerelle, ces routes sont exposées sous `/api/shop/` (ex. `/api/shop/health/ready`). Le healthcheck Docker utilise `/health` (un conteneur dont la base est arrêtée reste vivant); `/health/ready` sert aux sondes de disponibilité.
 
@@ -47,6 +48,11 @@ Réponse : `id`, `number` (`BC-` + 10 caractères, non séquentiel), `status` (`
 
 Les prix sont relus en base sous verrou et la livraison suit la règle du devis (5,90 € sous 80 €). Les messages d'erreur sont fixes : aucune valeur reçue n'est reflétée. La passerelle limite `/api/shop/orders` à 10 requêtes par minute et par adresse.
 
+### `POST /pay`
+Corps strict : `{"order_reference", "lines": [{"productId", "quantity"}]}` (aucun montant : le total est celui du devis serveur, livraison comprise) et en-tête `Idempotency-Key` (8 à 255 caractères, transmise à `payment`). Réponse `201` : `{payment_intent_id, status, amount_cents, currency}`. Panier invalide ou stock insuffisant : `422`; refus métier de `payment` : `409` (commande déjà payée) ou `422`, message fixe `{"detail": "Paiement refuse."}`.
+
+L'appel à `payment` a des délais courts (connexion 1 s, lecture 3 s) et un pool borné. Si `payment` est arrêté, injoignable, saturé (429, 5xx) ou mal configuré (401), `shop` répond **`503 {"detail": "Paiement indisponible, reessayez plus tard."}`** avec `Retry-After: 5`, sans bloquer : le catalogue et `/cart/quote` continuent de répondre. Aucun détail technique (hôte, jeton) n'est renvoyé.
+
 Les autres routes métier s'ajoutent par tranche et se documentent ici.
 
 ## Invariants
@@ -77,6 +83,9 @@ Variables d'environnement préfixées `APP_` (voir `.env.example` à la racine) 
 | `APP_DB_NAME` / `APP_DB_USER` | `shop` / `shop` | base et rôle propres à `shop` |
 | `APP_DB_PASSWORD` | vide | mot de passe du rôle (fourni par l'environnement, jamais versionné) |
 | `APP_MEDIA_BASE_URL` | `/media` | préfixe public des images du catalogue |
+| `APP_PAYMENT_URL` | `http://payment:8000` | adresse interne de `payment` |
+| `APP_PAYMENT_SERVICE_TOKEN` | vide | jeton de service de `shop` auprès de `payment` (alimenté par `PAYMENT_SERVICE_TOKEN_SHOP`, jamais versionné) |
+| `APP_PAYMENT_CONNECT_TIMEOUT_SECONDS` / `APP_PAYMENT_READ_TIMEOUT_SECONDS` | `1` / `3` | délais des appels à `payment` |
 | `APP_LOG_PSEUDONYM_KEY` | vide | clé HMAC des empreintes d'email dans les logs; obligatoire hors `dev` et `local` |
 
 ## Événements métier
@@ -95,6 +104,9 @@ Format et règles communes : [journalisation métier](../development/logging.md)
 | `stock.insufficient` | denied | `insufficient_stock` | ressource `product` (id); `email_hash` |
 | `order.rejected` | denied | `country_not_supported`, `invalid_cart`, `quantity_out_of_range`, `duplicate_product`, `product_not_found`, `idempotency_key_reused` | `email_hash` (jamais la clé d'idempotence, l'email ni l'adresse) |
 | `cart.quote_rejected` | denied | `invalid_cart` (nombre de lignes), `quantity_out_of_range`, `duplicate_product`, `product_not_found` | |
+| `pay.payment_started` | success | | ressource `payment_intent` (id), `amount_cents`, `currency` |
+| `pay.payment_rejected` | denied | `insufficient_stock`, `payment_conflict`, `payment_refused` | refus avant ou par `payment` |
+| `pay.payment_unavailable` | error | `payment_unavailable` | `payment` arrêté, injoignable ou saturé (503 renvoyé) |
 | `service.request_rejected` | denied | `invalid_request` | requête rejetée par la validation, sans la valeur reçue |
 | `service.unhandled_error` | error | `internal_error` | |
 
