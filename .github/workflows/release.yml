@@ -10,6 +10,8 @@ name: Release
 on:
   push:
     branches: [main]
+    # La fusion de la PR de manifeste ne change que ce fichier : rien a versionner ni a construire.
+    paths-ignore: [deploy/manifest.json]
   workflow_dispatch:
     # Publie les images d'une version deja taguee mais pas encore publiee (ex. les premiers tags v0.1.0).
 

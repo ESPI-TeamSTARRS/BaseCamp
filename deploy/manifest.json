@@ -2,16 +2,16 @@
   "schema": 1,
   "services": {
     "auth": {
-      "image": "ghcr.io/espi-teamstarrs/basecamp-auth@sha256:180fff4049c84a41b78d1ebc746002fb5d52ce6d9f17df602d975798f728dc3f",
-      "version": "0.1.2"
+      "image": "ghcr.io/espi-teamstarrs/basecamp-auth@sha256:be34fc44b555f24986d52c407d201e0b210ce720cd7be40e453e78ee0aa8df76",
+      "version": "0.2.0"
     },
     "frontend": {
       "image": "ghcr.io/espi-teamstarrs/basecamp-frontend@sha256:4b1852895deda605ebd6221a2c06bd88f9a2efa08d677143c9cebc65f11f7990",
       "version": "0.1.1"
     },
     "payment": {
-      "image": "ghcr.io/espi-teamstarrs/basecamp-payment@sha256:51d0c9b90ff8d95e95c79a7931ecbd72df4244971b563e0521ec32c2687cb3d5",
-      "version": "0.1.2"
+      "image": "ghcr.io/espi-teamstarrs/basecamp-payment@sha256:82e2a95c4724ae4ee47a1f956532aca80ad4abecb22556b194e51948559162f1",
+      "version": "0.2.0"
     },
     "shop": {
       "image": "ghcr.io/espi-teamstarrs/basecamp-shop@sha256:b53228ac8db17ac56df1392dd1bd1bf5619aa356dcbaa8e5d2ba37c10cf9befd",
