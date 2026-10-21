@@ -453,3 +453,20 @@ class TestLogs:
         assert update["resource_id"] == created["id"]
         assert "Une tente pour toutes les saisons" not in output
         assert "Bearer" not in output
+
+
+class TestOpenApi:
+    def test_the_contract_describes_every_admin_route_and_forbids_extra_fields(
+        self, stack: _Stack
+    ) -> None:
+        document = stack.application.openapi()
+
+        paths = document["paths"]
+        assert set(paths[BASE]) == {"get", "post"}
+        assert set(paths[f"{BASE}/{{product_id}}"]) == {"get", "patch"}
+        assert set(paths[f"{BASE}/{{product_id}}/archive"]) == {"post"}
+        assert set(paths[f"{BASE}/{{product_id}}/image"]) == {"post"}
+        schemas = document["components"]["schemas"]
+        for name in ("AdminProductCreateRequest", "AdminProductUpdateRequest", "AdminSpecs"):
+            assert schemas[name]["additionalProperties"] is False
+        assert "version" in schemas["AdminProductUpdateRequest"]["required"]
