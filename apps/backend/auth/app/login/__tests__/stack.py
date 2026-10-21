@@ -6,6 +6,7 @@ from argon2 import PasswordHasher as Argon2
 from fastapi import FastAPI
 from sqlalchemy import Engine, text
 
+from app.core.client_address_resolver import ClientAddressResolver
 from app.core.events.business_event_logger import BusinessEventLogger
 from app.lockout.__tests__.fakes import FIVE_IN_FIFTEEN
 from app.lockout.application.lockout_service import LockoutService
@@ -44,6 +45,10 @@ class LoginStack:
         self.keys = keys or Ed25519KeyRing.generate()
         self.verifier = Argon2PasswordVerifier(OWASP_ARGON2)
         self.application: FastAPI = create_app()
+        # Le client de test (ASGI) arrive de 127.0.0.1 : c'est le proxy de confiance des tests.
+        self.application.state.client_address_resolver = ClientAddressResolver.from_text(
+            "127.0.0.0/8"
+        )
         factory = lambda: SqlAlchemyUnitOfWork(self.engine)  # noqa: E731
         access_verifier = JwtAccessTokenVerifier(self.keys, ISSUER, AUDIENCE)
         self.application.state.login_account_use_case = LoginAccountUseCase(

@@ -7,6 +7,7 @@ from sqlalchemy import Engine, create_engine
 from app.admin.composition import wire_admin
 from app.admin.presentation.error_handlers import register_admin_error_handlers
 from app.admin.presentation.router import router as admin_router
+from app.core.client_address_resolver import ClientAddressResolver
 from app.core.config import Settings
 from app.core.errors import register_error_handlers
 from app.core.logging.correlation_id_middleware import CorrelationIdMiddleware
@@ -59,6 +60,9 @@ def create_app(
     application.add_middleware(CorrelationIdMiddleware)
     application.state.observability_services = observability.services
     application.state.events = events
+    application.state.client_address_resolver = ClientAddressResolver.from_text(
+        settings.trusted_proxies
+    )
     application.state.readiness_use_case = GetReadinessUseCase(
         settings.service_name, SqlAlchemyDatabaseProbe(engine)
     )

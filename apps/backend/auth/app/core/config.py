@@ -2,6 +2,8 @@ from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
+from app.core.client_address_resolver import ClientAddressResolver
+
 DEVELOPMENT_ENVIRONMENTS = frozenset({"dev", "local"})
 
 
@@ -50,6 +52,10 @@ class Settings(BaseSettings):
     access_token_ttl_seconds: int = Field(default=900, gt=0)
     refresh_token_ttl_seconds: int = Field(default=604800, gt=0)
 
+    # Adresse reelle du client (WORK-59) : plages CIDR (separees par des virgules) des proxies dont on
+    # croit X-Forwarded-For. Vide (defaut) : seule l'adresse du pair TCP est utilisee.
+    trusted_proxies: str = ""
+
     # Verrouillage progressif (WORK-37) : `lockout_max_failures` echecs en `lockout_window_seconds`
     # verrouillent le sujet; les durees (secondes, separees par des virgules) forment l'echelle des
     # recidives et la derniere est le plafond. Oublie apres `lockout_memory_seconds` sans verrou.
@@ -88,6 +94,14 @@ class Settings(BaseSettings):
             ) from None
         if not durations or any(value <= 0 for value in durations):
             raise ValueError("APP_LOCKOUT_DURATIONS_SECONDS needs at least one positive duration")
+        return self
+
+    @model_validator(mode="after")
+    def _check_trusted_proxies(self) -> "Settings":
+        try:
+            ClientAddressResolver.from_text(self.trusted_proxies)
+        except ValueError:
+            raise ValueError("APP_TRUSTED_PROXIES must be comma-separated CIDR ranges") from None
         return self
 
     @model_validator(mode="after")
