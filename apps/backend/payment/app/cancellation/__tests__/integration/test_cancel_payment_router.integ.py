@@ -78,7 +78,9 @@ def _confirm(env: Env, intent_id: str, key: str = "confirm-0001") -> Response:
 
 
 def _status(env: Env, intent_id: str) -> str:
-    return str(env.client.get(f"/payments/intents/{intent_id}", headers=_headers()).json()["status"])
+    return str(
+        env.client.get(f"/payments/intents/{intent_id}", headers=_headers()).json()["status"]
+    )
 
 
 def _ledger_count(env: Env) -> int:
@@ -156,7 +158,9 @@ class TestCancellation:
     def test_an_intent_past_its_deadline_cannot_be_canceled(self, env: Env) -> None:
         intent_id = _create(env)
         with env.engine.begin() as connection:
-            connection.execute(text("UPDATE payment_intents SET expires_at = '2020-01-01 00:00:00'"))
+            connection.execute(
+                text("UPDATE payment_intents SET expires_at = '2020-01-01 00:00:00'")
+            )
 
         response = _cancel(env, intent_id)
 
@@ -190,7 +194,10 @@ class TestBusinessEvents:
         _cancel(env, intent_id, correlation=True)
 
         records = _lines(env)
-        assert [r["event"] for r in records] == ["payment.service_authenticated", "payment.canceled"]
+        assert [r["event"] for r in records] == [
+            "payment.service_authenticated",
+            "payment.canceled",
+        ]
         canceled = records[1]
         assert (canceled["outcome"], canceled["level"]) == ("success", "info")
         assert (canceled["resource_type"], canceled["resource_id"]) == ("payment_intent", intent_id)
