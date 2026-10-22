@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { Mountain } from 'lucide-react';
-import { categoryLabels } from '../lib/categories';
+import { footerSections } from '../lib/footer-links';
 
 export function Footer() {
   return (
@@ -16,55 +16,20 @@ export function Footer() {
           </p>
         </div>
 
-        <div>
-          <h2 className="text-sm font-semibold text-sand">Catégories</h2>
-          <ul className="mt-3 space-y-2 text-sm">
-            {Object.entries(categoryLabels).map(([slug, label]) => (
-              <li key={slug}>
-                <Link href={`/categories/${slug}`} className="hover:text-bivouac transition-colors">
-                  {label}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <div>
-          <h2 className="text-sm font-semibold text-sand">Service client</h2>
-          <ul className="mt-3 space-y-2 text-sm">
-            <li>
-              <Link href="/suivi" className="hover:text-bivouac transition-colors">
-                Suivre ma commande
-              </Link>
-            </li>
-            <li>
-              <Link href="/contact" className="hover:text-bivouac transition-colors">
-                Contact
-              </Link>
-            </li>
-            <li>
-              <Link href="/cgv" className="hover:text-bivouac transition-colors">
-                CGV
-              </Link>
-            </li>
-          </ul>
-        </div>
-
-        <div>
-          <h2 className="text-sm font-semibold text-sand">Légal</h2>
-          <ul className="mt-3 space-y-2 text-sm">
-            <li>
-              <Link href="/confidentialite" className="hover:text-bivouac transition-colors">
-                Confidentialité
-              </Link>
-            </li>
-            <li>
-              <Link href="/mentions-legales" className="hover:text-bivouac transition-colors">
-                Mentions légales
-              </Link>
-            </li>
-          </ul>
-        </div>
+        {footerSections.map((section) => (
+          <div key={section.title}>
+            <h2 className="text-sm font-semibold text-sand">{section.title}</h2>
+            <ul className="mt-3 space-y-2 text-sm">
+              {section.links.map((link) => (
+                <li key={link.href}>
+                  <Link href={link.href} className="hover:text-bivouac transition-colors">
+                    {link.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
       </div>
       <div className="border-t border-sand/10 py-4 text-center text-xs text-sand/50">
         © {new Date().getFullYear()} Basecamp Outdoor. Tous droits réservés.

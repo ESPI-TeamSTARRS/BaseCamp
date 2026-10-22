@@ -1,5 +1,6 @@
 import type { MetadataRoute } from 'next';
 import { categorySlugs } from '../lib/categories';
+import { indexablePages } from '../lib/footer-links';
 import { fetchAllProducts } from '../lib/shop-api';
 
 // Généré à la demande : le catalogue vient de l'API et n'existe pas au moment du build.
@@ -11,6 +12,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticRoutes: MetadataRoute.Sitemap = [
     { url: siteUrl, lastModified: new Date(), changeFrequency: 'daily', priority: 1 },
   ];
+
+  const pageRoutes: MetadataRoute.Sitemap = indexablePages.map((path) => ({
+    url: `${siteUrl}${path}`,
+    lastModified: new Date(),
+    changeFrequency: 'yearly',
+    priority: 0.3,
+  }));
 
   const categoryRoutes: MetadataRoute.Sitemap = categorySlugs.map((slug) => ({
     url: `${siteUrl}/categories/${slug}`,
@@ -30,5 +38,5 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       }))
     : [];
 
-  return [...staticRoutes, ...categoryRoutes, ...productRoutes];
+  return [...staticRoutes, ...categoryRoutes, ...pageRoutes, ...productRoutes];
 }
