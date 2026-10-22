@@ -17,7 +17,7 @@ Catalogue, commandes et stock. Demande les paiements au service [payment](paymen
 | GET | `/me/orders/{id}` | **client connecté** : une de ses commandes, 404 identique pour une commande inconnue ou d'un autre compte |
 | POST | `/orders/{id}/pay` | demande l'intention de paiement d'une commande en attente |
 | POST | `/orders/{id}/pay/confirm` | confirme le paiement avec une méthode de test |
-| GET | `/admin/products` | **administration** (origine admin seulement) : liste paginée, archivés optionnels, recherche `q` par nom (sous-chaîne, sans casse, 100 caractères au plus; `%` et `_` sont cherchés tels quels) |
+| GET | `/admin/products` | **administration** (origine du back-office seulement) : liste paginée, archivés optionnels, recherche `q` par nom (sous-chaîne, sans casse, 100 caractères au plus; `%` et `_` sont cherchés tels quels) |
 | POST | `/admin/products` | **administration** : crée un produit (201) |
 | GET / PATCH | `/admin/products/{id}` | **administration** : lit, modifie partiellement (version optimiste) |
 | POST | `/admin/products/{id}/archive` | **administration** : archive (soft delete) |
@@ -133,7 +133,7 @@ Les autres routes métier s'ajoutent par tranche et se documentent ici.
 - Une réservation (`stock_reservations.status = reserved`) est liée à une commande; sa libération est décrite plus bas (expiration) et le paiement la rend définitive (`committed`, voir la confirmation par webhook).
 
 ## Administration du catalogue (WORK-58)
-API réservée aux opérateurs du back-office, **répondue uniquement sur l'origine admin** : la passerelle ne route `/api/shop/admin/*` vers `shop` que pour un hôte `admin.<domaine>` (routeur `shop-admin`, `infra/traefik/dynamic.yml` et `deploy/traefik/dynamic.prod.yml`). Sur le domaine principal ces chemins tombent sur le front (404). La passerelle applique un limiteur de débit propre (`admin-rate-limit` : 30 requêtes par minute et par adresse, rafale de 10) et une limite de corps de 3 Mio (`admin-body-limit`, 413 au-delà).
+API réservée aux opérateurs du back-office, **répondue uniquement sur l'origine du back-office** : la passerelle ne route `/api/shop/admin/*` vers `shop` que pour un hôte `mercure.<domaine>` (routeur `shop-admin`, `infra/traefik/dynamic.yml` et `deploy/traefik/dynamic.prod.yml`). Sur le domaine principal ces chemins tombent sur le front (404). La passerelle applique un limiteur de débit propre (`admin-rate-limit` : 30 requêtes par minute et par adresse, rafale de 10) et une limite de corps de 3 Mio (`admin-body-limit`, 413 au-delà).
 
 **Garde** (`app/customer_identity`, `AuthorizeOperatorUseCase`, dépendance `current_operator`) : même vérificateur JWKS que les routes client (EdDSA, `kid`, émetteur, audience, expiration; clé publique d'`auth`, cache 5 min). Sans jeton valide : **401**; jeton valide dont `roles` ne contient pas `operator`, ou dont `amr` ne contient pas la méthode exigée (`APP_ADMIN_REQUIRED_AMR`, `face` par défaut) : **403**; clés illisibles sans cache : **503**, jamais un accès par défaut. `roles` et `amr` doivent être de vraies listes de textes (sinon vides). Événements : `customer.token_rejected` (401), `operator.access_denied` (motifs `not_operator`, `second_factor_missing`).
 

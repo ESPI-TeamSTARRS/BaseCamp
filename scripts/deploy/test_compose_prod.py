@@ -211,7 +211,7 @@ def test_administration_du_catalogue_seulement_sur_l_origine_admin(compose: dict
         limite = http["middlewares"]["admin-body-limit"]["buffering"]["maxRequestBodyBytes"]
         assert 2 * 1024 * 1024 < limite <= 4 * 1024 * 1024
     labels = compose["services"]["traefik"]["labels"]
-    assert "Host(`admin.${BASECAMP_DOMAIN}`)" in labels["traefik.http.routers.basecamp-gw.rule"]
+    assert "Host(`${BACKOFFICE_HOST_PREFIX:-mercure}.${BASECAMP_DOMAIN}`)" in labels["traefik.http.routers.basecamp-gw.rule"]
 
 def test_transport_des_mails_de_shop_et_auth_configurable_sans_secret_dans_le_depot(
     compose: dict,
@@ -299,3 +299,44 @@ def test_connexion_du_backoffice_limitee_et_reseau_interne_vers_auth(compose: di
         assert "backoffice-login-rate-limit" in connexion["middlewares"]
         assert "backoffice-body-limit" in connexion["middlewares"]
         assert connexion["priority"] > routeurs["backoffice"]["priority"]
+
+
+HOTE_BACKOFFICE = "{{ env `BACKOFFICE_HOST_PREFIX` | default `mercure` }}"
+
+
+def test_prefixe_du_backoffice_unique_et_sans_repli_sur_admin(compose: dict) -> None:
+    """Un seul nom pour l'hote du back-office : variable BACKOFFICE_HOST_PREFIX (defaut mercure)."""
+    for chemin in (DYNAMIC_PROD, DYNAMIC_DEV):
+        texte = chemin.read_text(encoding="utf-8")
+        regles = [ligne for ligne in texte.splitlines() if "HostRegexp(" in ligne]
+        assert len(regles) == 5, chemin.name
+        for ligne in regles:
+            assert f"HostRegexp(`^{HOTE_BACKOFFICE}\\\\..+$`)" in ligne, (chemin.name, ligne)
+    environment = compose["services"]["traefik"]["environment"]
+    assert environment["BACKOFFICE_HOST_PREFIX"] == "${BACKOFFICE_HOST_PREFIX:-mercure}"
+    labels = compose["services"]["traefik"]["labels"]
+    for routeur in ("basecamp-gw", "basecamp-gw-http"):
+        regle = labels[f"traefik.http.routers.{routeur}.rule"]
+        assert "Host(`${BACKOFFICE_HOST_PREFIX:-mercure}.${BASECAMP_DOMAIN}`)" in regle, routeur
+        assert "admin." not in regle, routeur
+    dev = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    assert dev["services"]["traefik"]["environment"]["BACKOFFICE_HOST_PREFIX"] == (
+        "${BACKOFFICE_HOST_PREFIX:-mercure}"
+    )
+    exemple = (ROOT / "deploy" / "prod.env.example").read_text(encoding="utf-8")
+    assert "BACKOFFICE_HOST_PREFIX=mercure" in exemple
+
+
+def test_aucun_hote_admin_dans_le_depot() -> None:
+    """Plus de repli : l'ancien hote d'administration n'est ecrit nulle part (les routes /admin/... restent)."""
+    git = shutil.which("git")
+    if git is None:
+        pytest.skip("git absent")
+    sortie = subprocess.run(  # noqa: S603 - commande fixe
+        [git, "grep", "-n", "-I", "-E", r"admin\.(localhost|<domaine>|\$\{|basecamp)", "--", ".", ":!scripts/deploy/test_compose_prod.py", ":!apps/frontend/package-lock.json"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout
+    assert sortie == "", sortie

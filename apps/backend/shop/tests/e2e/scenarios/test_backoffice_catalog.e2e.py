@@ -3,7 +3,7 @@
 Le navigateur n'a que son cookie de session ; le back-office relaie à `shop` avec le jeton du cookie. Le
 jeton d'opérateur est signé avec la clé de développement d'`auth` (comme dans `test_catalog_admin`) : le
 back-office le vérifie par le JWKS d'`auth`. La connexion en trois temps est couverte par les e2e d'`auth`.
-Toutes les requêtes portent `Host: admin.localhost` ; le site client est appelé sur le domaine principal.
+Toutes les requêtes portent `Host: mercure.localhost` ; le site client est appelé sur le domaine principal.
 """
 
 import base64
@@ -25,7 +25,7 @@ KEY_PATH = Path(
         "E2E_AUTH_KEY", str(Path(__file__).resolve().parents[6] / ".secrets/auth/jwt-private.pem")
     )
 )
-ADMIN_HOST = {"Host": "admin.localhost"}
+ADMIN_HOST = {"Host": "mercure.localhost"}
 SAME_ORIGIN = {**ADMIN_HOST, "Sec-Fetch-Site": "same-origin"}
 BFF = "/bff/products"
 JPEG = b"\xff\xd8\xff\xe0" + bytes(range(256)) * 4

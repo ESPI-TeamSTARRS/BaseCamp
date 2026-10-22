@@ -8,7 +8,7 @@ vi.mock('@/lib/handlers/login-steps', () => handlers);
 vi.mock('@/lib/handlers/logout-handler', () => ({ handleLogout }));
 vi.mock('@/lib/runtime', () => ({ runtime: () => ({ ...deps, sessions: {} }) }));
 
-const request = (path: string) => new Request(`http://admin.localhost${path}`, { method: 'POST' });
+const request = (path: string) => new Request(`http://mercure.localhost${path}`, { method: 'POST' });
 
 describe('routes de session', () => {
   beforeEach(() => vi.clearAllMocks());

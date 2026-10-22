@@ -39,6 +39,9 @@ services:
       - --entrypoints.web.transport.respondingTimeouts.idleTimeout=60s
       - --ping=true
       - --log.level=INFO
+    environment:
+      # Lu par les regles de traefik/dynamic.prod.yml (modele Go) : meme prefixe que les etiquettes ci-dessous.
+      BACKOFFICE_HOST_PREFIX: ${BACKOFFICE_HOST_PREFIX:-mercure}
     volumes:
       - ./traefik/dynamic.prod.yml:/etc/traefik/dynamic.yml:ro
     networks: [web, app]
@@ -49,14 +52,14 @@ services:
       traefik.enable: ${GATEWAY_EXPOSE:-true}
       traefik.docker.network: ${WEB_NETWORK:-web}
       # Routeur HTTPS du Traefik du serveur vers la passerelle de la pile.
-      traefik.http.routers.basecamp-gw.rule: Host(`${BASECAMP_DOMAIN:?voir deploy/prod.env.example}`) || Host(`admin.${BASECAMP_DOMAIN}`)
+      traefik.http.routers.basecamp-gw.rule: Host(`${BASECAMP_DOMAIN:?voir deploy/prod.env.example}`) || Host(`${BACKOFFICE_HOST_PREFIX:-mercure}.${BASECAMP_DOMAIN}`)
       traefik.http.routers.basecamp-gw.entrypoints: ${TRAEFIK_ENTRYPOINT_HTTPS:-websecure}
       traefik.http.routers.basecamp-gw.tls: "true"
       traefik.http.routers.basecamp-gw.tls.certresolver: ${TRAEFIK_CERTRESOLVER:-letsencrypt}
       traefik.http.routers.basecamp-gw.service: basecamp-gw
       traefik.http.services.basecamp-gw.loadbalancer.server.port: "9080"
       # Redirection HTTP -> HTTPS.
-      traefik.http.routers.basecamp-gw-http.rule: Host(`${BASECAMP_DOMAIN}`) || Host(`admin.${BASECAMP_DOMAIN}`)
+      traefik.http.routers.basecamp-gw-http.rule: Host(`${BASECAMP_DOMAIN}`) || Host(`${BACKOFFICE_HOST_PREFIX:-mercure}.${BASECAMP_DOMAIN}`)
       traefik.http.routers.basecamp-gw-http.entrypoints: ${TRAEFIK_ENTRYPOINT_HTTP:-web}
       traefik.http.routers.basecamp-gw-http.middlewares: basecamp-gw-https-redirect
       traefik.http.middlewares.basecamp-gw-https-redirect.redirectscheme.scheme: https
@@ -92,7 +95,7 @@ services:
       start_period: 15s
 
   # Optionnel : actif seulement si le manifeste le contient (le profil `backoffice` est alors pose par
-  # manifest.py via COMPOSE_PROFILES). Aucun routeur public sans DNS admin (voir docs/deployment/admin-domain.md).
+  # manifest.py via COMPOSE_PROFILES). Aucun routeur public sans DNS du back-office (voir docs/deployment/backoffice-domain.md).
   backoffice:
     <<: *hardening
     image: ${BACKOFFICE_IMAGE:-}
@@ -309,7 +312,7 @@ services:
       APP_N8N_MAIL_SECRET: ${N8N_MAIL_SECRET:-}
       APP_PUBLIC_BASE_URL: https://${BASECAMP_DOMAIN}
       # Origine du lien d'invitation d'operateur affiche par create-operator-invite (WORK-67).
-      APP_ADMIN_BASE_URL: https://admin.${BASECAMP_DOMAIN}
+      APP_ADMIN_BASE_URL: https://${BACKOFFICE_HOST_PREFIX:-mercure}.${BASECAMP_DOMAIN}
       # Back-office : ETEINT par defaut. L'activer (AUTH_BACKOFFICE_ENABLED=true) exige le verificateur reel
       # (AUTH_FACE_VERIFIER=visage-id) et le secret des gabarits monte ci-dessous; sans l'un des deux,
       # auth refuse de demarrer (jamais de porte sans verificateur). Jamais le faux verificateur en production.

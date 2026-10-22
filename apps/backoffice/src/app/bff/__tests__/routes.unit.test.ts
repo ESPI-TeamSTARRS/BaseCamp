@@ -6,7 +6,7 @@ const deps = { shop: { id: 'shop' } };
 vi.mock('@/lib/handlers/catalog-handlers', () => ({ handleCatalog }));
 vi.mock('@/lib/runtime', () => ({ runtime: () => deps }));
 
-const request = (method: string) => new Request('http://admin.localhost/bff/products', { method });
+const request = (method: string) => new Request('http://mercure.localhost/bff/products', { method });
 const context = { params: Promise.resolve({ id: 'tente-tunnel' }) };
 
 describe('routes du catalogue', () => {

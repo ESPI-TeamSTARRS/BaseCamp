@@ -17,7 +17,7 @@ class TestCreateCommand:
         lines = out.out.strip().splitlines()
         assert code == 0 and out.err == ""
         assert lines[0].startswith("Lien d'invitation (usage unique, valable jusqu'à ")
-        assert lines[1].startswith("https://admin.exemple.test/invitation#token=")
+        assert lines[1].startswith("https://mercure.exemple.test/invitation#token=")
         assert len(lines) == 2
 
     def test_an_invalid_address_exits_1_with_a_fixed_message(

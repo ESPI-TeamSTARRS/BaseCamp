@@ -13,9 +13,9 @@ http:
       service: shop
       priority: 200
     shop-admin:
-      # API d'administration du catalogue : repondue UNIQUEMENT sur l'origine admin (admin.<domaine>).
+      # API d'administration du catalogue : repondue UNIQUEMENT sur l'origine du back-office (mercure.<domaine>).
       # Sur le domaine principal, /api/shop/admin n'est pas route vers shop (le front repond 404).
-      rule: "HostRegexp(`^admin\\..+$`) && PathPrefix(`/api/shop/admin`)"
+      rule: "HostRegexp(`^{{ env `BACKOFFICE_HOST_PREFIX` | default `mercure` }}\\..+$`) && PathPrefix(`/api/shop/admin`)"
       entryPoints: [web]
       middlewares: [admin-rate-limit, admin-body-limit, security-headers, strip-api-shop]
       service: shop
@@ -58,11 +58,11 @@ http:
       service: auth
       priority: 200
     auth-backoffice:
-      # Connexion du back-office (en trois temps) : repondue UNIQUEMENT sur l'origine admin (admin.<domaine>),
+      # Connexion du back-office (en trois temps) : repondue UNIQUEMENT sur l'origine du back-office (mercure.<domaine>),
       # avec un limiteur par adresse plus strict que /login. Sur le domaine principal, /api/auth/backoffice
       # n'est pas route vers auth (le front repond 404).
       # Corps jusqu'a 5 Mio : 3 images de 1 Mo en base64 (WORK-59).
-      rule: "HostRegexp(`^admin\\..+$`) && PathPrefix(`/api/auth/backoffice`)"
+      rule: "HostRegexp(`^{{ env `BACKOFFICE_HOST_PREFIX` | default `mercure` }}\\..+$`) && PathPrefix(`/api/auth/backoffice`)"
       entryPoints: [web]
       middlewares: [backoffice-login-rate-limit, backoffice-body-limit, security-headers, strip-api-auth]
       service: auth
@@ -70,7 +70,7 @@ http:
     auth-backoffice-invitation:
       # Creation du compte operateur par lien d'invitation (WORK-67) : admin uniquement, meme limiteur par
       # adresse que la connexion. Corps jusqu'a 15 Mio : jusqu'a 10 images de 1 Mo en base64 (~13,4 Mo).
-      rule: "HostRegexp(`^admin\\..+$`) && Path(`/api/auth/backoffice/invitation/complete`)"
+      rule: "HostRegexp(`^{{ env `BACKOFFICE_HOST_PREFIX` | default `mercure` }}\\..+$`) && Path(`/api/auth/backoffice/invitation/complete`)"
       entryPoints: [web]
       middlewares: [backoffice-login-rate-limit, backoffice-invitation-body-limit, security-headers, strip-api-auth]
       service: auth
@@ -100,15 +100,15 @@ http:
       # Connexion du back-office en trois temps (routes serveur du back-office) : meme limiteur strict que
       # /api/auth/backoffice, car le serveur appelle auth en interne et ce limiteur ne verrait pas ces essais.
       # Le corps peut porter jusqu'a 3 images en base64 (5 Mio), comme /api/auth/backoffice.
-      rule: "HostRegexp(`^admin\\..+$`) && (Path(`/session/identify`) || Path(`/session/face`) || Path(`/session/password`))"
+      rule: "HostRegexp(`^{{ env `BACKOFFICE_HOST_PREFIX` | default `mercure` }}\\..+$`) && (Path(`/session/identify`) || Path(`/session/face`) || Path(`/session/password`))"
       entryPoints: [web]
       middlewares: [backoffice-login-rate-limit, backoffice-body-limit, security-headers]
       service: backoffice
       priority: 30
     backoffice:
-      # Back-office : repondu UNIQUEMENT sur l'origine admin (admin.<domaine>), jamais sur le domaine principal.
+      # Back-office : repondu UNIQUEMENT sur l'origine du back-office (mercure.<domaine>), jamais sur le domaine principal.
       # Les routes /api/* de l'hote admin restent celles de leurs services (shop-admin, auth...).
-      rule: "HostRegexp(`^admin\\..+$`) && !PathPrefix(`/api`)"
+      rule: "HostRegexp(`^{{ env `BACKOFFICE_HOST_PREFIX` | default `mercure` }}\\..+$`) && !PathPrefix(`/api`)"
       entryPoints: [web]
       middlewares: [security-headers]
       service: backoffice

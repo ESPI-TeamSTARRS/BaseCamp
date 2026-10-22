@@ -24,10 +24,10 @@ Un reverse proxy (Traefik) est le seul point d'entrée publié. Il route les req
 | Préfixe | Service |
 |---|---|
 | `/api/shop/*` (sauf `/api/shop/admin` et `/api/shop/webhooks`) | `shop` |
-| `/api/shop/admin/*` **sur l'hôte `admin.<domaine>` seulement** | `shop` (administration du catalogue) |
+| `/api/shop/admin/*` **sur l'hôte `mercure.<domaine>` seulement** | `shop` (administration du catalogue) |
 | `/media/*` | images du catalogue (bucket `product-images`, lecture seule) |
 | `/api/auth/*` (sauf `/api/auth/backoffice`, `/api/auth/internal` et `/api/auth/metrics`) | `auth` |
-| `/api/auth/backoffice/*` **sur l'hôte `admin.<domaine>` seulement** | `auth` (connexion du back-office en trois temps) |
+| `/api/auth/backoffice/*` **sur l'hôte `mercure.<domaine>` seulement** | `auth` (connexion du back-office en trois temps) |
 | `/.well-known/jwks.json` | `auth` (clés publiques de vérification des jetons, lecture seule) |
 | `/api/payment/*` | `payment` (accès restreint) |
 

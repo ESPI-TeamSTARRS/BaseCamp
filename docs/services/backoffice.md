@@ -1,7 +1,7 @@
 # Back-office `apps/backoffice`
 
 ## Rôle
-Application d'administration réservée à l'équipe, servie sur l'hôte admin (`admin.<domaine>`, en local `admin.localhost`). La session (garde de route, cookie de session, trois temps de connexion relayés vers `auth`, déconnexion) est en place (WORK-60) ; la gestion du catalogue (WORK-61) est le premier écran métier ; l'écran de connexion avec capture du visage arrive dans un ticket distinct.
+Application d'administration réservée à l'équipe, servie sur l'hôte du back-office (`mercure.<domaine>`, en local `mercure.localhost`). La session (garde de route, cookie de session, trois temps de connexion relayés vers `auth`, déconnexion) est en place (WORK-60) ; la gestion du catalogue (WORK-61) est le premier écran métier ; l'écran de connexion avec capture du visage arrive dans un ticket distinct.
 
 ## Stack
 Next.js 16 (App Router, React 19), TypeScript strict, ESLint 9 en configuration plate, Prettier, Vitest (couverture ≥ 80 %, seuil bloquant). Même chaîne et mêmes scripts npm que le [front](frontend.md) (`quality`, `test:coverage`, `security`, `build`). Image Docker multi-étapes, utilisateur sans privilèges, serveur autonome (`output: 'standalone'`).
@@ -10,7 +10,7 @@ Next.js 16 (App Router, React 19), TypeScript strict, ESLint 9 en configuration 
 ```
 apps/backoffice/
 ├── Dockerfile · package.json · releaserc.toml   # semver propre : tags `backoffice-vX.Y.Z`
-├── next.config.mjs                              # en-têtes de sécurité de l'origine admin
+├── next.config.mjs                              # en-têtes de sécurité de l'origine du back-office
 └── src/
     ├── app/        # layout (noindex), page d'accueil, robots.txt
     ├── lib/        # logique testée (journal métier)
@@ -18,7 +18,7 @@ apps/backoffice/
 ```
 
 ## Session, connexion en trois temps et déconnexion (WORK-60)
-La connexion du back-office se fait en trois temps (identifiant, visage, mot de passe) auprès d'`auth` (`/backoffice/*`, voir [auth](auth.md)). Le navigateur n'appelle jamais `auth` directement : il appelle des routes **serveur** du back-office, sous `/session` (et `/bff` pour les données), qui relaient sur le réseau interne (`AUTH_URL`). Ces chemins évitent le conflit avec les routes `/api/*` de l'hôte admin, qui vont aux services.
+La connexion du back-office se fait en trois temps (identifiant, visage, mot de passe) auprès d'`auth` (`/backoffice/*`, voir [auth](auth.md)). Le navigateur n'appelle jamais `auth` directement : il appelle des routes **serveur** du back-office, sous `/session` (et `/bff` pour les données), qui relaient sur le réseau interne (`AUTH_URL`). Ces chemins évitent le conflit avec les routes `/api/*` de l'hôte du back-office, qui vont aux services.
 
 - **`POST /session/identify`** `{email}` → `{challenge_id, expires_in}` (défi à usage unique, toujours 200 côté `auth`, y compris pour un compte inconnu).
 - **`POST /session/face`** `{challenge_id, images: [1 à 3 images base64]}` → `{face_ok: true}`; visage refusé ou défi invalide : **401** générique « Identifiants invalides. »; image invalide : 422.
@@ -71,16 +71,16 @@ Aucune écriture n'existe : tout autre verbe répond 405.
 - **Tests** : composants (Testing Library), routes serveur et gestionnaire (Vitest, couverture ≥ 80 %), accès refusés; e2e sur la pile (`apps/backend/shop/tests/e2e/scenarios/test_backoffice_orders.e2e.py`) : commande passée sur le site, visible dans le back-office avec le bon statut et son détail, refus sans jeton double facteur ou avec le rôle `customer`, aucune écriture.
 
 ## Inscription d'un opérateur invité (WORK-68)
-Page publique `/invitation` (origine admin seulement, sans session : `PUBLIC_PATHS` du garde de route). Le lien que l'administrateur IT génère (`create-operator-invite`, voir [auth](auth.md#invitation-dun-opérateur-par-lien-à-usage-unique-work-67)) est `https://admin.<domaine>/invitation#token=<jeton>` : le jeton est dans le **fragment**, que le navigateur n'envoie jamais au serveur (ni journal d'accès, ni Traefik). La forme `?token=` est aussi acceptée.
+Page publique `/invitation` (origine du back-office seulement, sans session : `PUBLIC_PATHS` du garde de route). Le lien que l'administrateur IT génère (`create-operator-invite`, voir [auth](auth.md#invitation-dun-opérateur-par-lien-à-usage-unique-work-67)) est `https://mercure.<domaine>/invitation#token=<jeton>` : le jeton est dans le **fragment**, que le navigateur n'envoie jamais au serveur (ni journal d'accès, ni Traefik). La forme `?token=` est aussi acceptée.
 
 - **Jeton** : lu une seule fois après l'hydratation (`takeInvitationToken`), puis retiré de l'adresse et de l'historique (`history.replaceState`). Il ne vit plus qu'en mémoire du composant. Jeton absent ou de forme invalide : le message unique « lien invalide, expiré ou déjà utilisé, demandez un nouveau lien à l'administrateur IT », sans formulaire.
 - **Saisie** : mot de passe (12 caractères au minimum) et confirmation, puis **3 à 10 photos** prises avec la caméra du navigateur (mêmes `startCamera` et `stopCamera` que la connexion; la caméra n'est activée que sur clic), avec aperçu, retrait photo par photo et compteur. Chaque photo est une image JPEG réduite côté navigateur (640 px de large au plus; largeur et qualité baissent encore tant que l'image dépasse **1 Mo**).
 - **Envoi** : `POST /api/auth/backoffice/invitation/complete` directement à la passerelle (même origine, sans cookie ni référent), jamais par un relais du back-office : le corps peut atteindre 15 Mio (voir [auth](auth.md)). Résultats : 201 « compte créé » avec lien vers `/login`; 401 (inconnu, expiré, utilisé, révoqué ou adresse bloquée) : le message unique du lien; 422 : message clair par catégorie (mot de passe non accepté, nombre de photos, photo illisible, visage non reconnu), le même lien reste utilisable; autre erreur ou panne : « service momentanément indisponible ».
 - **Rien n'est conservé** : à la fin de l'envoi, quel que soit le résultat, la caméra est éteinte, les photos, le mot de passe et sa confirmation sont effacés de l'état. Le composant n'écrit rien dans le stockage du navigateur.
-- **Tests** : `invitation-form.integ.test.tsx` (21 cas : lien, caméra, photos, validations, tous les résultats, nettoyage, double envoi), `invitation-token`, `invitation-api` et `capture` (limite de 1 Mo); parcours de bout en bout `test_zz_operator_signup_journey.e2e.py` (page publique sur l'origine admin avec ses en-têtes, 404 sur le domaine principal, création du compte par la passerelle puis connexion par les routes du back-office).
+- **Tests** : `invitation-form.integ.test.tsx` (21 cas : lien, caméra, photos, validations, tous les résultats, nettoyage, double envoi), `invitation-token`, `invitation-api` et `capture` (limite de 1 Mo); parcours de bout en bout `test_zz_operator_signup_journey.e2e.py` (page publique sur l'origine du back-office avec ses en-têtes, 404 sur le domaine principal, création du compte par la passerelle puis connexion par les routes du back-office).
 
 ## Isolation et exposition
-- Le site client n'a aucun lien ni route vers le back-office. Le routeur Traefik `backoffice` ne répond que sur l'hôte `admin.*` (`HostRegexp(^admin\..+$)`, hors `/api`); sur le domaine principal, c'est le front qui répond (404).
+- Le site client n'a aucun lien ni route vers le back-office. Le routeur Traefik `backoffice` ne répond que sur l'hôte `mercure.*` (`HostRegexp(^admin\..+$)`, hors `/api`); sur le domaine principal, c'est le front qui répond (404).
 - `noindex` partout : balise `robots` de la page, `robots.txt` (`Disallow: /`) et en-tête `X-Robots-Tag`.
 - En-têtes : CSP sans cadre (`frame-ancestors 'none'`), `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: no-referrer`. `Permissions-Policy: camera=(self)` : la caméra n'est autorisée que pour cette origine.
 - Le conteneur ne reçoit que `AUTH_URL`, `SHOP_URL` et `LOG_PSEUDONYM_KEY` (aucun secret d'API); le jeton ne vit que dans un cookie `HttpOnly`.
@@ -100,7 +100,7 @@ Scénario `apps/backend/auth/tests/e2e/scenarios/test_zz_backoffice_journey.e2e.
 Le visage « accepté » utilise le faux vérificateur de développement avec la même image à l'enrôlement et à la connexion (voir [auth](auth.md), « Tests »). Lancement : pile minimale `docker compose up -d --wait`, `E2E_CHECK_LOGS=1 uv run poe test:e2e` dans `apps/backend/auth`.
 
 ## Pile et CI
-Service `backoffice` du `docker-compose.yml` (réseau `app`, healthcheck sur `/`), dont dépend Traefik. Job CI `backoffice` (qualité, tests, audit, build) dans `ci.yml`; le test de bout en bout de la pile construit l'image et vérifie 200 + `noindex` sur l'hôte admin et l'absence sur le domaine principal. L'image est construite, scannée (Trivy bloquant) et publiée par `release.yml` comme les autres composants.
+Service `backoffice` du `docker-compose.yml` (réseau `app`, healthcheck sur `/`), dont dépend Traefik. Job CI `backoffice` (qualité, tests, audit, build) dans `ci.yml`; le test de bout en bout de la pile construit l'image et vérifie 200 + `noindex` sur l'hôte du back-office et l'absence sur le domaine principal. L'image est construite, scannée (Trivy bloquant) et publiée par `release.yml` comme les autres composants.
 
 ## Reste à faire (hors de ce ticket)
 Entrée du back-office dans `deploy/manifest.json` et `deploy/docker-compose.prod.yml` après la première image publiée (le manifeste est par digest), puis exposition publique, limiteur et DNS (sous-domaine admin).

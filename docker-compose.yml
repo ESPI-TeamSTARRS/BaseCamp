@@ -30,6 +30,9 @@ services:
       - --log.level=INFO
     ports:
       - "127.0.0.1:${GATEWAY_PORT:-8080}:9080"
+    environment:
+      # Prefixe de l'hote du back-office, lu par les regles de infra/traefik/dynamic.yml (modele Go).
+      BACKOFFICE_HOST_PREFIX: ${BACKOFFICE_HOST_PREFIX:-mercure}
     volumes:
       - ./infra/traefik/dynamic.yml:/etc/traefik/dynamic.yml:ro
     networks: [edge, app]
@@ -292,7 +295,7 @@ services:
       APP_N8N_MAIL_SECRET: ${N8N_MAIL_SECRET:-}
       APP_PUBLIC_BASE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:8080}
       # Origine du lien d'invitation d'operateur (create-operator-invite, WORK-67).
-      APP_ADMIN_BASE_URL: ${ADMIN_BASE_URL:-http://admin.localhost:8080}
+      APP_ADMIN_BASE_URL: ${ADMIN_BASE_URL:-http://mercure.localhost:8080}
       # Adresse reelle du client : X-Forwarded-For n'est cru que de Traefik (reseaux Docker locaux).
       APP_TRUSTED_PROXIES: ${AUTH_TRUSTED_PROXIES:-172.16.0.0/12,192.168.0.0/16,10.0.0.0/8}
       # Connexion du back-office en trois temps : active en developpement avec le FAUX verificateur de

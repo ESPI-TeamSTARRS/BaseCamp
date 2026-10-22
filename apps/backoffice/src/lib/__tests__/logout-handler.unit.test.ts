@@ -6,7 +6,7 @@ function post(headers: Record<string, string> = {}): Request {
   return new Request('http://backoffice:3000/session/logout', {
     method: 'POST',
     headers: {
-      host: 'admin.localhost',
+      host: 'mercure.localhost',
       'sec-fetch-site': 'same-origin',
       cookie: 'bo_access=a.b.c',
       ...headers,
@@ -23,7 +23,7 @@ describe('handleLogout', () => {
     });
 
     expect(response.status).toBe(303);
-    expect(response.headers.get('location')).toBe('http://admin.localhost/login');
+    expect(response.headers.get('location')).toBe('http://mercure.localhost/login');
     expect(response.headers.getSetCookie().join('\n')).toMatch(/bo_access=;.*Max-Age=0/i);
     expect(events[0]).toMatchObject({
       event: 'backoffice.logout',

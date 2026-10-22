@@ -1,6 +1,6 @@
 """Parcours d'inscription d'un opérateur invité (WORK-68), sur la pile réelle : Traefik, back-office, auth.
 
-Ce que le navigateur fait : ouvre `/invitation#token=...` sur l'origine admin (page publique, sans session),
+Ce que le navigateur fait : ouvre `/invitation#token=...` sur l'origine du back-office (page publique, sans session),
 envoie les photos et le mot de passe à la route d'auth par la passerelle, puis se connecte par les routes
 serveur du back-office. La caméra et le fragment de l'adresse sont couverts par les tests de composants.
 """

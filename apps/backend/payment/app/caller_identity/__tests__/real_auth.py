@@ -109,7 +109,7 @@ FACE = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"visage-de-l-operateur-e2e").dec
 
 def operator_token() -> str:
     """Jeton d'un operateur reel : `create-operator`, puis la connexion du back-office en trois temps
-    (identifiant, visage, mot de passe) sur l'origine admin : le login classique n'accorde plus `operator`."""
+    (identifiant, visage, mot de passe) sur l'origine du back-office : le login classique n'accorde plus `operator`."""
 
     def make() -> str:
         email = f"e2e-operator-{uuid.uuid4().hex[:10]}@example.test"
@@ -128,7 +128,7 @@ def operator_token() -> str:
             check=False,
         )
         assert enrolled.returncode == 0, enrolled.stderr[-300:]
-        headers = {"Host": "admin.localhost"}
+        headers = {"Host": "mercure.localhost"}
         with httpx.Client(base_url=BASE_URL, timeout=30.0, headers=headers) as admin:
             identified = admin.post("/api/auth/backoffice/identify", json={"email": email})
             assert identified.status_code == 200, identified.status_code

@@ -43,7 +43,7 @@ from app.registration.domain.services.password_policy import PasswordPolicy
 INVITED = "nouvel.operateur@example.com"
 GOOD_PASSWORD = "sentier-" + uuid4().hex
 ADDRESS = "203.0.113.9"
-BASE_URL = "https://admin.exemple.test"
+BASE_URL = "https://mercure.exemple.test"
 
 
 class InvitationStore:

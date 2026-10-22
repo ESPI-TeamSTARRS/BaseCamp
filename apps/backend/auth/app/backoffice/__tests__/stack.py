@@ -102,7 +102,7 @@ class BackofficeStack(LoginStack):
             fingerprinter,
             self.clock,
             events,
-            "https://admin.exemple.test",
+            "https://mercure.exemple.test",
             300,
         )
         self.application.state.complete_operator_invitation_use_case = (

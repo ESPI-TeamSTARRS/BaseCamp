@@ -3,7 +3,7 @@
 Une commande passée sur le site client (POST /api/shop/orders) doit apparaître côté back-office avec le bon
 statut et son détail, en lecture seule. Le jeton d'opérateur est signé avec la clé de développement d'`auth`
 (comme dans `test_backoffice_catalog`) ; le navigateur n'a que son cookie de session. Les requêtes du
-back-office portent `Host: admin.localhost` ; le site client est appelé sur le domaine principal.
+back-office portent `Host: mercure.localhost` ; le site client est appelé sur le domaine principal.
 """
 
 import base64
@@ -25,7 +25,7 @@ KEY_PATH = Path(
         "E2E_AUTH_KEY", str(Path(__file__).resolve().parents[6] / ".secrets/auth/jwt-private.pem")
     )
 )
-ADMIN_HOST = {"Host": "admin.localhost"}
+ADMIN_HOST = {"Host": "mercure.localhost"}
 SAME_ORIGIN = {**ADMIN_HOST, "Sec-Fetch-Site": "same-origin"}
 BFF = "/bff/orders"
 ADMIN_API = "/api/shop/admin/orders"

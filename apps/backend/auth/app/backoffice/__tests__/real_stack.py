@@ -2,7 +2,7 @@
 
 L'operateur est cree par la commande d'exploitation `create-operator`; son gabarit facial est enrole
 dans la base par le conteneur `auth` avec le FAUX verificateur de developpement; la connexion se fait
-ensuite en trois temps par la passerelle, sur l'origine admin (`admin.localhost`).
+ensuite en trois temps par la passerelle, sur l'origine du back-office (`mercure.localhost`).
 """
 
 import base64
@@ -17,7 +17,7 @@ import httpx
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
 BASE_URL = os.environ.get("E2E_BASE_URL", "http://127.0.0.1:8080")
-ADMIN_HOST = "admin.localhost"
+ADMIN_HOST = "mercure.localhost"
 PHRASE = "Randonnee-GR20-" + uuid.uuid4().hex[:12]
 FACE = b"\x89PNG\r\n\x1a\n" + b"visage-de-l-operateur-e2e"
 OTHER_FACE = b"\x89PNG\r\n\x1a\n" + b"un-autre-visage-e2e"

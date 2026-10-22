@@ -47,7 +47,7 @@ function request(
   url = 'http://backoffice:3000/bff/orders',
   options: { headers?: Record<string, string>; cookie?: string | null; method?: string } = {}
 ): Request {
-  const headers: Record<string, string> = { host: 'admin.localhost', ...options.headers };
+  const headers: Record<string, string> = { host: 'mercure.localhost', ...options.headers };
   if (options.cookie !== null) headers.cookie = options.cookie ?? 'bo_access=jeton.secret.x';
   return new Request(url, { method: options.method ?? 'GET', headers });
 }
