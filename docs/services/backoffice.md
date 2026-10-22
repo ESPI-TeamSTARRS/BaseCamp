@@ -1,7 +1,7 @@
 # Back-office `apps/backoffice`
 
 ## Rôle
-Application d'administration réservée à l'équipe, servie sur l'hôte admin (`admin.<domaine>`, en local `admin.localhost`). La session (garde de route, cookie de session, trois temps de connexion relayés vers `auth`, déconnexion) est en place (WORK-60) ; l'écran de connexion avec capture du visage et le catalogue arrivent dans les tickets suivants.
+Application d'administration réservée à l'équipe, servie sur l'hôte admin (`admin.<domaine>`, en local `admin.localhost`). La session (garde de route, cookie de session, trois temps de connexion relayés vers `auth`, déconnexion) est en place (WORK-60) ; la gestion du catalogue (WORK-61) est le premier écran métier ; l'écran de connexion avec capture du visage arrive dans un ticket distinct.
 
 ## Stack
 Next.js 16 (App Router, React 19), TypeScript strict, ESLint 9 en configuration plate, Prettier, Vitest (couverture ≥ 80 %, seuil bloquant). Même chaîne et mêmes scripts npm que le [front](frontend.md) (`quality`, `test:coverage`, `security`, `build`). Image Docker multi-étapes, utilisateur sans privilèges, serveur autonome (`output: 'standalone'`).
@@ -31,11 +31,32 @@ La connexion du back-office se fait en trois temps (identifiant, visage, mot de 
 - **Journaux** (contrat commun) : `backoffice.login_identify` (attribut `email_hash`, HMAC de l'adresse avec `LOG_PSEUDONYM_KEY`), `backoffice.login_face`, `backoffice.login_password` (`success`, `denied` avec motif `face_refused`, `wrong_password`, `invalid_form`, `invalid_images`, `cross_origin`, `body_too_large`, ou `error` `auth_unavailable`), `backoffice.logout`, `backoffice.access_denied` (motifs `no_session`, `session_expired`, `bad_signature`, `not_operator`, `second_factor_missing`, `unknown_key`, `auth_unavailable`…). Jamais d'adresse en clair, de mot de passe, d'image, de jeton ni d'identifiant de défi.
 - **Environnement** : `AUTH_URL` (défaut `http://auth:8000`), `AUTH_ISSUER` et `AUTH_AUDIENCE` (défauts `basecamp-auth`, `basecamp-client-api`), `LOG_PSEUDONYM_KEY` (obligatoire en production, clé éphémère en développement).
 - **Lien avec shop** : le jeton de la session porte `operator` et `amr: ["face","pwd"]`, que l'API d'administration de `shop` exige. L'écran de connexion (capture caméra) est un ticket distinct : il appellera ces trois routes; aucune connexion par mot de passe seul n'existe, par construction.
+## Gestion du catalogue (WORK-61)
+Écrans, tous derrière la garde de route : `/produits` (liste paginée de 20, recherche par nom, filtre « Afficher les produits archivés », états de chargement, de liste vide, de recherche sans résultat et d'erreur avec « Réessayer »), `/produits/nouveau` (création) et `/produits/{id}` (modification, images, archivage). L'accueil `/` mène au catalogue.
+
+Le navigateur n'appelle jamais `shop` : il appelle les routes serveur `/bff/products` du back-office, qui relaient à l'API d'administration de `shop` (`SHOP_URL`, réseau interne `app`) avec le jeton du cookie `bo_access` (jamais renvoyé au navigateur ni journalisé).
+
+| Route du back-office | Rôle | API de shop |
+|---|---|---|
+| `GET /bff/products?limit&offset&include_archived&q` | liste (paramètres bornés avant tout appel) | `GET /admin/products` |
+| `POST /bff/products` | création | `POST /admin/products` |
+| `GET` / `PATCH /bff/products/{id}` | lecture, modification (corps avec `version`) | `GET` / `PATCH /admin/products/{id}` |
+| `POST /bff/products/{id}/archive` | archivage | `POST …/archive` |
+| `POST /bff/products/{id}/image` | octets de l'image (2 Mio au plus) | `POST …/image` |
+
+- **Erreurs** : jamais le texte de shop. Chaque échec devient un code et un message français fixes : `unauthorized` 401 (le cookie est effacé, retour à la connexion), `forbidden` 403, `not_found` 404, `stale_version` 409 (« modifié ailleurs »), `archived` 409, `duplicate` 409, `too_many_images` 409, `invalid` 422 (message d'image dédié pour un téléversement), `unavailable` 503, `error` 502, plus `cross_origin` 403, `bad_request` 400 et `too_large` 413 décidés par le back-office. Corps JSON limité à 64 Kio, image à 2 Mio.
+- **Formulaire** : mêmes bornes que l'API (nom 1 à 200, identifiant en minuscules et tirets, prix en euros avec 2 décimales au plus converti en centimes, stock 0 à 1 000 000, descriptions 300 et 5 000, caractéristiques bornées), erreurs par champ reliées au contrôle (`aria-describedby`, `aria-invalid`), focus sur le premier champ en erreur. Shop valide à nouveau.
+- **Images** : aperçu avant envoi, contrôle du type (JPEG, PNG, WebP) et du poids (2 Mio) avec un refus explicite; le serveur relit le contenu réel. Dix images au plus.
+- **Concurrence** : la modification envoie la `version` lue. Sur un 409 de version, la saisie est conservée, un message explique le conflit et « Recharger la dernière version » relit le produit.
+- **Archivage** : confirmation explicite (`alertdialog`, focus sur « Annuler »); le produit disparaît du site client et devient en lecture seule, visible avec le filtre des archivés. Il n'y a pas de désarchivage.
+- **Journaux** : `backoffice.catalog_list|get|create|update|archive|image` avec `outcome`, `reason` en cas d'échec, `duration_ms`; jamais de jeton ni de donnée de produit.
+- **Tests** : composants avec Testing Library (jsdom), routes serveur et logique pure avec Vitest; e2e sur la pile (`apps/backend/shop/tests/e2e/scenarios/test_backoffice_catalog.e2e.py`) : prix, stock et image modifiés depuis le back-office visibles sur le site client, archivage, conflit de version, doublon, image refusée.
+
 ## Isolation et exposition
 - Le site client n'a aucun lien ni route vers le back-office. Le routeur Traefik `backoffice` ne répond que sur l'hôte `admin.*` (`HostRegexp(^admin\..+$)`, hors `/api`); sur le domaine principal, c'est le front qui répond (404).
 - `noindex` partout : balise `robots` de la page, `robots.txt` (`Disallow: /`) et en-tête `X-Robots-Tag`.
 - En-têtes : CSP sans cadre (`frame-ancestors 'none'`), `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: no-referrer`. `Permissions-Policy: camera=(self)` : la caméra n'est autorisée que pour cette origine.
-- Le conteneur ne reçoit que AUTH_URL et LOG_PSEUDONYM_KEY (aucun secret d'API); le jeton ne vit que dans un cookie HttpOnly.
+- Le conteneur ne reçoit que `AUTH_URL`, `SHOP_URL` et `LOG_PSEUDONYM_KEY` (aucun secret d'API); le jeton ne vit que dans un cookie `HttpOnly`.
 
 ## Journaux
 Une ligne JSON par page servie sur la sortie standard, au [contrat commun](../development/logging.md) : `service: basecamp-backoffice`, `event: backoffice.page_served`, `outcome`, `correlation_id` (celui du `X-Correlation-ID` reçu s'il est bien formé, sinon un UUID; renvoyé dans la réponse). Aucune donnée personnelle ni valeur reçue.

@@ -17,7 +17,7 @@ Catalogue, commandes et stock. Demande les paiements au service [payment](paymen
 | GET | `/me/orders/{id}` | **client connecté** : une de ses commandes, 404 identique pour une commande inconnue ou d'un autre compte |
 | POST | `/orders/{id}/pay` | demande l'intention de paiement d'une commande en attente |
 | POST | `/orders/{id}/pay/confirm` | confirme le paiement avec une méthode de test |
-| GET | `/admin/products` | **administration** (origine admin seulement) : liste paginée, archivés optionnels |
+| GET | `/admin/products` | **administration** (origine admin seulement) : liste paginée, archivés optionnels, recherche `q` par nom (sous-chaîne, sans casse, 100 caractères au plus; `%` et `_` sont cherchés tels quels) |
 | POST | `/admin/products` | **administration** : crée un produit (201) |
 | GET / PATCH | `/admin/products/{id}` | **administration** : lit, modifie partiellement (version optimiste) |
 | POST | `/admin/products/{id}/archive` | **administration** : archive (soft delete) |
