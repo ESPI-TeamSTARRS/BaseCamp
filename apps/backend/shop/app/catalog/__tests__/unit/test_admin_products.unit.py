@@ -192,6 +192,21 @@ class TestListAdminProducts:
         assert (page.total, {p.id for p in page.items}) == (2, {live.id, gone.id})
 
 
+class TestSearchByName:
+    def test_filters_by_a_fragment_of_the_name_ignoring_case_and_counts_the_matches(self) -> None:
+        tente, sac = (
+            replace(make_product("a"), name="Tente Tunnel"),
+            replace(make_product("b"), name="Sac a dos"),
+        )
+        use_case = ListAdminProductsUseCase(InMemoryAdminProducts(tente, sac))
+
+        page = use_case.execute(False, 10, 0, "TUNNEL")
+
+        assert ([p.id for p in page.items], page.total) == ([tente.id], 1)
+        assert use_case.execute(False, 10, 0, "zzz").total == 0
+        assert use_case.execute(False, 10, 0, None).total == 2
+
+
 class TestBusinessEvent:
     def test_every_change_emits_one_event_with_a_pseudonymized_actor_and_no_free_text(self) -> None:
         existing = make_product("tente", price_cents=10000, stock=5)

@@ -455,6 +455,17 @@ class TestLogs:
         assert "Bearer" not in output
 
 
+class TestSearch:
+    async def test_q_filters_the_list_by_name(self, stack: _Stack) -> None:
+        await stack.create(name="Tente Tunnel")
+        await stack.create(name="Gourde inox")
+
+        found = (await stack.call("GET", f"{BASE}?q=tunnel")).json()
+
+        assert (found["total"], [i["name"] for i in found["items"]]) == (1, ["Tente Tunnel"])
+        assert (await stack.call("GET", f"{BASE}?q=" + "x" * 101)).status_code == 422
+
+
 class TestOpenApi:
     def test_the_contract_describes_every_admin_route_and_forbids_extra_fields(
         self, stack: _Stack
