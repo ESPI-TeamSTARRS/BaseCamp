@@ -8,6 +8,9 @@ export default function HomePage() {
       <p>
         <Link className="button" href="/produits">
           Gérer le catalogue
+        </Link>{' '}
+        <Link className="button" href="/commandes">
+          Consulter les commandes
         </Link>
       </p>
     </PageShell>

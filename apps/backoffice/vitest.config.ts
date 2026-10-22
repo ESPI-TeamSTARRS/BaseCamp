@@ -20,6 +20,7 @@ export default defineConfig({
         'src/app/session/**/route.ts',
         'src/app/bff/**/route.ts',
         'src/app/produits/**/page.tsx',
+        'src/app/commandes/**/page.tsx',
         'src/components/**/*.tsx',
       ],
       exclude: ['src/**/__tests__/**'],
