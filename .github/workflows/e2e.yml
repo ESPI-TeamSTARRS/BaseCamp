@@ -71,12 +71,14 @@ jobs:
           cache-to: type=gha,scope=front,mode=max
       - name: Pile minimale (Traefik, front, shop, auth, payment et son worker, Mailpit, bucket d images et leurs bases) healthy
         run: docker compose up -d --no-build --wait --wait-timeout 120 --scale payment=2 traefik payment payment-worker seaweedfs mailpit
-      - name: Back-office sur l'hote admin (200, noindex) et absent du domaine principal
+      - name: Back-office sur l'hote admin (repond, noindex) et absent du domaine principal
         run: |
           set -eu
-          code="$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: admin.localhost' "$E2E_BASE_URL/")"
-          [ "$code" = 200 ] || { echo "admin.localhost / -> $code"; exit 1; }
-          curl -s -D - -o /dev/null -H 'Host: admin.localhost' "$E2E_BASE_URL/" | grep -i '^x-robots-tag: noindex'
+          # La racine redirige vers l'ecran de connexion (3xx) : on accepte 200 ou une redirection.
+          headers="$(curl -s -D - -o /dev/null -H 'Host: admin.localhost' "$E2E_BASE_URL/")"
+          echo "$headers" | head -1
+          echo "$headers" | head -1 | grep -E ' (200|30[1278]) ' > /dev/null
+          echo "$headers" | grep -i '^x-robots-tag: noindex' > /dev/null
           if curl -s -H 'Host: localhost' "$E2E_BASE_URL/" | grep -q 'Back-office Basecamp'; then
             echo "back-office expose sur le domaine principal"; exit 1
           fi
