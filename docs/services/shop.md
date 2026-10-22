@@ -22,6 +22,8 @@ Catalogue, commandes et stock. Demande les paiements au service [payment](paymen
 | GET / PATCH | `/admin/products/{id}` | **administration** : lit, modifie partiellement (version optimiste) |
 | POST | `/admin/products/{id}/archive` | **administration** : archive (soft delete) |
 | POST | `/admin/products/{id}/image` | **administration** : téléverse une image (JPEG, PNG, WebP, 2 Mo) |
+| GET | `/admin/orders` | **administration** : commandes de tous les clients, lecture seule (voir « Consultation des commandes par le back-office ») |
+| GET | `/admin/orders/{id}` | **administration** : détail d'une commande (lignes, adresse de livraison, totaux, statut) |
 | POST | `/webhooks/payment` | **interne** : webhook signé de `payment` (jamais routé par la passerelle, voir ci-dessous) |
 | GET | `/products` | catalogue paginé, filtrable par catégorie (voir ci-dessous) |
 | GET | `/products/{slug}` | fiche détaillée d'un produit |
@@ -151,6 +153,20 @@ API réservée aux opérateurs du back-office, **répondue uniquement sur l'orig
 - **Archivage** (`POST …/archive`) : soft delete, `archived_at` renseigné, **aucune ligne effacée**, idempotent. Un produit archivé disparaît du catalogue client (`GET /products`, fiche), du devis de panier et de la création de commande; il reste lisible dans les commandes passées (nom et prix figés dans `order_lines`) et dans l'administration (`?include_archived=true`). Il ne peut plus être modifié ni recevoir d'image.
 - **Image** (`POST …/image`) : le corps de la requête est **les octets de l'image** (pas de formulaire). Types acceptés **vérifiés sur les premiers octets** (JPEG `FF D8 FF`, PNG, WebP `RIFF…WEBP`), jamais sur l'extension ni l'en-tête `Content-Type` annoncés; 2 Mio au plus, lus au plus jusqu'à la limite. Un fichier vide, trop gros, SVG, déguisé ou d'un autre type est refusé en 422 **avant** toute écriture (aucun effet de bord). Le nom est tiré au hasard (`<32 hex>.jpg|png|webp`), jamais dérivé du client. Le fichier part dans le bucket `product-images` par le port `ProductImageStorage` : adaptateur S3 (`S3ProductImageStorage`, signature SigV4 sur l'API S3 de SeaweedFS, clés `APP_S3_ACCESS_KEY` / `APP_S3_SECRET_KEY` de l'environnement, jamais versionnées) et adaptateur mémoire pour les tests. La clé est ajoutée à `images`; l'image est servie par `/media/<clé>` comme toutes les autres. 10 images au plus par produit.
 - **Journal** : `catalog_admin.change` à chaque changement (`action` = `create`, `update`, `image` ou `archive`), acteur `user` pseudonymisé (empreinte HMAC de l'identifiant du compte, jamais l'identifiant), ressource `product`, attributs `old_price_cents`, `new_price_cents`, `new_stock`, `version`. Jamais de description, de jeton ni de donnée personnelle. Le schéma commun n'a pas changé (`actor_type` = `user`).
+## Consultation des commandes par le back-office (WORK-66)
+Feature `admin_orders` (Clean Architecture : port `AdminOrderReader`, cas d'usage `ListAdminOrdersUseCase` et `GetAdminOrderUseCase`, lecteur SQL `SqlAlchemyAdminOrderReader`, routeur `app/admin_orders/presentation/router.py`, cas d'usage câblés dans `main.py`). **Lecture seule** : le port n'a aucune méthode d'écriture et le routeur n'expose que deux `GET`; tout autre verbe répond 405. Les statuts (`pending_payment`, `paid`, `expired`, `refunded`) restent pilotés par le paiement.
+
+**Garde** : la même que le catalogue d'administration (dépendance `current_operator`) et la même origine : routeur Traefik `shop-admin`, dont la règle `PathPrefix(/api/shop/admin)` couvre `/api/shop/admin/orders` sans changement de configuration (sur le domaine principal, c'est le front qui répond 404). Sans jeton valide : **401**; jeton dont `roles` n'a pas `operator` (un client) ou dont `amr` n'a pas `face` : **403** (`Acces refuse.`); clés d'`auth` illisibles : **503**.
+
+| Route | Description |
+|---|---|
+| `GET /admin/orders` | `limit` 1 à 100 (défaut 20), `offset` ≥ 0, `status` parmi `pending_payment`, `paid`, `expired`, `refunded`, `q` (100 caractères au plus) : recherche par **numéro ou e-mail**, sous-chaîne sans casse (`%` et `_` cherchés tels quels). Tri par date de création **décroissante**. Réponse `{items, total, limit, offset}`; chaque ligne : `id`, `number`, `status`, `email`, `total_cents`, `item_count` (somme des quantités), `created_at`, jamais l'adresse de livraison. |
+| `GET /admin/orders/{id}` | `id` au format UUID (422 sinon, sans écho de la valeur). Réponse : `id`, `number`, `status`, `email`, `shipping_address` (`full_name`, `line1`, `line2`, `postal_code`, `city`, `country`), `lines` (`name`, `unit_price_cents`, `quantity`, `line_total_cents`, dans l'ordre de la commande), `subtotal_cents`, `shipping_cents`, `total_cents`, `created_at`. Commande inconnue : 404 `Commande introuvable.` |
+
+Toutes les réponses portent `Cache-Control: no-store`. Un paramètre hors bornes ou un `status` inconnu est un 422 sans écho de la valeur reçue.
+
+**Journal** : `admin_orders.listed` (attributs `status`, `searched` : vrai si une recherche était fournie, jamais son texte; `limit`, `offset`, `returned`), `admin_orders.viewed` (ressource `order`) et `admin_orders.view_denied` (`order_not_found`). Acteur `user` pseudonymisé (empreinte HMAC de l'identifiant de l'opérateur). **Jamais d'e-mail, d'adresse ni de nom** dans les journaux. Le back-office ajoute son propre événement d'audit `backoffice.order_view` (voir [backoffice](backoffice.md)).
+
 ## Confirmation de paiement par webhook (WORK-13)
 `payment` notifie la boutique de chaque règlement par un `POST /webhooks/payment` signé (contrat publié : [payment.md, « Webhook sortant vers la boutique »](payment.md)). La route n'est **pas** publique : seul `payment-worker` l'appelle, sur le réseau interne `payment-net`, et la passerelle ne route pas `/api/shop/webhooks` (le chemin tombe sur le front, 404).
 
@@ -245,6 +261,9 @@ Format et règles communes : [journalisation métier](../development/logging.md)
 | `payment.webhook_ignored` | denied | `order_not_found`, `amount_mismatch`, `currency_mismatch`, `order_expired`, `order_already_confirmed`, `attempt_settled`, `unsupported_type`, `order_not_paid`, `refund_exceeds_total`, `refund_already_recorded`, `refund_amount_missing` | acquitté en 200 sans effet (sauf `order_expired` sur `payment.succeeded` : 409); ressource `order` si connue |
 | `order.confirmation_email_sent` | success | | ressource `order` (numéro) |
 | `catalog_admin.change` | success | | acteur `user` (empreinte), ressource `product`; `action`, `old_price_cents`, `new_price_cents`, `new_stock`, `version` |
+| `admin_orders.listed` | success | | acteur `user` (empreinte), ressource `order`; `status`, `searched`, `limit`, `offset`, `returned` (jamais le texte cherché) |
+| `admin_orders.viewed` | success | | acteur `user` (empreinte), ressource `order` (identifiant) |
+| `admin_orders.view_denied` | denied | `order_not_found` | acteur `user` (empreinte), ressource `order` |
 | `operator.access_denied` | denied | `not_operator`, `second_factor_missing` | jeton valide sans les droits d'administration (403) |
 | `order.confirmation_email_failed` | error | `delivery_failed` | ressource `order`; `email_hash` (HMAC de l'adresse); le webhook reste en succès |
 | `order.expired` | success | | ressource `order` (numéro); `released_units`, `line_count`, `age_minutes` |

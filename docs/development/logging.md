@@ -1,13 +1,13 @@
 # Journalisation métier
 
-Chaque service backend écrit un **événement JSON par ligne** sur sa sortie standard pour chaque issue d'un cas d'usage métier (succès, refus, erreur). Le contrat est commun à `shop`, `payment` et `auth` : [log-event.schema.json](log-event.schema.json). La collecte et l'exploitation des logs ne font pas partie de l'application.
+Chaque service backend écrit un **événement JSON par ligne** sur sa sortie standard pour chaque issue d'un cas d'usage métier (succès, refus, erreur). Le contrat est commun à `shop`, `payment`, `auth` et au back-office (événements `backoffice.*`) : [log-event.schema.json](log-event.schema.json). La collecte et l'exploitation des logs ne font pas partie de l'application.
 
 ## Format
 
 | Champ | Obligatoire | Contenu |
 |---|---|---|
 | `timestamp` | oui | ISO 8601 UTC à la milliseconde, suffixe `Z` |
-| `service` | oui | valeur de `APP_SERVICE_NAME` (`basecamp-shop`, `basecamp-payment`, `basecamp-auth`) |
+| `service` | oui | valeur de `APP_SERVICE_NAME` (`basecamp-shop`, `basecamp-payment`, `basecamp-auth`); le back-office écrit `basecamp-backoffice` |
 | `level` | oui | `info` (success), `warning` (denied), `error` (error) |
 | `event` | oui | nom stable `<domaine>.<action>`, par exemple `payment.intent_created` |
 | `correlation_id` | oui | identifiant de la requête, identique dans tous les services traversés |
