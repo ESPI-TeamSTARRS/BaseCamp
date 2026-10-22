@@ -75,6 +75,30 @@ describe('proxy : garde de route', () => {
     });
   });
 
+  it.each(['/commandes', '/commandes/00000000-0000-4000-8000-000000000001'])(
+    'protège l’écran %s : sans session, retour à la connexion',
+    async (path) => {
+      const { proxy, sessions } = setup({ kind: 'none', reason: 'no_session' });
+
+      const response = await proxy(get(path));
+
+      expect(response.status).toBe(307);
+      expect(response.headers.get('location')).toBe('http://admin.localhost/login');
+      expect(sessions.evaluate).toHaveBeenCalledOnce();
+    }
+  );
+
+  it.each(['/bff/orders', '/bff/orders/00000000-0000-4000-8000-000000000001'])(
+    'protège la route %s : 401 JSON sans session',
+    async (path) => {
+      const { proxy } = setup({ kind: 'none', reason: 'second_factor_missing' });
+
+      const response = await proxy(get(path, { cookie: 'bo_access=a.b.c' }));
+
+      expect(response.status).toBe(401);
+    }
+  );
+
   it('un faux cookie « opérateur » ne passe pas', async () => {
     const { proxy } = setup({ kind: 'none', reason: 'bad_signature' });
 

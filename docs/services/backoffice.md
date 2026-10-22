@@ -52,6 +52,24 @@ Le navigateur n'appelle jamais `shop` : il appelle les routes serveur `/bff/prod
 - **Journaux** : `backoffice.catalog_list|get|create|update|archive|image` avec `outcome`, `reason` en cas d'échec, `duration_ms`; jamais de jeton ni de donnée de produit.
 - **Tests** : composants avec Testing Library (jsdom), routes serveur et logique pure avec Vitest; e2e sur la pile (`apps/backend/shop/tests/e2e/scenarios/test_backoffice_catalog.e2e.py`) : prix, stock et image modifiés depuis le back-office visibles sur le site client, archivage, conflit de version, doublon, image refusée.
 
+## Consultation des commandes (WORK-66)
+Lecture seule, derrière la garde de route : `/commandes` (liste paginée de 20, filtre par statut : tous, en attente de paiement, payée, expirée, remboursée; recherche par numéro ou e-mail; tri de la plus récente à la plus ancienne; états de chargement, de liste vide, de recherche sans résultat avec « Effacer les filtres », et d'erreur avec « Réessayer ») et `/commandes/{id}` (numéro, statut, date en heure de Paris, client, articles, sous-total, livraison, total, adresse de livraison; aucune action ni champ modifiable). La navigation et l'accueil mènent aux commandes.
+
+Le navigateur n'appelle jamais `shop` : il appelle les routes serveur `/bff/orders`, qui relaient à l'API d'administration de `shop` (voir [shop](shop.md)) avec le jeton du cookie `bo_access` (jamais renvoyé ni journalisé).
+
+| Route du back-office | Rôle | API de shop |
+|---|---|---|
+| `GET /bff/orders?limit&offset&status&q` | liste (paramètres bornés avant tout appel) | `GET /admin/orders` |
+| `GET /bff/orders/{id}` | détail | `GET /admin/orders/{id}` |
+
+Aucune écriture n'existe : tout autre verbe répond 405.
+
+- **Accès** : en plus de la garde de route (`proxy.ts`), chaque appel `/bff/orders` revérifie le jeton du cookie (signature, rôle `operator`, second facteur `face`) avant d'appeler `shop`. Sans cookie ou session périmée : 401 (cookie effacé); jeton sans le rôle ou sans le visage : 403; `auth` injoignable : 503. `shop` applique la même règle de son côté.
+- **Erreurs** : jamais le texte de shop. Codes et messages français fixes : `unauthorized` 401, `forbidden` 403, `not_found` 404 (« Commande introuvable. »), `bad_request` 400, `invalid` 422, `unavailable` 503 (« Les commandes sont momentanément indisponibles. Réessayez dans un instant. »), `error` 502.
+- **Données personnelles** : l'e-mail et l'adresse ne s'affichent que dans l'écran et ne sont **jamais** écrits dans les journaux (ni le texte recherché).
+- **Audit** : chaque consultation de détail émet `backoffice.order_view` (contrat commun [log-event.schema.json](../development/log-event.schema.json)) : `resource_type` `order`, `resource_id` (identifiant de la commande), `actor_type` `user`, `actor_id` = empreinte HMAC (`LOG_PSEUDONYM_KEY`) de l'identifiant de l'opérateur lu dans son jeton, `duration_ms`; en cas d'échec `outcome` `denied` ou `error` avec `reason` (`not_found`, `forbidden`, `unavailable`…). La liste émet `backoffice.orders_list` (mêmes règles, sans ressource). Un test (`log-contract.unit.test.ts`) vérifie la conformité au schéma.
+- **Tests** : composants (Testing Library), routes serveur et gestionnaire (Vitest, couverture ≥ 80 %), accès refusés; e2e sur la pile (`apps/backend/shop/tests/e2e/scenarios/test_backoffice_orders.e2e.py`) : commande passée sur le site, visible dans le back-office avec le bon statut et son détail, refus sans jeton double facteur ou avec le rôle `customer`, aucune écriture.
+
 ## Isolation et exposition
 - Le site client n'a aucun lien ni route vers le back-office. Le routeur Traefik `backoffice` ne répond que sur l'hôte `admin.*` (`HostRegexp(^admin\..+$)`, hors `/api`); sur le domaine principal, c'est le front qui répond (404).
 - `noindex` partout : balise `robots` de la page, `robots.txt` (`Disallow: /`) et en-tête `X-Robots-Tag`.

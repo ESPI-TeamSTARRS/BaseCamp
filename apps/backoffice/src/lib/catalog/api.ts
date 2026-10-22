@@ -13,7 +13,7 @@ const NETWORK_FAILURE = {
   detail: 'Connexion impossible. Vérifiez votre réseau puis réessayez.',
 };
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<ApiResult<T>> {
+export async function request<T>(path: string, init: RequestInit = {}): Promise<ApiResult<T>> {
   let response: Response;
   try {
     response = await fetch(path, { credentials: 'same-origin', cache: 'no-store', ...init });

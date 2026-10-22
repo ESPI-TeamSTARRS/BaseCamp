@@ -15,6 +15,10 @@ export interface LogEvent {
   correlation_id: string;
   outcome: Outcome;
   reason?: string;
+  resource_type?: string;
+  resource_id?: string;
+  actor_type?: 'user' | 'service';
+  actor_id?: string;
   duration_ms?: number;
   attributes?: Record<string, string | number | boolean | null>;
 }
@@ -32,6 +36,8 @@ export function buildLogEvent(input: {
   outcome: Outcome;
   reason?: string;
   durationMs?: number;
+  resource?: { type: string; id?: string };
+  actor?: { type: 'user' | 'service'; id: string };
   attributes?: LogEvent['attributes'];
   now?: Date;
 }): LogEvent {
@@ -47,6 +53,14 @@ export function buildLogEvent(input: {
     outcome: input.outcome,
   };
   if (input.reason) event.reason = input.reason;
+  if (input.resource) {
+    event.resource_type = input.resource.type;
+    if (input.resource.id !== undefined) event.resource_id = input.resource.id;
+  }
+  if (input.actor) {
+    event.actor_type = input.actor.type;
+    event.actor_id = input.actor.id;
+  }
   if (input.durationMs !== undefined) event.duration_ms = input.durationMs;
   if (input.attributes) event.attributes = input.attributes;
   return event;

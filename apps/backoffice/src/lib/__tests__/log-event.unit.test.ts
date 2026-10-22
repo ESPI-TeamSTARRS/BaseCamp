@@ -77,3 +77,30 @@ describe('buildLogEvent : attributs', () => {
     expect('attributes' in buildLogEvent({ ...base, outcome: 'success', now: NOW })).toBe(false);
   });
 });
+
+describe('buildLogEvent : ressource et acteur', () => {
+  it('porte la ressource ciblée et l’acteur pseudonymisé', () => {
+    const event = buildLogEvent({
+      ...base,
+      outcome: 'success',
+      resource: { type: 'order', id: 'cmd-1' },
+      actor: { type: 'user', id: 'abcdef0123456789' },
+      now: NOW,
+    });
+
+    expect(event).toMatchObject({
+      resource_type: 'order',
+      resource_id: 'cmd-1',
+      actor_type: 'user',
+      actor_id: 'abcdef0123456789',
+    });
+  });
+
+  it('n’ajoute ni ressource ni acteur quand ils sont inconnus', () => {
+    const event = buildLogEvent({ ...base, outcome: 'success', now: NOW });
+
+    expect(Object.keys(event)).not.toEqual(
+      expect.arrayContaining(['resource_type', 'resource_id', 'actor_type', 'actor_id'])
+    );
+  });
+});

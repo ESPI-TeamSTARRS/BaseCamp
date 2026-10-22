@@ -9,6 +9,7 @@ export function PageShell({ title, children }: { title: string; children: ReactN
         <strong>Basecamp · Back-office</strong>
         <nav aria-label="Navigation principale">
           <Link href="/produits">Catalogue</Link>
+          <Link href="/commandes">Commandes</Link>
           <form method="post" action="/session/logout">
             <button type="submit" className="link-button">
               Se déconnecter
