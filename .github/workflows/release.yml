@@ -28,9 +28,18 @@ jobs:
       contents: read
     uses: ./.github/workflows/ci.yml
 
+  # Test de bout en bout, en parallele de la CI. Non bloquant tant que la variable de depot E2E_BLOQUANT
+  # n'est pas "true" : un echec reste visible (job rouge) mais la publication continue (voir docs/development/ci.md).
+  e2e:
+    name: e2e
+    permissions:
+      contents: read
+    uses: ./.github/workflows/e2e.yml
+
   version:
     name: version-${{ matrix.service }}
-    needs: ci
+    needs: [ci, e2e]
+    if: ${{ !cancelled() && needs.ci.result == 'success' && (needs.e2e.result == 'success' || vars.E2E_BLOQUANT != 'true') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
