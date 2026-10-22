@@ -1,4 +1,4 @@
-// Appel du navigateur vers la creation du compte par invitation (route publique d'auth, origine admin).
+// Appel du navigateur vers la creation du compte par invitation (route publique d'auth, origine du back-office).
 // Aucun detail serveur n'est relaye : seulement une categorie, jamais le jeton ni le mot de passe.
 
 export const COMPLETE_PATH = '/api/auth/backoffice/invitation/complete';

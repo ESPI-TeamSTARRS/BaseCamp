@@ -76,7 +76,7 @@ class Settings(BaseSettings):
     backoffice_challenge_ttl_seconds: int = Field(default=120, gt=0)
     # Invitations d'operateur (WORK-67) : lien genere en CLI par un administrateur IT, affiche avec
     # cette origine; il vaut 5 minutes AU PLUS (le plafond n'est pas reglable).
-    admin_base_url: str = "http://admin.localhost:8080"
+    admin_base_url: str = "http://mercure.localhost:8080"
     operator_invite_ttl_seconds: int = Field(default=300, gt=0, le=300)
 
     # Adresse reelle du client (WORK-59) : plages CIDR (separees par des virgules) des proxies dont on

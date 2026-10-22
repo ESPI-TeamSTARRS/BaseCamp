@@ -26,7 +26,7 @@ function request(
   options: { body?: BodyInit; headers?: Record<string, string>; cookie?: string | null } = {}
 ): Request {
   const headers: Record<string, string> = {
-    host: 'admin.localhost',
+    host: 'mercure.localhost',
     'sec-fetch-site': 'same-origin',
     ...options.headers,
   };

@@ -13,7 +13,7 @@ function setup(result: EvaluateResult = { kind: 'valid', claims }) {
 }
 
 const get = (path: string, headers: Record<string, string> = {}) =>
-  new NextRequest(`http://admin.localhost${path}`, { headers: { host: 'admin.localhost', ...headers } });
+  new NextRequest(`http://mercure.localhost${path}`, { headers: { host: 'mercure.localhost', ...headers } });
 
 describe('proxy : journal et corrélation', () => {
   it('journalise la page servie et propage le X-Correlation-ID reçu', async () => {
@@ -68,7 +68,7 @@ describe('proxy : garde de route', () => {
     const response = await proxy(get('/produits', { cookie: 'bo_access=vieux.jeton.x' }));
 
     expect(response.status).toBe(307);
-    expect(response.headers.get('location')).toBe('http://admin.localhost/login');
+    expect(response.headers.get('location')).toBe('http://mercure.localhost/login');
     expect(response.headers.getSetCookie().join('\n')).toMatch(/bo_access=;.*Max-Age=0/i);
     expect(events.find((e) => e.event === 'backoffice.access_denied')).toMatchObject({
       outcome: 'denied',
@@ -84,7 +84,7 @@ describe('proxy : garde de route', () => {
       const response = await proxy(get(path));
 
       expect(response.status).toBe(307);
-      expect(response.headers.get('location')).toBe('http://admin.localhost/login');
+      expect(response.headers.get('location')).toBe('http://mercure.localhost/login');
       expect(sessions.evaluate).toHaveBeenCalledOnce();
     }
   );
@@ -120,7 +120,7 @@ describe('proxy : garde de route', () => {
 
     const response = await proxy(get('/', { cookie: 'bo_access=a.b.c' }));
 
-    expect(response.headers.get('location')).toBe('http://admin.localhost/login?erreur=2');
+    expect(response.headers.get('location')).toBe('http://mercure.localhost/login?erreur=2');
     expect(response.headers.getSetCookie()).toEqual([]);
   });
 });

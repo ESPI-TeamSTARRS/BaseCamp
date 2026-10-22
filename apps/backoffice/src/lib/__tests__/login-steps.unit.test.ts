@@ -10,7 +10,7 @@ function post(path: string, body: unknown, headers: Record<string, string> = {})
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      host: 'admin.localhost:8260',
+      host: 'mercure.localhost:8260',
       'sec-fetch-site': 'same-origin',
       'x-forwarded-for': '203.0.113.7',
       ...headers,

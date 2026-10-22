@@ -1,9 +1,9 @@
-"""Administration du catalogue sur la pile : origine admin, garde par JWKS, image dans le bucket, archivage.
+"""Administration du catalogue sur la pile : origine du back-office, garde par JWKS, image dans le bucket, archivage.
 
 Le jeton d'opérateur est signé avec la clé de développement d'`auth` (`.secrets/auth/jwt-private.pem`,
 générée par `scripts/init-auth-keys.sh`, jamais versionnée) : `shop` le vérifie par le JWKS publié par
-`auth`, exactement comme un vrai jeton. Les requêtes d'administration portent `Host: admin.localhost`
-(la passerelle ne route `/api/shop/admin` que sur une origine `admin.*`).
+`auth`, exactement comme un vrai jeton. Les requêtes d'administration portent `Host: mercure.localhost`
+(la passerelle ne route `/api/shop/admin` que sur une origine `mercure.*`).
 """
 
 import base64
@@ -25,7 +25,7 @@ KEY_PATH = Path(
         "E2E_AUTH_KEY", str(Path(__file__).resolve().parents[6] / ".secrets/auth/jwt-private.pem")
     )
 )
-ADMIN_HOST = {"Host": "admin.localhost"}
+ADMIN_HOST = {"Host": "mercure.localhost"}
 ADMIN = "/api/shop/admin/products"
 JPEG = b"\xff\xd8\xff\xe0" + bytes(range(256)) * 4
 RATE_LIMIT_PAUSE_SECONDS = 6.5

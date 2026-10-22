@@ -1,7 +1,7 @@
 """Invitation d'un operateur par lien a usage unique, sur la pile reelle (WORK-67) : Traefik, auth, Postgres.
 
 Le lien est genere par la commande d'exploitation `create-operator-invite` (dans le conteneur `auth`, comme
-le ferait un administrateur IT sur la VM), puis consomme par la passerelle sur l'origine admin. Le
+le ferait un administrateur IT sur la VM), puis consomme par la passerelle sur l'origine du back-office. Le
 verificateur de la pile de developpement est le FAUX (`APP_FACE_VERIFIER=fake`).
 """
 
@@ -67,7 +67,7 @@ def _invite(email: str) -> str:
     assert (
         result.stdout.count("#token=") == 1
     )  # le lien n'apparait qu'une fois (jamais dans les journaux)
-    found = re.search(r"https?://admin\.[^\s]+/invitation#token=([A-Za-z0-9_-]+)", result.stdout)
+    found = re.search(r"https?://mercure\.[^\s]+/invitation#token=([A-Za-z0-9_-]+)", result.stdout)
     assert found, "lien d'invitation absent de la sortie"
     return found.group(1)
 

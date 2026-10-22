@@ -1,6 +1,6 @@
 """Parcours complet du back-office sur la pile réelle (WORK-64) : connexion, catalogue, commandes, refus, blocage.
 
-Tout passe par la passerelle, sur l'hôte admin, comme un navigateur : les routes serveur du back-office
+Tout passe par la passerelle, sur l'hôte du back-office, comme un navigateur : les routes serveur du back-office
 (`/session/*`, `/bff/*`) relaient vers `auth` et `shop`. Le visage accepté s'appuie sur le FAUX vérificateur
 de développement (`APP_FACE_VERIFIER=fake`) avec la même image à l'enrôlement et à la connexion : la pile
 e2e n'embarque pas le modèle de `visage-id` ni de photos de personnes, et le dépôt ne doit en contenir aucune.

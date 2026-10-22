@@ -301,7 +301,7 @@ class TestOperatorInvitation:
         settings = Settings()
 
         assert settings.operator_invite_ttl_seconds == 300
-        assert settings.admin_base_url == "http://admin.localhost:8080"
+        assert settings.admin_base_url == "http://mercure.localhost:8080"
         assert settings.lockout_invitation_max_failures == 5
 
     @pytest.mark.parametrize("value", ["0", "-1", "301", "3600"])

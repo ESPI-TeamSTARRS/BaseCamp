@@ -1,6 +1,6 @@
 """Session du back-office sur la pile : connexion en trois temps par les routes serveur, garde, déconnexion.
 
-Tout passe par la passerelle sur l'hôte admin (`Host: admin.localhost`). Le navigateur appelle les routes
+Tout passe par la passerelle sur l'hôte du back-office (`Host: mercure.localhost`). Le navigateur appelle les routes
 serveur du back-office (`/session/identify`, `/face`, `/password`) ; la dernière pose un cookie `HttpOnly`
 et ne renvoie jamais le jeton. Les cookies sont gérés à la main (le jar d'httpx lie les cookies au nom
 d'hôte de l'URL, ici une adresse IP). Opérateur créé et visage enrôlé comme dans les e2e de WORK-59.

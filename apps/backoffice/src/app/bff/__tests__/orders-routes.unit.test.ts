@@ -7,7 +7,7 @@ vi.mock('@/lib/handlers/order-handlers', () => ({ handleOrders }));
 vi.mock('@/lib/runtime', () => ({ runtime: () => deps }));
 
 const request = (path: string, method = 'GET') =>
-  new Request(`http://admin.localhost/bff/orders${path}`, { method });
+  new Request(`http://mercure.localhost/bff/orders${path}`, { method });
 const context = { params: Promise.resolve({ id: 'cmd-1' }) };
 
 describe('routes des commandes', () => {

@@ -94,7 +94,7 @@ describe('contrat des journaux : tous les événements du back-office', () => {
     roles: ['operator'],
     amr: ['face'],
   };
-  const cookie = { cookie: 'bo_access=a.b.c', host: 'admin.localhost', 'sec-fetch-site': 'same-origin' };
+  const cookie = { cookie: 'bo_access=a.b.c', host: 'mercure.localhost', 'sec-fetch-site': 'same-origin' };
 
   function post(path: string, body: unknown): Request {
     return new Request(`http://backoffice:3000${path}`, {
@@ -156,14 +156,14 @@ describe('contrat des journaux : tous les événements du back-office', () => {
       log: (event) => lines.push(JSON.stringify(event)),
     });
     await proxy(
-      new NextRequest('http://admin.localhost/commandes', { headers: { host: 'admin.localhost' } })
+      new NextRequest('http://mercure.localhost/commandes', { headers: { host: 'mercure.localhost' } })
     );
     const denied = createProxy({
       sessions: { evaluate: async () => ({ kind: 'none', reason: 'no_session' }) },
       log: (event) => lines.push(JSON.stringify(event)),
     });
     await denied(
-      new NextRequest('http://admin.localhost/commandes', { headers: { host: 'admin.localhost' } })
+      new NextRequest('http://mercure.localhost/commandes', { headers: { host: 'mercure.localhost' } })
     );
     return lines.map((line) => JSON.parse(line) as LogEvent);
   }

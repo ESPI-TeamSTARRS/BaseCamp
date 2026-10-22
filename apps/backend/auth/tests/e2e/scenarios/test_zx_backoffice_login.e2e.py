@@ -1,6 +1,6 @@
 """Connexion du back-office en trois temps sur la pile reelle (WORK-59) : Traefik, auth, Postgres.
 
-La connexion se fait par la passerelle sur l'origine admin (`admin.localhost`). L'operateur est cree par
+La connexion se fait par la passerelle sur l'origine du back-office (`mercure.localhost`). L'operateur est cree par
 `create-operator` et son gabarit facial est enrole avec le FAUX verificateur de developpement
 (`APP_FACE_VERIFIER=fake`, uniquement en developpement : aucune reconnaissance reelle).
 
