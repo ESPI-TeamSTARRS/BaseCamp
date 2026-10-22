@@ -17,15 +17,22 @@ class InMemoryAdminProducts(AdminProductRepository):
     def __init__(self, *products: Product) -> None:
         self.products = {p.id: p for p in products}
 
-    def list_products(self, include_archived: bool, limit: int, offset: int) -> list[Product]:
-        rows = self._rows(include_archived)
+    def list_products(
+        self, include_archived: bool, limit: int, offset: int, search: str | None = None
+    ) -> list[Product]:
+        rows = self._rows(include_archived, search)
         return sorted(rows, key=lambda p: (p.name, p.id))[offset : offset + limit]
 
-    def count(self, include_archived: bool) -> int:
-        return len(self._rows(include_archived))
+    def count(self, include_archived: bool, search: str | None = None) -> int:
+        return len(self._rows(include_archived, search))
 
-    def _rows(self, include_archived: bool) -> list[Product]:
-        return [p for p in self.products.values() if include_archived or p.archived_at is None]
+    def _rows(self, include_archived: bool, search: str | None = None) -> list[Product]:
+        return [
+            p
+            for p in self.products.values()
+            if (include_archived or p.archived_at is None)
+            and (not search or search.lower() in p.name.lower())
+        ]
 
     def get(self, product_id: str) -> Product | None:
         return self.products.get(product_id)

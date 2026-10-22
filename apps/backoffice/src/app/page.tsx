@@ -1,11 +1,15 @@
+import Link from 'next/link';
+import { PageShell } from '@/components/page-shell';
+
 export default function HomePage() {
   return (
-    <main style={{ padding: '4rem 1.5rem', maxWidth: '40rem', margin: '0 auto' }}>
-      <h1>Back-office Basecamp</h1>
-      <p>Espace réservé à l’équipe. Les écrans arrivent avec les prochaines versions.</p>
-      <form method="post" action="/session/logout">
-        <button type="submit">Se déconnecter</button>
-      </form>
-    </main>
+    <PageShell title="Back-office Basecamp">
+      <p>Espace réservé à l’équipe.</p>
+      <p>
+        <Link className="button" href="/produits">
+          Gérer le catalogue
+        </Link>
+      </p>
+    </PageShell>
   );
 }

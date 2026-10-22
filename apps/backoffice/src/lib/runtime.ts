@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { AuthBackofficeClient } from './auth-backoffice-client';
 import { JwksCache } from './jwks-cache';
 import { SessionService } from './session-service';
+import { ShopClient } from './shop-client';
 import { TokenVerifier } from './token-verifier';
 
 // Assemblage des dependances a partir de l'environnement du conteneur (reseau interne `app`).
@@ -9,12 +10,14 @@ import { TokenVerifier } from './token-verifier';
 // est tiree : les empreintes changent a chaque demarrage.
 
 const DEFAULT_AUTH_URL = 'http://auth:8000';
+const DEFAULT_SHOP_URL = 'http://shop:8000';
 const JWKS_TTL_MS = 300_000;
 const JWKS_MIN_REFETCH_MS = 10_000;
 
 interface Runtime {
   sessions: SessionService;
   client: AuthBackofficeClient;
+  shop: ShopClient;
   pseudonymKey: string;
 }
 
@@ -38,6 +41,7 @@ export function runtime(env: Record<string, string | undefined> = process.env): 
     cached = {
       sessions: new SessionService(verifier),
       client: new AuthBackofficeClient(authUrl),
+      shop: new ShopClient(env.SHOP_URL || DEFAULT_SHOP_URL),
       pseudonymKey: env.LOG_PSEUDONYM_KEY || randomBytes(16).toString('hex'),
     };
   }

@@ -100,6 +100,7 @@ services:
     mem_limit: 192m
     environment:
       AUTH_URL: http://auth:8000
+      SHOP_URL: http://shop:8000
       LOG_PSEUDONYM_KEY: ${LOG_PSEUDONYM_KEY:?voir deploy/prod.env.example}
     networks: [app]
     healthcheck:

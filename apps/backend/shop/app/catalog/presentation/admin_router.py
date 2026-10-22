@@ -42,6 +42,7 @@ router = APIRouter(prefix="/admin/products", tags=["catalog-admin"])
 
 DEFAULT_LIMIT = 50
 MAX_LIMIT = 100
+MAX_SEARCH_LENGTH = 100
 NO_STORE = {"Cache-Control": "no-store"}
 CurrentOperator = Annotated[Operator, Depends(current_operator)]
 
@@ -76,8 +77,9 @@ def list_products(
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
     offset: Annotated[int, Query(ge=0, le=1_000_000)] = 0,
     include_archived: bool = False,
+    q: Annotated[str | None, Query(max_length=MAX_SEARCH_LENGTH)] = None,
 ) -> AdminProductListResponse:
-    page = use_case.execute(include_archived, limit, offset)
+    page = use_case.execute(include_archived, limit, offset, q.strip() if q else None)
     return AdminProductListResponse(
         items=[_respond(p) for p in page.items],
         total=page.total,
