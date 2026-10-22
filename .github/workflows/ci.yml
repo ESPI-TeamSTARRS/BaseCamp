@@ -44,11 +44,13 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 3s --health-retries 10
     env:
+      # requires-python est >=3.13 : sans epinglage, uv prend le dernier Python disponible (3.15 aujourd'hui).
+      UV_PYTHON: "3.13"
       APP_TEST_POSTGRES_URL: postgresql+psycopg://postgres@127.0.0.1:5432/postgres
       PAYMENT_TEST_DATABASE_URL: postgresql+psycopg://postgres@127.0.0.1:5432/postgres
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
         with:
           enable-cache: true
           cache-dependency-glob: apps/backend/${{ matrix.service }}/uv.lock
@@ -71,7 +73,7 @@ jobs:
       run:
         working-directory: apps/frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -99,7 +101,7 @@ jobs:
       run:
         working-directory: apps/backoffice
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -124,7 +126,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
       - name: gitleaks (commits apportés par la PR ou le push)
@@ -156,9 +158,9 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - run: uv sync --frozen
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+      - run: uv sync --frozen --python 3.13
       - run: uv run poe tools-test
 
   deploy-rollback:
@@ -168,7 +170,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       # Aucune dependance Python a installer : le script n'utilise que la bibliotheque standard.
       - name: Bascule et retour arriere de scripts/deploy.sh (panne volontaire)
         run: bash scripts/deploy/test-deploy.sh
