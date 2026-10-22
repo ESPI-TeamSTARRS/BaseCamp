@@ -94,3 +94,35 @@ def test_cli_refuse_les_arguments_de_chemin() -> None:
 
 def test_accepte_un_registre_avec_port() -> None:
     manifest.validate(sample(shop=f"localhost:5055/dt@{D}"))
+
+
+def with_backoffice() -> dict:
+    data = sample()
+    data["services"]["backoffice"] = {"version": "0.1.0", "image": f"ghcr.io/o/basecamp-backoffice@{D}"}
+    return data
+
+
+def test_le_backoffice_est_facultatif() -> None:
+    manifest.validate(sample())
+    manifest.validate(with_backoffice())
+
+
+def test_le_backoffice_present_est_valide_comme_les_autres() -> None:
+    data = with_backoffice()
+    data["services"]["backoffice"]["image"] = "ghcr.io/o/basecamp-backoffice:0.1.0"
+    with pytest.raises(manifest.ManifestError, match="jamais un tag"):
+        manifest.validate(data)
+
+
+def test_refuse_un_composant_inconnu_en_plus() -> None:
+    data = sample()
+    data["services"]["inconnu"] = {"version": "0.1.0", "image": f"ghcr.io/o/basecamp-inconnu@{D}"}
+    with pytest.raises(manifest.ManifestError, match="services attendus"):
+        manifest.validate(data)
+
+
+def test_env_active_le_profil_du_backoffice_seulement_s_il_est_present() -> None:
+    assert "COMPOSE_PROFILES" not in manifest.to_env(sample())
+    env = manifest.to_env(with_backoffice())
+    assert f"BACKOFFICE_IMAGE=ghcr.io/o/basecamp-backoffice@{D}" in env
+    assert "COMPOSE_PROFILES=backoffice" in env.splitlines()

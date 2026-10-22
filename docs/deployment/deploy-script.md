@@ -18,7 +18,7 @@ Le manifeste est l'unité de déploiement et de retour arrière : une version de
 }
 ```
 
-`scripts/deploy/manifest.py` le valide (les quatre composants, version semver, image sous la forme `dépôt@sha256:<64 hex>`, jamais un tag). Son identifiant est l'empreinte des seules images : deux manifestes qui déploient les mêmes digests sont identiques, quelle que soit la version annoncée.
+`scripts/deploy/manifest.py` le valide (les quatre composants, plus le `backoffice` facultatif : absent des anciens manifestes, il n'est démarré que s'il figure dans le manifeste, via le profil compose `backoffice` posé par `manifest.py env` dans `COMPOSE_PROFILES`) ; version semver, image sous la forme `dépôt@sha256:<64 hex>`, jamais un tag). Son identifiant est l'empreinte des seules images : deux manifestes qui déploient les mêmes digests sont identiques, quelle que soit la version annoncée.
 
 ## Déroulé
 

@@ -25,6 +25,9 @@ import re
 import sys
 
 DEFAULT_SERVICES = ("frontend", "shop", "auth", "payment")
+# Composants facultatifs : acceptes absents (anciens manifestes, retour arriere) ou presents.
+# Present, le composant est valide comme les autres et son profil compose est active (COMPOSE_PROFILES).
+OPTIONAL_SERVICES = ("backoffice",)
 # Variable de compose de chaque composant (le front garde l'historique FRONT_IMAGE).
 ENV_NAMES = {"frontend": "FRONT_IMAGE"}
 IMAGE_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*(?::[0-9]+)?(?:/[a-z0-9._-]+)+@sha256:[0-9a-f]{64}$")
@@ -60,9 +63,10 @@ def validate(data: object) -> None:
     if not isinstance(services, dict):
         raise ManifestError("champ services manquant")
     expected = set(required_services())
-    if set(services) != expected:
+    if not expected <= set(services) <= expected | set(OPTIONAL_SERVICES):
         raise ManifestError(
-            f"services attendus {sorted(expected)}, recus {sorted(services)}"
+            f"services attendus {sorted(expected)} (facultatifs : {sorted(OPTIONAL_SERVICES)}), "
+            f"recus {sorted(services)}"
         )
     for name, entry in services.items():
         if not isinstance(entry, dict):
@@ -81,6 +85,9 @@ def release_id(data: dict) -> str:
 
 def to_env(data: dict) -> str:
     lines = [f"{env_name(name)}={entry['image']}" for name, entry in sorted(data["services"].items())]
+    profiles = [name for name in OPTIONAL_SERVICES if name in data["services"]]
+    if profiles:
+        lines.append(f"COMPOSE_PROFILES={','.join(profiles)}")
     return "\n".join(lines) + "\n"
 
 

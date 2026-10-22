@@ -5,6 +5,10 @@
       "image": "ghcr.io/espi-teamstarrs/basecamp-auth@sha256:c0755fe45421052561adcc9a9ddbfbad023b8ebed906401b99073e39d8e509f1",
       "version": "0.12.0"
     },
+    "backoffice": {
+      "image": "ghcr.io/espi-teamstarrs/basecamp-backoffice@sha256:57041ddc032b9ca7b6d67e4f0620be5a39f174c43a39dd8deaa80a288cf14eb8",
+      "version": "0.1.0"
+    },
     "frontend": {
       "image": "ghcr.io/espi-teamstarrs/basecamp-frontend@sha256:7ed543265faa7b2259f40ffee3a94e41fffa147fa3d846172b0ec0dfb5bc1ffb",
       "version": "0.10.0"

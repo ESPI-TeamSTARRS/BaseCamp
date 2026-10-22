@@ -70,7 +70,7 @@ def test_images_applicatives_par_variable_digest(compose: dict) -> None:
         image = service["image"]
         if image.startswith("${"):
             used.add(image[2:].split(":")[0].rstrip("}"))
-    assert used == FIRST_PARTY_IMAGE_VARS
+    assert used == FIRST_PARTY_IMAGE_VARS | {"BACKOFFICE_IMAGE"}
 
 
 def test_images_tierces_epinglees_par_digest(compose: dict) -> None:

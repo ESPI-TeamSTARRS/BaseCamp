@@ -208,7 +208,9 @@ jobs:
       - name: Derniere version publiee de chaque composant (tag git + digest GHCR)
         run: |
           set -euo pipefail
-          services="$(jq -r '.services | keys[]' deploy/manifest.json)"
+          # Composants du manifeste, plus les facultatifs (ajoutes au manifeste des que leur image existe).
+          optional="$(python3 -c 'import sys; sys.path.insert(0, "scripts/deploy"); import manifest; print(*manifest.OPTIONAL_SERVICES, sep="\n")')"
+          services="$( { jq -r '.services | keys[]' deploy/manifest.json; echo "$optional"; } | sort -u)"
           # shellcheck disable=SC2086
           python3 scripts/deploy/latest_images.py "$GITHUB_REPOSITORY_OWNER" $services > "$RUNNER_TEMP/latest.jsonl"
           cat "$RUNNER_TEMP/latest.jsonl"
