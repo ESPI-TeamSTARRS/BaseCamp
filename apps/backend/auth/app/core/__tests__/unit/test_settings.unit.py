@@ -248,3 +248,43 @@ class TestSettingsTrustedProxies:
 
         with pytest.raises(ValueError, match="APP_TRUSTED_PROXIES"):
             Settings()
+
+
+class TestSettingsFaceVerifier:
+    def test_the_threshold_defaults_to_the_value_of_the_ai_team(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("APP_FACE_THRESHOLD", raising=False)
+
+        assert Settings().face_threshold == 0.23
+
+    def test_the_threshold_is_configurable(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("APP_FACE_THRESHOLD", "0.31")
+
+        assert Settings().face_threshold == 0.31
+
+    @pytest.mark.parametrize("value", ["0", "1", "-0.2", "1.5", "abc"])
+    def test_a_threshold_outside_the_open_unit_interval_is_refused(
+        self, monkeypatch: pytest.MonkeyPatch, value: str
+    ) -> None:
+        monkeypatch.setenv("APP_FACE_THRESHOLD", value)
+
+        with pytest.raises(ValueError, match=r"face_threshold|FACE_THRESHOLD|greater|less|float"):
+            Settings()
+
+    def test_the_real_verifier_is_accepted_in_production(self) -> None:
+        settings = Settings(
+            environment="production",
+            log_pseudonym_key="k" * 32,
+            backoffice_enabled=True,
+            face_verifier="visage-id",
+        )
+
+        assert settings.face_verifier == "visage-id"
+
+    def test_the_template_key_comes_from_a_mounted_secret_by_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("APP_FACE_TEMPLATE_KEY_FILE", raising=False)
+
+        assert Settings().face_template_key_file == "/run/secrets/auth_face_template_key"

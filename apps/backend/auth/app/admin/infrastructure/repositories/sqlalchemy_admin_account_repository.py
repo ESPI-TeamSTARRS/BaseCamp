@@ -14,6 +14,9 @@ from app.admin.infrastructure.models.managed_account_model import ManagedAccount
 # Table de la connexion (migration 0007), vue ici par sa seule colonne utile : aucune dependance
 # vers la tranche `login`.
 REFRESH_TOKENS = Table("refresh_tokens", MetaData(), Column("user_id", Uuid))
+# Gabarits faciaux (migration 0010, tranche back-office), vus par leur seule cle : un compte
+# desactive perd son gabarit sans dependance vers cette tranche.
+FACE_TEMPLATES = Table("operator_face_templates", MetaData(), Column("account_id", Uuid))
 OPERATOR = "operator"
 
 
@@ -74,6 +77,12 @@ class SqlAlchemyAdminAccountRepository(AdminAccountRepository):
             delete(REFRESH_TOKENS).where(REFRESH_TOKENS.c.user_id == account_id)
         )
         return int(result.rowcount)  # type: ignore[attr-defined]
+
+    def delete_face_template(self, account_id: UUID) -> bool:
+        result = self._session.execute(
+            delete(FACE_TEMPLATES).where(FACE_TEMPLATES.c.account_id == account_id)
+        )
+        return int(result.rowcount) > 0  # type: ignore[attr-defined]
 
     def add_operator(self, account_id: UUID, email: str, password_hash: str, now: datetime) -> None:
         self._session.add(

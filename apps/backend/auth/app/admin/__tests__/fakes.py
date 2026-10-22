@@ -22,6 +22,7 @@ class AdminStore:
         self.accounts: dict[UUID, ManagedAccount] = {a.id: a for a in accounts}
         self.sessions: dict[UUID, int] = {}
         self.password_hashes: dict[UUID, str] = {}
+        self.face_templates: set[UUID] = set()
         self.commits = 0
 
 
@@ -45,6 +46,11 @@ class FakeAdminRepository(AdminAccountRepository):
 
     def revoke_sessions(self, account_id: UUID) -> int:
         return self._store.sessions.pop(account_id, 0)
+
+    def delete_face_template(self, account_id: UUID) -> bool:
+        existed = account_id in self._store.face_templates
+        self._store.face_templates.discard(account_id)
+        return existed
 
     def add_operator(self, account_id: UUID, email: str, password_hash: str, now: datetime) -> None:
         if any(a.email == email for a in self._store.accounts.values()):

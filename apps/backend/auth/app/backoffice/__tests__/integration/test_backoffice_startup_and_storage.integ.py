@@ -1,8 +1,11 @@
+import base64
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
 
+from app.backoffice.__tests__.cipher import TEST_CIPHER, TEST_KEY
 from app.backoffice.__tests__.fakes import PNG
 from app.backoffice.composition import build_face_recognizer
 from app.backoffice.domain.entities.login_challenge import LoginChallenge
@@ -50,10 +53,33 @@ class TestStartup:
         with pytest.raises(RuntimeError, match="real face verifier"):
             build_face_recognizer(settings)
 
-    def test_the_application_starts_with_the_back_office_in_development(self) -> None:
-        application = create_app(Settings(backoffice_enabled=True, face_verifier="fake"))
+    def test_the_application_starts_with_the_back_office_in_development(
+        self, tmp_path: Path
+    ) -> None:
+        key = tmp_path / "face.key"
+        key.write_text(base64.b64encode(TEST_KEY).decode(), encoding="ascii")
+        settings = Settings(
+            backoffice_enabled=True, face_verifier="fake", face_template_key_file=str(key)
+        )
+
+        application = create_app(settings)
 
         assert "/backoffice/identify" in application.openapi()["paths"]
+
+    def test_the_back_office_refuses_to_start_without_the_template_key(
+        self, tmp_path: Path
+    ) -> None:
+        settings = Settings(
+            backoffice_enabled=True,
+            face_verifier="fake",
+            face_template_key_file=str(tmp_path / "absente.key"),
+        )
+
+        with pytest.raises(ValueError, match="missing or unreadable"):
+            create_app(settings)
+
+    def test_the_back_office_off_needs_no_template_key(self) -> None:
+        create_app(Settings(backoffice_enabled=False, face_template_key_file="/nulle/part"))
 
 
 class TestChallengeStorage:
@@ -62,14 +88,14 @@ class TestChallengeStorage:
 
     def test_a_challenge_is_taken_once(self) -> None:
         engine = migrated_engine()
-        with SqlAlchemyBackofficeUnitOfWork(engine) as work:
+        with SqlAlchemyBackofficeUnitOfWork(engine, TEST_CIPHER) as work:
             work.challenges.add(self._challenge())
             work.commit()
 
-        with SqlAlchemyBackofficeUnitOfWork(engine) as work:
+        with SqlAlchemyBackofficeUnitOfWork(engine, TEST_CIPHER) as work:
             first = work.challenges.take("d" * 64, NOW)
             work.commit()
-        with SqlAlchemyBackofficeUnitOfWork(engine) as work:
+        with SqlAlchemyBackofficeUnitOfWork(engine, TEST_CIPHER) as work:
             second = work.challenges.take("d" * 64, NOW)
 
         assert first is not None and first.email_hash == "fp-mail" and first.decoy
@@ -77,11 +103,11 @@ class TestChallengeStorage:
 
     def test_an_expired_challenge_is_not_given_and_is_removed(self) -> None:
         engine = migrated_engine()
-        with SqlAlchemyBackofficeUnitOfWork(engine) as work:
+        with SqlAlchemyBackofficeUnitOfWork(engine, TEST_CIPHER) as work:
             work.challenges.add(self._challenge())
             work.commit()
 
-        with SqlAlchemyBackofficeUnitOfWork(engine) as work:
+        with SqlAlchemyBackofficeUnitOfWork(engine, TEST_CIPHER) as work:
             taken = work.challenges.take("d" * 64, NOW + timedelta(minutes=3))
             work.commit()
 
@@ -90,39 +116,39 @@ class TestChallengeStorage:
     def test_re_adding_a_challenge_replaces_it_with_the_face_ok_state(self) -> None:
         engine = migrated_engine()
         challenge = self._challenge()
-        with SqlAlchemyBackofficeUnitOfWork(engine) as work:
+        with SqlAlchemyBackofficeUnitOfWork(engine, TEST_CIPHER) as work:
             work.challenges.add(challenge)
             work.commit()
-        with SqlAlchemyBackofficeUnitOfWork(engine) as work:
+        with SqlAlchemyBackofficeUnitOfWork(engine, TEST_CIPHER) as work:
             work.challenges.add(challenge.with_face_ok())
             work.commit()
 
-        with SqlAlchemyBackofficeUnitOfWork(engine) as work:
+        with SqlAlchemyBackofficeUnitOfWork(engine, TEST_CIPHER) as work:
             stored = work.challenges.take("d" * 64, NOW)
 
         assert stored is not None and stored.face_ok
 
     def test_purge_removes_only_expired_challenges(self) -> None:
         engine = migrated_engine()
-        with SqlAlchemyBackofficeUnitOfWork(engine) as work:
+        with SqlAlchemyBackofficeUnitOfWork(engine, TEST_CIPHER) as work:
             work.challenges.add(self._challenge("a" * 64, ttl=10))
             work.challenges.add(self._challenge("b" * 64, ttl=600))
             work.commit()
 
-        with SqlAlchemyBackofficeUnitOfWork(engine) as work:
+        with SqlAlchemyBackofficeUnitOfWork(engine, TEST_CIPHER) as work:
             purged = work.challenges.purge_expired(NOW + timedelta(minutes=1))
             work.commit()
-        with SqlAlchemyBackofficeUnitOfWork(engine) as work:
+        with SqlAlchemyBackofficeUnitOfWork(engine, TEST_CIPHER) as work:
             kept = work.challenges.take("b" * 64, NOW + timedelta(minutes=1))
 
         assert purged == 1 and kept is not None
 
     def test_a_transaction_without_commit_changes_nothing(self) -> None:
         engine = migrated_engine()
-        with SqlAlchemyBackofficeUnitOfWork(engine) as work:
+        with SqlAlchemyBackofficeUnitOfWork(engine, TEST_CIPHER) as work:
             work.challenges.add(self._challenge())
 
-        with SqlAlchemyBackofficeUnitOfWork(engine) as work:
+        with SqlAlchemyBackofficeUnitOfWork(engine, TEST_CIPHER) as work:
             assert work.challenges.take("d" * 64, NOW) is None
 
 
@@ -133,15 +159,15 @@ class TestTemplateStorage:
         insert_user(engine, operator, "op@example.com", "x", "operator")
         template = FakeReconnaissanceFaciale().enroler([PNG])
         assert len(template) == TEMPLATE_SIZE
-        with SqlAlchemyBackofficeUnitOfWork(engine) as work:
+        with SqlAlchemyBackofficeUnitOfWork(engine, TEST_CIPHER) as work:
             assert work.templates.find(operator) is None
             work.templates.save(operator, template, NOW)
             work.commit()
-        with SqlAlchemyBackofficeUnitOfWork(engine) as work:
+        with SqlAlchemyBackofficeUnitOfWork(engine, TEST_CIPHER) as work:
             work.templates.save(operator, b"\x01" * TEMPLATE_SIZE, NOW)
             work.commit()
 
-        with SqlAlchemyBackofficeUnitOfWork(engine) as work:
+        with SqlAlchemyBackofficeUnitOfWork(engine, TEST_CIPHER) as work:
             stored = work.templates.find(operator)
 
         assert stored == b"\x01" * TEMPLATE_SIZE

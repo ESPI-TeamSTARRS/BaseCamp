@@ -6,6 +6,7 @@ from uuid import UUID
 from httpx import AsyncClient, Response
 from sqlalchemy import text
 
+from app.backoffice.__tests__.cipher import TEST_CIPHER
 from app.backoffice.__tests__.fakes import PNG
 from app.backoffice.application.identify_operator import IdentifyOperatorUseCase
 from app.backoffice.application.verify_face import VerifyFaceUseCase
@@ -52,7 +53,7 @@ class BackofficeStack(LoginStack):
         self.enroll(self.operator_id, PNG)
 
         def unit_of_work() -> SqlAlchemyBackofficeUnitOfWork:
-            return SqlAlchemyBackofficeUnitOfWork(self.engine)
+            return SqlAlchemyBackofficeUnitOfWork(self.engine, TEST_CIPHER)
 
         def accounts() -> SqlAlchemyUnitOfWork:
             return SqlAlchemyUnitOfWork(self.engine)
@@ -84,7 +85,7 @@ class BackofficeStack(LoginStack):
         self.application.include_router(router)
 
     def enroll(self, account_id: UUID, photo: bytes) -> None:
-        with SqlAlchemyBackofficeUnitOfWork(self.engine) as work:
+        with SqlAlchemyBackofficeUnitOfWork(self.engine, TEST_CIPHER) as work:
             work.templates.save(account_id, self.recognizer.enroler([photo]), self.clock.now())
             work.commit()
 

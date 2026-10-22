@@ -86,6 +86,11 @@ strict = true
 warn_unreachable = true
 show_error_codes = true
 
+# Package de la team IA (depot ML-Reco) : seul l'adaptateur l'importe, sans stubs de types.
+[[tool.mypy.overrides]]
+module = ["visage_id", "visage_id.*"]
+ignore_missing_imports = true
+
 [tool.poe.tasks]
 lint            = "ruff check ."
 "lint:fix"      = "ruff check . --fix"

@@ -1,10 +1,12 @@
 from fastapi import FastAPI
 from sqlalchemy import Engine
 
+from app.backoffice.application.enroll_operator_face import EnrollOperatorFaceUseCase
 from app.backoffice.application.identify_operator import IdentifyOperatorUseCase
 from app.backoffice.application.verify_face import VerifyFaceUseCase
 from app.backoffice.application.verify_operator_password import VerifyOperatorPasswordUseCase
 from app.backoffice.domain.interfaces.reconnaissance_faciale import ReconnaissanceFaciale
+from app.backoffice.infrastructure.clients.face_template_key_file import load_template_cipher
 from app.backoffice.infrastructure.clients.fake_reconnaissance_faciale import (
     FakeReconnaissanceFaciale,
 )
@@ -35,7 +37,30 @@ def build_face_recognizer(settings: Settings) -> ReconnaissanceFaciale:
     """
     if settings.face_verifier == "fake" and settings.environment in DEVELOPMENT_ENVIRONMENTS:
         return FakeReconnaissanceFaciale()
+    if settings.face_verifier == "visage-id":
+        try:
+            from app.backoffice.infrastructure.clients.visage_id_reconnaissance import (
+                VisageIdReconnaissance,
+            )
+        except ImportError:
+            raise RuntimeError("APP_FACE_VERIFIER=visage-id needs the visage-id package") from None
+        return VisageIdReconnaissance(settings.face_threshold)
     raise RuntimeError("APP_BACKOFFICE_ENABLED needs a real face verifier adapter")
+
+
+def build_enrollment(
+    settings: Settings, engine: Engine, events: BusinessEventLogger
+) -> EnrollOperatorFaceUseCase:
+    """Cas d'usage de la commande `enroll-face` (le verificateur reel, jamais le faux hors dev)."""
+    cipher = load_template_cipher(settings.face_template_key_file)
+    return EnrollOperatorFaceUseCase(
+        lambda: SqlAlchemyUnitOfWork(engine),
+        lambda: SqlAlchemyBackofficeUnitOfWork(engine, cipher),
+        build_face_recognizer(settings),
+        HmacEmailFingerprinter(build_pseudonymizer(settings.log_pseudonym_key)),
+        SystemClock(),
+        events,
+    )
 
 
 def wire_backoffice(
@@ -50,8 +75,10 @@ def wire_backoffice(
     def accounts() -> SqlAlchemyUnitOfWork:
         return SqlAlchemyUnitOfWork(engine)
 
+    cipher = load_template_cipher(settings.face_template_key_file)
+
     def unit_of_work() -> SqlAlchemyBackofficeUnitOfWork:
-        return SqlAlchemyBackofficeUnitOfWork(engine)
+        return SqlAlchemyBackofficeUnitOfWork(engine, cipher)
 
     application.state.identify_operator_use_case = IdentifyOperatorUseCase(
         accounts,
