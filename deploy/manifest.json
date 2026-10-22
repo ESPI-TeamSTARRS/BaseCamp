@@ -14,12 +14,12 @@
       "version": "0.10.0"
     },
     "payment": {
-      "image": "ghcr.io/espi-teamstarrs/basecamp-payment@sha256:a1b6db7a822018cd94aaa8382a2aca388d32b90ef59aa276081f3c9da5fa95e6",
-      "version": "0.12.1"
+      "image": "ghcr.io/espi-teamstarrs/basecamp-payment@sha256:664b7243f2b8e10543e9645a590ebb33249df60399a4eebaa8a8918335802d34",
+      "version": "0.12.2"
     },
     "shop": {
-      "image": "ghcr.io/espi-teamstarrs/basecamp-shop@sha256:b1d01f811fe77dd7543551823ddf1082df2f1a62db4fed2417ec24a6d0fc14e9",
-      "version": "0.14.0"
+      "image": "ghcr.io/espi-teamstarrs/basecamp-shop@sha256:2ca86c405c1e65392b65813bd8ca9cd41577fa902e3acf47fc4a434611d04421",
+      "version": "0.14.1"
     }
   }
 }
