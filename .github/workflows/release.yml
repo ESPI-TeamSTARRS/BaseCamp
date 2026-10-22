@@ -77,7 +77,7 @@ jobs:
       - name: Installer python-semantic-release (versions et empreintes verrouillees)
         run: |
           uv venv "$RUNNER_TEMP/psr"
-          uv pip install --python "$RUNNER_TEMP/psr" --require-hashes -r "$GITHUB_WORKSPACE/scripts/release/requirements.txt"
+          uv pip install --python "$RUNNER_TEMP/psr" --require-hashes --no-build -r "$GITHUB_WORKSPACE/scripts/release/requirements.txt"
           echo "$RUNNER_TEMP/psr/bin" >> "$GITHUB_PATH"
       - name: Prochaine version
         id: next

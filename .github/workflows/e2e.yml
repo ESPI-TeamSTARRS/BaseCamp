@@ -95,10 +95,11 @@ jobs:
       - name: Scenarios e2e contre Traefik
         run: uv run --frozen --no-build poe test:e2e
         working-directory: apps/backend/shop
-      - run: uv sync --frozen --no-build --python 3.13
+      # auth depend de `visage-id` (depot git de l'equipe IA, sans roue) : construit depuis les sources, donc sans --no-build.
+      - run: uv sync --frozen --python 3.13
         working-directory: apps/backend/auth
       - name: Scenarios e2e auth (passerelle, jetons de service, inscription avec Mailpit, journaux)
-        run: uv run --frozen --no-build poe test:e2e
+        run: uv run --frozen poe test:e2e
         working-directory: apps/backend/auth
         env:
           E2E_CHECK_LOGS: "1"
