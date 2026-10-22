@@ -47,6 +47,21 @@ class TestCounting:
             EventKey("auth.lockout_triggered", "denied", "too_many_failures", "password"): 1,
         }
 
+    def test_the_step_is_the_detail_of_a_backoffice_lockout(self) -> None:
+        setup = Setup()
+
+        setup.logger.log(
+            BusinessEvent.denied(
+                "auth.backoffice_lockout",
+                "too_many_failures",
+                attributes={"email_hash": "0123456789abcdef", "step": "face"},
+            )
+        )
+
+        assert setup.counted() == {
+            EventKey("auth.backoffice_lockout", "denied", "too_many_failures", "face"): 1
+        }
+
     def test_a_service_client_is_a_label_only_when_it_is_known(self) -> None:
         setup = Setup()
 

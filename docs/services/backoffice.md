@@ -77,7 +77,18 @@ Aucune écriture n'existe : tout autre verbe répond 405.
 - Le conteneur ne reçoit que `AUTH_URL`, `SHOP_URL` et `LOG_PSEUDONYM_KEY` (aucun secret d'API); le jeton ne vit que dans un cookie `HttpOnly`.
 
 ## Journaux
+Contrat commun [log-event.schema.json](../development/log-event.schema.json), **version 1.2.0** (WORK-64 : numéro de version ajouté au schéma; les champs sont inchangés, le back-office utilise `resource_type`, `resource_id`, `actor_type`, `actor_id` pour l'audit des consultations). Événements du back-office : `backoffice.page_served`, `backoffice.access_denied`, `backoffice.login_identify|face|password`, `backoffice.logout`, `backoffice.catalog_list|get|create|update|archive|image`, `backoffice.orders_list` et `backoffice.order_view`. Le test `log-contract.unit.test.ts` fait produire chacun de ces événements par les vrais gestionnaires et les valide contre le schéma (champs connus, motifs, `reason` si et seulement si l'issue n'est pas un succès), sans e-mail, jeton ni défi; l'e2e `test_zz_backoffice_journey.e2e.py` le refait sur les journaux réels des conteneurs.
+
 Une ligne JSON par page servie sur la sortie standard, au [contrat commun](../development/logging.md) : `service: basecamp-backoffice`, `event: backoffice.page_served`, `outcome`, `correlation_id` (celui du `X-Correlation-ID` reçu s'il est bien formé, sinon un UUID; renvoyé dans la réponse). Aucune donnée personnelle ni valeur reçue.
+
+## Parcours de bout en bout (WORK-64)
+Scénario `apps/backend/auth/tests/e2e/scenarios/test_zz_backoffice_journey.e2e.py` (pile réelle : passerelle, back-office, `auth`, `shop`, Postgres), qui clôt l'epic :
+1. **Réussite** : identifiant, visage accepté, mot de passe (cookie `bo_access` HttpOnly, jeton jamais dans la réponse), écran `/commandes` servi, catalogue lu par `/bff/products`, commande passée sur le site client puis retrouvée par `/bff/orders` (statut `pending_payment`) et son détail, déconnexion (cookie effacé, écrans refermés).
+2. **Refus** : mauvais visage et mauvais mot de passe donnent le même 401 générique, sans cookie; un jeton de connexion classique (sans rôle `operator` ni `face`) n'ouvre ni les écrans ni `/bff`.
+3. **Blocage** : 3 mauvais mots de passe verrouillent l'étape pour 5 minutes, y compris avec le bon mot de passe.
+4. **Signaux** : compteurs `/metrics` d'`auth` (tentatives par étape et résultat, blocages, sans e-mail), schéma des journaux des trois services, absence de secret et de donnée personnelle, audit `backoffice.order_view`.
+
+Le visage « accepté » utilise le faux vérificateur de développement avec la même image à l'enrôlement et à la connexion (voir [auth](auth.md), « Tests »). Lancement : pile minimale `docker compose up -d --wait`, `E2E_CHECK_LOGS=1 uv run poe test:e2e` dans `apps/backend/auth`.
 
 ## Pile et CI
 Service `backoffice` du `docker-compose.yml` (réseau `app`, healthcheck sur `/`), dont dépend Traefik. Job CI `backoffice` (qualité, tests, audit, build) dans `ci.yml`; le test de bout en bout de la pile construit l'image et vérifie 200 + `noindex` sur l'hôte admin et l'absence sur le domaine principal. L'image est construite, scannée (Trivy bloquant) et publiée par `release.yml` comme les autres composants.
