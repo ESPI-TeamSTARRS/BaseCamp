@@ -25,8 +25,10 @@ Session persistante : le composant `SessionKeeper` (monté dans le layout) retro
 ## Parcours de commande
 `/panier` (lignes, devis serveur, formulaire email et adresse) crée la commande (`POST /api/shop/orders`, clé d'idempotence par contenu) puis ouvre `/paiement/[orderId]` : écran de paiement simulé **sans champ de carte**, deux boutons (paiement réussi, refus) qui envoient une méthode de test à `POST /api/shop/orders/{id}/pay/confirm`. Un refus permet un nouvel essai; un succès vide le panier et mène à `/success?commande=BC-…` (le numéro n'est affiché que s'il a le format d'un numéro de commande). La page `/success` affiche le **récapitulatif réel** (statut, lignes, sous-total, livraison, total) lu côté serveur par `POST /api/shop/orders/lookup` : le numéro et l'email de la dernière commande sont gardés dans le `sessionStorage` de l'onglet (jamais dans l'URL ni un cookie) par `src/lib/order-recap.ts`; si rien n'est mémorisé (autre onglet, stockage refusé), la page renvoie vers le suivi de commande. Stripe n'existe plus dans le front : aucune clé de paiement n'est requise au build ni à l'exécution.
 
-## Organisation
-`src/app` (routes), `src/components`, `src/context` (panier), `src/lib` (utilitaires métier), `src/types`.
+## Pages de contenu et légales
+`/mentions-legales`, `/confidentialite`, `/cgv`, `/contact` et `/suivi` partagent le composant `ContentPage` (un seul `h1`, bandeau « projet pédagogique, informations fictives », date de mise à jour) et `ContentSection` (rubriques en `h2`). L'éditeur fictif (Basecamp Outdoor SAS, identifiants fictifs) est défini une fois dans `src/lib/legal-info.ts`. Les liens du pied de page viennent de `src/lib/footer-links.ts`, qui alimente aussi le plan du site (`sitemap.ts`) ; le test `footer-links.unit.test.ts` garde la liste cohérente avec les catégories.
+
+## Organisation`src/app` (routes), `src/components`, `src/context` (panier), `src/lib` (utilitaires métier), `src/types`.
 
 ## Qualité
 `npm run quality` (ESLint sans warning, Prettier, `tsc`), `npm run test:coverage` (Vitest, seuil 80 %). Tests colocalisés dans `__tests__/`.
