@@ -31,8 +31,8 @@ services:
     ports:
       - "127.0.0.1:${GATEWAY_PORT:-8080}:9080"
     environment:
-      # Prefixe de l'hote du back-office, lu par les regles de infra/traefik/dynamic.yml (modele Go).
-      BACKOFFICE_HOST_PREFIX: ${BACKOFFICE_HOST_PREFIX:-mercure}
+      # Hote complet du back-office, lu par les regles de infra/traefik/dynamic.yml (modele Go).
+      BACKOFFICE_HOST: ${BACKOFFICE_HOST:-mercure.localhost}
     volumes:
       - ./infra/traefik/dynamic.yml:/etc/traefik/dynamic.yml:ro
     networks: [edge, app]

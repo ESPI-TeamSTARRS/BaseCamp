@@ -1,7 +1,7 @@
 # Back-office `apps/backoffice`
 
 ## Rôle
-Application d'administration réservée à l'équipe, servie sur l'hôte du back-office (`mercure.<domaine>`, en local `mercure.localhost`). La session (garde de route, cookie de session, trois temps de connexion relayés vers `auth`, déconnexion) est en place (WORK-60) ; la gestion du catalogue (WORK-61) est le premier écran métier ; l'écran de connexion avec capture du visage arrive dans un ticket distinct.
+Application d'administration réservée à l'équipe, servie sur l'hôte du back-office (`BACKOFFICE_HOST`, en local `mercure.localhost`). La session (garde de route, cookie de session, trois temps de connexion relayés vers `auth`, déconnexion) est en place (WORK-60) ; la gestion du catalogue (WORK-61) est le premier écran métier ; l'écran de connexion avec capture du visage arrive dans un ticket distinct.
 
 ## Stack
 Next.js 16 (App Router, React 19), TypeScript strict, ESLint 9 en configuration plate, Prettier, Vitest (couverture ≥ 80 %, seuil bloquant). Même chaîne et mêmes scripts npm que le [front](frontend.md) (`quality`, `test:coverage`, `security`, `build`). Image Docker multi-étapes, utilisateur sans privilèges, serveur autonome (`output: 'standalone'`).
@@ -71,7 +71,7 @@ Aucune écriture n'existe : tout autre verbe répond 405.
 - **Tests** : composants (Testing Library), routes serveur et gestionnaire (Vitest, couverture ≥ 80 %), accès refusés; e2e sur la pile (`apps/backend/shop/tests/e2e/scenarios/test_backoffice_orders.e2e.py`) : commande passée sur le site, visible dans le back-office avec le bon statut et son détail, refus sans jeton double facteur ou avec le rôle `customer`, aucune écriture.
 
 ## Inscription d'un opérateur invité (WORK-68)
-Page publique `/invitation` (origine du back-office seulement, sans session : `PUBLIC_PATHS` du garde de route). Le lien que l'administrateur IT génère (`create-operator-invite`, voir [auth](auth.md#invitation-dun-opérateur-par-lien-à-usage-unique-work-67)) est `https://mercure.<domaine>/invitation#token=<jeton>` : le jeton est dans le **fragment**, que le navigateur n'envoie jamais au serveur (ni journal d'accès, ni Traefik). La forme `?token=` est aussi acceptée.
+Page publique `/invitation` (origine du back-office seulement, sans session : `PUBLIC_PATHS` du garde de route). Le lien que l'administrateur IT génère (`create-operator-invite`, voir [auth](auth.md#invitation-dun-opérateur-par-lien-à-usage-unique-work-67)) est `https://<BACKOFFICE_HOST>/invitation#token=<jeton>` : le jeton est dans le **fragment**, que le navigateur n'envoie jamais au serveur (ni journal d'accès, ni Traefik). La forme `?token=` est aussi acceptée.
 
 - **Jeton** : lu une seule fois après l'hydratation (`takeInvitationToken`), puis retiré de l'adresse et de l'historique (`history.replaceState`). Il ne vit plus qu'en mémoire du composant. Jeton absent ou de forme invalide : le message unique « lien invalide, expiré ou déjà utilisé, demandez un nouveau lien à l'administrateur IT », sans formulaire.
 - **Saisie** : mot de passe (12 caractères au minimum) et confirmation, puis **3 à 10 photos** prises avec la caméra du navigateur (mêmes `startCamera` et `stopCamera` que la connexion; la caméra n'est activée que sur clic), avec aperçu, retrait photo par photo et compteur. Chaque photo est une image JPEG réduite côté navigateur (640 px de large au plus; largeur et qualité baissent encore tant que l'image dépasse **1 Mo**).
@@ -80,7 +80,7 @@ Page publique `/invitation` (origine du back-office seulement, sans session : `P
 - **Tests** : `invitation-form.integ.test.tsx` (21 cas : lien, caméra, photos, validations, tous les résultats, nettoyage, double envoi), `invitation-token`, `invitation-api` et `capture` (limite de 1 Mo); parcours de bout en bout `test_zz_operator_signup_journey.e2e.py` (page publique sur l'origine du back-office avec ses en-têtes, 404 sur le domaine principal, création du compte par la passerelle puis connexion par les routes du back-office).
 
 ## Isolation et exposition
-- Le site client n'a aucun lien ni route vers le back-office. Le routeur Traefik `backoffice` ne répond que sur l'hôte `mercure.*` (`HostRegexp(^admin\..+$)`, hors `/api`); sur le domaine principal, c'est le front qui répond (404).
+- Le site client n'a aucun lien ni route vers le back-office. Le routeur Traefik `backoffice` ne répond que sur l'hôte `BACKOFFICE_HOST` (`HostRegexp(^admin\..+$)`, hors `/api`); sur le domaine principal, c'est le front qui répond (404).
 - `noindex` partout : balise `robots` de la page, `robots.txt` (`Disallow: /`) et en-tête `X-Robots-Tag`.
 - En-têtes : CSP sans cadre (`frame-ancestors 'none'`), `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: no-referrer`. `Permissions-Policy: camera=(self)` : la caméra n'est autorisée que pour cette origine.
 - Le conteneur ne reçoit que `AUTH_URL`, `SHOP_URL` et `LOG_PSEUDONYM_KEY` (aucun secret d'API); le jeton ne vit que dans un cookie `HttpOnly`.

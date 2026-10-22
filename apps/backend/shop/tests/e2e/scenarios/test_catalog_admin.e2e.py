@@ -3,7 +3,7 @@
 Le jeton d'opérateur est signé avec la clé de développement d'`auth` (`.secrets/auth/jwt-private.pem`,
 générée par `scripts/init-auth-keys.sh`, jamais versionnée) : `shop` le vérifie par le JWKS publié par
 `auth`, exactement comme un vrai jeton. Les requêtes d'administration portent `Host: mercure.localhost`
-(la passerelle ne route `/api/shop/admin` que sur une origine `mercure.*`).
+(la passerelle ne route `/api/shop/admin` que sur l'hôte du back-office).
 """
 
 import base64
