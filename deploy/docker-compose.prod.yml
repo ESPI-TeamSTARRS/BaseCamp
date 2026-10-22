@@ -310,6 +310,13 @@ services:
       APP_PUBLIC_BASE_URL: https://${BASECAMP_DOMAIN}
       # Origine du lien d'invitation d'operateur affiche par create-operator-invite (WORK-67).
       APP_ADMIN_BASE_URL: https://admin.${BASECAMP_DOMAIN}
+      # Back-office : ETEINT par defaut. L'activer (AUTH_BACKOFFICE_ENABLED=true) exige le verificateur reel
+      # (AUTH_FACE_VERIFIER=visage-id) et le secret des gabarits monte ci-dessous; sans l'un des deux,
+      # auth refuse de demarrer (jamais de porte sans verificateur). Jamais le faux verificateur en production.
+      APP_BACKOFFICE_ENABLED: ${AUTH_BACKOFFICE_ENABLED:-false}
+      APP_FACE_VERIFIER: ${AUTH_FACE_VERIFIER:-none}
+      APP_FACE_THRESHOLD: ${AUTH_FACE_THRESHOLD:-0.23}
+      APP_FACE_TEMPLATE_KEY_FILE: /run/secrets/auth_face_template_key
       # Adresse reelle du client : X-Forwarded-For ("client, Cloudflare, proxy Docker") n'est cru que
       # des reseaux Docker; on lit de droite a gauche en sautant ces reseaux et les plages Cloudflare
       # (publiques, a tenir a jour : https://www.cloudflare.com/ips/, comme dynamic.prod.yml).
@@ -339,8 +346,9 @@ services:
     image: ${AUTH_IMAGE}
     mem_limit: 256m
     environment: *auth-env
-    # Cles de signature generees sur la VM par scripts/init-auth-keys.sh (jamais versionnees).
-    secrets: [auth_jwt_private_key, auth_jwt_public_key]
+    # Cles de signature generees sur la VM par scripts/init-auth-keys.sh (jamais versionnees) et cle
+    # AES-256 des gabarits faciaux (creee a la main sur la VM, sauvegardee hors de la VM).
+    secrets: [auth_jwt_private_key, auth_jwt_public_key, auth_face_template_key]
     # payment-net : payment y lit les cles publiques (JWKS).
     # mail-egress : seule sortie vers Internet (webhook n8n d'envoi des mails).
     networks: [app, payment-net, auth-data, mail-egress]
@@ -454,3 +462,5 @@ secrets:
     file: ${SECRETS_DIR:-/opt/basecamp/secrets}/auth/jwt-private.pem
   auth_jwt_public_key:
     file: ${SECRETS_DIR:-/opt/basecamp/secrets}/auth/jwt-public.pem
+  auth_face_template_key:
+    file: ${SECRETS_DIR:-/opt/basecamp/secrets}/auth/face-template.key

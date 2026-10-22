@@ -243,11 +243,25 @@ def test_connexion_backoffice_seulement_sur_l_origine_admin(compose: dict) -> No
     stricte = prod["backoffice-login-rate-limit"]["rateLimit"]
     login = prod["auth-signup-rate-limit"]["rateLimit"]
     assert stricte["average"] < login["average"] and stricte["burst"] < login["burst"]
-    # En production, le back-office reste eteint tant qu'aucun verificateur reel n'est branche :
-    # jamais de faux adaptateur, jamais d'activation par defaut.
+    # En production, le back-office reste eteint par defaut et n'a jamais le faux verificateur.
     environment = compose["services"]["auth"]["environment"]
-    assert "APP_BACKOFFICE_ENABLED" not in environment
-    assert "APP_FACE_VERIFIER" not in environment
+    assert environment["APP_BACKOFFICE_ENABLED"] == "${AUTH_BACKOFFICE_ENABLED:-false}"
+    assert environment["APP_FACE_VERIFIER"] == "${AUTH_FACE_VERIFIER:-none}"
+    assert environment["APP_FACE_THRESHOLD"] == "${AUTH_FACE_THRESHOLD:-0.23}"
+    assert "fake" not in json.dumps(compose)
+
+
+def test_cle_des_gabarits_montee_sur_auth_seulement(compose: dict) -> None:
+    cle = compose["secrets"]["auth_face_template_key"]["file"]
+    assert cle == "${SECRETS_DIR:-/opt/basecamp/secrets}/auth/face-template.key"
+    assert "auth_face_template_key" in compose["services"]["auth"]["secrets"]
+    assert (
+        compose["services"]["auth"]["environment"]["APP_FACE_TEMPLATE_KEY_FILE"]
+        == "/run/secrets/auth_face_template_key"
+    )
+    for nom, service in compose["services"].items():
+        if nom != "auth":
+            assert "auth_face_template_key" not in (service.get("secrets") or []), nom
 
 
 def test_invitation_operateur_seulement_sur_l_origine_admin_avec_corps_pour_dix_images() -> None:
