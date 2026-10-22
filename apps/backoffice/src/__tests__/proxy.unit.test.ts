@@ -103,6 +103,8 @@ describe('proxy : garde de route', () => {
 describe('proxy : assemblage', () => {
   it('le proxy exporté s’appuie sur la session du runtime', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.stubEnv('AUTH_URL', 'http://auth.test:8000');
+    vi.stubEnv('SHOP_URL', 'http://shop.test:8000');
 
     const response = await proxy(get('/login'));
 

@@ -71,9 +71,10 @@ export function ProductForm({ productId }: { productId?: string }) {
   useEffect(() => {
     if (productId === undefined) return;
     let current = true;
-    catalogApi.get(productId).then((result) => {
+    void (async () => {
+      const result = await catalogApi.get(productId);
       if (current) applyLoaded(result);
-    });
+    })();
     return () => {
       current = false;
     };
