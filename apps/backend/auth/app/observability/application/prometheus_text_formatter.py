@@ -12,6 +12,13 @@ LOCKOUT_TRIGGERED = "auth.lockout_triggered"
 REFRESH_REUSE_DETECTED = "auth.refresh_reuse_detected"
 SERVICE_TOKEN_DENIED = "auth.service_token_denied"  # noqa: S105
 SERVICE_RATE_LIMITED = "auth.service_rate_limited"
+BACKOFFICE_LOCKOUT = "auth.backoffice_lockout"
+# Evenement de resultat de chaque temps de la connexion du back-office -> etape (libelle ferme).
+BACKOFFICE_STEPS = {
+    "auth.backoffice_identify": "identify",
+    "auth.backoffice_face_result": "face",
+    "auth.backoffice_password_result": "password",
+}
 
 
 def _labels(**labels: str | int) -> str:
@@ -27,7 +34,8 @@ class PrometheusTextFormatter:
     """Ecrit le format texte Prometheus 0.0.4 : HELP, TYPE puis les echantillons de chaque famille.
 
     Les libelles sont une liste fermee : `route` (gabarit), `method`, `status`, `le`, `event`,
-    `outcome`, `reason`, `cause`, `step`, `client` (client de service connu ou `unknown`).
+    `outcome`, `reason`, `cause`, `step`, `result` (success, denied, error), `client` (client de
+    service connu ou `unknown`).
     Jamais d'adresse, de mot de passe, de jeton ni de secret.
     """
 
@@ -131,6 +139,14 @@ class PrometheusTextFormatter:
             "Réutilisations d'un jeton de rafraîchissement déjà consommé (famille révoquée).",
             self._sum_by_detail(events, REFRESH_REUSE_DETECTED),
         )
+        self._backoffice_attempts(lines, events)
+        self._counter_by(
+            lines,
+            "auth_backoffice_lockouts_total",
+            "step",
+            "Blocages de la connexion du back-office (nombre d'événements), par étape verrouillée.",
+            self._sum_by_detail(events, BACKOFFICE_LOCKOUT),
+        )
         self._counter_by(
             lines,
             "auth_service_token_denied_total",
@@ -144,6 +160,24 @@ class PrometheusTextFormatter:
             "client",
             "Demandes de jeton de service limitées en débit, par client connu (`unknown` sinon).",
             self._sum_by_detail(events, SERVICE_RATE_LIMITED),
+        )
+
+    def _backoffice_attempts(self, lines: list[str], events: Mapping[EventKey, int]) -> None:
+        totals: dict[tuple[str, str], int] = {}
+        for key, count in events.items():
+            step = BACKOFFICE_STEPS.get(key.event)
+            if step is not None:
+                totals[(step, key.outcome)] = totals.get((step, key.outcome), 0) + count
+        samples = [
+            "auth_backoffice_attempts_total" + _labels(step=step, result=result) + f" {count}"
+            for (step, result), count in sorted(totals.items())
+        ]
+        self._family(
+            lines,
+            "auth_backoffice_attempts_total",
+            "counter",
+            "Tentatives de connexion du back-office, par étape (identify, face, password) et résultat (success, denied, error).",
+            samples,
         )
 
     @staticmethod

@@ -12,6 +12,7 @@ DETAIL_ATTRIBUTE = {
     "auth.login_failed": "cause",
     "auth.refresh_rejected": "cause",
     "auth.lockout_triggered": "step",
+    "auth.backoffice_lockout": "step",
 }
 # Evenements dont le detail est le client de service (`resource_id`), borne aux clients connus.
 CLIENT_EVENTS = frozenset({"auth.service_token_denied", "auth.service_rate_limited"})

@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from app.core.events.business_event import BusinessEvent
 from app.observability.__tests__.stack import (
     OWNER_EMAIL,
     OWNER_PHRASE,
@@ -23,6 +24,7 @@ CLOSED_LABELS = {
     "cause",
     "step",
     "client",
+    "result",
 }
 
 
@@ -182,6 +184,100 @@ class TestSignals:
         assert metric(body, "auth_state_up") == 0
         assert "auth_active_lockouts{" not in body
         assert "# TYPE auth_http_requests_total counter" in body
+
+
+class TestBackofficeSignals:
+    """Connexion du back-office : tentatives par etape et resultat, blocages; jamais d'email en etiquette."""
+
+    EMAIL_HASH = "0123456789abcdef"
+
+    @staticmethod
+    def _emit(service: ObservedService, *events: BusinessEvent) -> None:
+        for event in events:
+            service.application.state.events.log(event)
+
+    def _attrs(self, **extra: str) -> dict[str, str]:
+        return {"email_hash": self.EMAIL_HASH, **extra}
+
+    async def test_attempts_are_counted_per_step_and_result(self, service: ObservedService) -> None:
+        self._emit(
+            service,
+            BusinessEvent.success("auth.backoffice_identify", attributes=self._attrs()),
+            BusinessEvent.success("auth.backoffice_identify", attributes=self._attrs()),
+            BusinessEvent.success("auth.backoffice_face_result", attributes=self._attrs()),
+            BusinessEvent.denied(
+                "auth.backoffice_face_result", "face_refused", attributes=self._attrs()
+            ),
+            BusinessEvent.success("auth.backoffice_password_result", attributes=self._attrs()),
+            BusinessEvent.denied(
+                "auth.backoffice_password_result", "wrong_password", attributes=self._attrs()
+            ),
+            BusinessEvent.denied(
+                "auth.backoffice_password_result", "wrong_password", attributes=self._attrs()
+            ),
+            BusinessEvent.error(
+                "auth.backoffice_face_result", "recognition_unavailable", attributes=self._attrs()
+            ),
+        )
+
+        body = await scrape(service)
+
+        def series(step: str, result: str) -> float:
+            return metric(
+                body, f'auth_backoffice_attempts_total{{step="{step}",result="{result}"}}'
+            )
+
+        assert series("identify", "success") == 2
+        assert (series("face", "success"), series("face", "denied"), series("face", "error")) == (
+            1,
+            1,
+            1,
+        )
+        assert (series("password", "success"), series("password", "denied")) == (1, 2)
+
+    async def test_lockouts_are_counted_per_step(self, service: ObservedService) -> None:
+        self._emit(
+            service,
+            BusinessEvent.denied(
+                "auth.backoffice_lockout",
+                "too_many_failures",
+                attributes=self._attrs(step="face"),
+            ),
+            BusinessEvent.denied(
+                "auth.backoffice_lockout",
+                "too_many_failures",
+                attributes=self._attrs(step="operator_password"),
+            ),
+            BusinessEvent.denied(
+                "auth.backoffice_lockout",
+                "too_many_failures",
+                attributes=self._attrs(step="face"),
+            ),
+        )
+
+        body = await scrape(service)
+
+        assert metric(body, 'auth_backoffice_lockouts_total{step="face"}') == 2
+        assert metric(body, 'auth_backoffice_lockouts_total{step="operator_password"}') == 1
+
+    async def test_no_series_carries_an_email_or_its_hash(self, service: ObservedService) -> None:
+        self._emit(
+            service,
+            BusinessEvent.denied(
+                "auth.backoffice_face_result", "face_refused", attributes=self._attrs()
+            ),
+            BusinessEvent.denied(
+                "auth.backoffice_lockout",
+                "too_many_failures",
+                attributes=self._attrs(step="face"),
+            ),
+        )
+
+        body = await scrape(service)
+
+        assert self.EMAIL_HASH not in body and "@" not in body
+        assert "# TYPE auth_backoffice_attempts_total counter" in body
+        assert "# TYPE auth_backoffice_lockouts_total counter" in body
 
 
 class TestLabelsAreClosed:
