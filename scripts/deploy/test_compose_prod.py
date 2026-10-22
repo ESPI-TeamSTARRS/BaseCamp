@@ -183,3 +183,22 @@ def test_administration_du_catalogue_seulement_sur_l_origine_admin(compose: dict
         assert 2 * 1024 * 1024 < limite <= 4 * 1024 * 1024
     labels = compose["services"]["traefik"]["labels"]
     assert "Host(`admin.${BASECAMP_DOMAIN}`)" in labels["traefik.http.routers.basecamp-gw.rule"]
+
+
+def test_connexion_du_back_office_seulement_sur_l_origine_admin_et_desactivee_par_defaut(
+    compose: dict,
+) -> None:
+    for chemin in (DYNAMIC_PROD, DYNAMIC_DEV):
+        http = yaml.safe_load(chemin.read_text(encoding="utf-8"))["http"]
+        routeur = http["routers"]["auth-backoffice"]
+        assert routeur["rule"].startswith("HostRegexp("), chemin.name
+        assert "PathPrefix(`/api/auth/backoffice`)" in routeur["rule"]
+        assert "admin-rate-limit" in routeur["middlewares"]
+        assert "!PathPrefix(`/api/auth/backoffice`)" in http["routers"]["auth"]["rule"]
+        limite = http["middlewares"]["backoffice-body-limit"]["buffering"]["maxRequestBodyBytes"]
+        assert 4 * 1024 * 1024 < limite <= 8 * 1024 * 1024  # 3 images de 1 Mo en base64
+    # En production, le back-office reste eteint tant qu'aucun verificateur reel n'est branche :
+    # jamais de faux adaptateur, jamais d'activation par defaut.
+    environment = compose["services"]["auth"]["environment"]
+    assert "APP_BACKOFFICE_ENABLED" not in environment
+    assert "APP_FACE_VERIFIER" not in environment

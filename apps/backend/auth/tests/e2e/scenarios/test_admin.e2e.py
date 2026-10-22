@@ -14,6 +14,8 @@ from pathlib import Path
 import httpx
 import pytest
 
+from app.backoffice.__tests__.real_stack import enroll_face, operator_bearer
+
 REPO_ROOT = Path(__file__).resolve().parents[6]  # docker compose se lance depuis la racine
 BASE_URL = os.environ.get("E2E_BASE_URL", "http://127.0.0.1:8080")
 PHRASE = "Randonnee-GR20-" + uuid.uuid4().hex[:12]
@@ -61,6 +63,7 @@ def operator(client: httpx.Client) -> str:
     email = f"e2e-operator-{uuid.uuid4().hex[:10]}@example.test"
     created = create_operator(email)
     assert created.returncode == 0, created.stderr
+    enroll_face(email)  # la connexion du back-office passe par le visage (WORK-59)
     return email
 
 
@@ -84,7 +87,7 @@ def test_without_a_token_401_and_with_a_customer_token_403(client: httpx.Client)
 def test_an_operator_lists_and_disables_an_account(client: httpx.Client, operator: str) -> None:
     customer = f"e2e-target-{uuid.uuid4().hex[:10]}@example.test"
     register(client, customer)
-    headers = bearer(client, operator)
+    headers = operator_bearer(operator, PHRASE)
 
     listing = client.get("/api/auth/admin/users?limit=100", headers=headers)
     assert listing.status_code == 200
@@ -105,7 +108,7 @@ def test_an_operator_lists_and_disables_an_account(client: httpx.Client, operato
 
 
 def test_an_operator_cannot_disable_themselves(client: httpx.Client, operator: str) -> None:
-    headers = bearer(client, operator)
+    headers = operator_bearer(operator, PHRASE)
     me = client.get("/api/auth/me", headers=headers).json()
 
     response = client.post(f"/api/auth/admin/users/{me['id']}/disable", headers=headers)

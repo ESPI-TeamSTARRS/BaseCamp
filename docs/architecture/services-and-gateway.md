@@ -26,7 +26,8 @@ Un reverse proxy (Traefik) est le seul point d'entrée publié. Il route les req
 | `/api/shop/*` (sauf `/api/shop/admin` et `/api/shop/webhooks`) | `shop` |
 | `/api/shop/admin/*` **sur l'hôte `admin.<domaine>` seulement** | `shop` (administration du catalogue) |
 | `/media/*` | images du catalogue (bucket `product-images`, lecture seule) |
-| `/api/auth/*` | `auth` |
+| `/api/auth/*` (sauf `/api/auth/backoffice`, `/api/auth/internal` et `/api/auth/metrics`) | `auth` |
+| `/api/auth/backoffice/*` **sur l'hôte `admin.<domaine>` seulement** | `auth` (connexion du back-office en trois temps) |
 | `/.well-known/jwks.json` | `auth` (clés publiques de vérification des jetons, lecture seule) |
 | `/api/payment/*` | `payment` (accès restreint) |
 
@@ -43,6 +44,7 @@ Configuration versionnée, sans secret : `infra/traefik/dynamic.yml` (routeurs e
 | IP réelle | clé = adresse de la connexion (`RemoteAddr`), pas d'`ipStrategy.depth`; l'entrypoint `web` ne fait confiance à aucun proxy (`forwardedHeaders.insecure=false`, sans `trustedIPs`) | un `X-Forwarded-For` forgé est ignoré et ne contourne pas la limite |
 | Taille du corps | `buffering.maxRequestBodyBytes` = 1 Mio sur `/api/shop/*` | 413 au-delà |
 | Taille du corps (téléversement d'image) | 3 Mio, tenus en mémoire, sur `/api/shop/admin*` | 413 au-delà |
+| Taille du corps (connexion du back-office) | 5 Mio, tenus en mémoire, sur `/api/auth/backoffice*` (3 images de 1 Mo en base64) | 413 au-delà |
 | Délais d'expiration | entrants : lecture 30 s, écriture 30 s, inactivité 60 s; vers les services : connexion 5 s, en-têtes de réponse 30 s | coupure de la connexion |
 | En-têtes de sécurité | HSTS (2 ans, sous-domaines), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy` | posés sur toutes les réponses (API et front) |
 

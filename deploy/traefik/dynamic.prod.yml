@@ -33,6 +33,16 @@ http:
       middlewares: [media-path, security-headers]
       service: media
       priority: 150
+    auth-backoffice:
+      # Connexion du back-office en trois temps (identifiant, visage, mot de passe) : repondue
+      # UNIQUEMENT sur l'origine admin (admin.<domaine>), comme l'API d'administration du catalogue.
+      # Sur le domaine principal, /api/auth/backoffice n'est pas route vers auth (le front repond 404).
+      # Corps jusqu'a 5 Mio : 3 images de 1 Mo en base64.
+      rule: "HostRegexp(`^admin\\..+$`) && PathPrefix(`/api/auth/backoffice`)"
+      entryPoints: [web]
+      middlewares: [admin-rate-limit, backoffice-body-limit, security-headers, strip-api-auth]
+      service: auth
+      priority: 300
     auth-signup:
       # Inscription et confirmation d'email : le hachage argon2id coute du CPU et de la memoire,
       # on borne donc le debit par IP (60/min, rafale de 30) en plus du plafond de corps.
@@ -67,7 +77,7 @@ http:
       priority: 200
     auth:
       # Les routes /internal/* et /metrics ne sont jamais exposees : elles sortent du routeur.
-      rule: "PathPrefix(`/api/auth`) && !PathPrefix(`/api/auth/internal`) && !PathPrefix(`/api/auth/metrics`)"
+      rule: "PathPrefix(`/api/auth`) && !PathPrefix(`/api/auth/internal`) && !PathPrefix(`/api/auth/metrics`) && !PathPrefix(`/api/auth/backoffice`)"
       entryPoints: [web]
       middlewares: [body-limit, security-headers, strip-api-auth]
       service: auth
@@ -244,6 +254,12 @@ http:
       buffering:
         maxRequestBodyBytes: 3145728 # 3 Mio
         memRequestBodyBytes: 3145728 # tout en memoire : le conteneur est en lecture seule (pas de fichier temporaire)
+
+    backoffice-body-limit:
+      # Trois images de 1 Mo en base64 (4 Mo) plus l'enveloppe JSON -> 413 au-dela de 5 Mio.
+      buffering:
+        maxRequestBodyBytes: 5242880 # 5 Mio
+        memRequestBodyBytes: 5242880 # tout en memoire : le conteneur est en lecture seule
 
     body-limit:
       buffering:

@@ -266,6 +266,11 @@ services:
       APP_PUBLIC_BASE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:8080}
       # Adresse reelle du client : X-Forwarded-For n'est cru que de Traefik (reseaux Docker locaux).
       APP_TRUSTED_PROXIES: ${AUTH_TRUSTED_PROXIES:-172.16.0.0/12,192.168.0.0/16,10.0.0.0/8}
+      # Connexion du back-office en trois temps : active en developpement avec le FAUX verificateur de
+      # visage (aucune reconnaissance reelle). Jamais en production (deploy/docker-compose.prod.yml).
+      APP_BACKOFFICE_ENABLED: ${AUTH_BACKOFFICE_ENABLED:-true}
+      APP_FACE_VERIFIER: ${AUTH_FACE_VERIFIER:-fake}
+      APP_LOCKOUT_ADDRESS_MAX_FAILURES: ${AUTH_LOCKOUT_ADDRESS_MAX_FAILURES:-20}
     networks: [auth-data]
     depends_on:
       postgres-auth: { condition: service_healthy }
