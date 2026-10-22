@@ -185,11 +185,14 @@ def test_administration_du_catalogue_seulement_sur_l_origine_admin(compose: dict
     labels = compose["services"]["traefik"]["labels"]
     assert "Host(`admin.${BASECAMP_DOMAIN}`)" in labels["traefik.http.routers.basecamp-gw.rule"]
 
-def test_transport_des_mails_de_shop_configurable_sans_secret_dans_le_depot(compose: dict) -> None:
-    environment = compose["services"]["shop"]["environment"]
-    assert environment["APP_MAIL_TRANSPORT"] == "${MAIL_TRANSPORT:-smtp}"
-    assert environment["APP_N8N_MAIL_URL"] == "${N8N_MAIL_URL:-}"
-    assert environment["APP_N8N_MAIL_SECRET"] == "${N8N_MAIL_SECRET:-}"
+def test_transport_des_mails_de_shop_et_auth_configurable_sans_secret_dans_le_depot(
+    compose: dict,
+) -> None:
+    for service in ("shop", "auth"):
+        environment = compose["services"][service]["environment"]
+        assert environment["APP_MAIL_TRANSPORT"] == "${MAIL_TRANSPORT:-smtp}", service
+        assert environment["APP_N8N_MAIL_URL"] == "${N8N_MAIL_URL:-}", service
+        assert environment["APP_N8N_MAIL_SECRET"] == "${N8N_MAIL_SECRET:-}", service
     exemple = (ROOT / "deploy" / "prod.env.example").read_text(encoding="utf-8")
     assert "N8N_MAIL_SECRET=" in exemple
     for ligne in exemple.splitlines():

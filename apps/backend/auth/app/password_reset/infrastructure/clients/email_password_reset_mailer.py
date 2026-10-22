@@ -1,6 +1,6 @@
 from app.password_reset.domain.interfaces.password_reset_mailer import PasswordResetMailer
+from app.registration.domain.interfaces.email_sender import EmailSender
 from app.registration.domain.value_objects.email_address import EmailAddress
-from app.registration.infrastructure.clients.smtp_email_sender import SmtpEmailSender
 
 RESET_SUBJECT = "Réinitialisez votre mot de passe - Basecamp Outdoor"
 CHANGED_SUBJECT = "Votre mot de passe a été modifié - Basecamp Outdoor"
@@ -22,10 +22,10 @@ Si vous êtes à l'origine de ce changement, il n'y a rien à faire. Sinon, dema
 """
 
 
-class SmtpPasswordResetMailer(PasswordResetMailer):
+class EmailPasswordResetMailer(PasswordResetMailer):
     """Le lien ne porte que le jeton, dans le fragment : aucune donnee personnelle, absent des journaux."""
 
-    def __init__(self, transport: SmtpEmailSender, public_base_url: str) -> None:
+    def __init__(self, transport: EmailSender, public_base_url: str) -> None:
         self._transport = transport
         self._public_base_url = public_base_url.rstrip("/")
 

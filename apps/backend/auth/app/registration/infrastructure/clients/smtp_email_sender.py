@@ -2,10 +2,11 @@ import smtplib
 from email.message import EmailMessage
 
 from app.registration.domain.exceptions.mail_delivery_error import MailDeliveryError
+from app.registration.domain.interfaces.email_sender import EmailSender
 from app.registration.domain.value_objects.email_address import EmailAddress
 
 
-class SmtpEmailSender:
+class SmtpEmailSender(EmailSender):
     """Transport SMTP commun aux emails du service. Aucun detail du transport ne remonte."""
 
     def __init__(

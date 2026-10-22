@@ -4,8 +4,8 @@ from typing import Any, Self
 
 import pytest
 
-from app.password_reset.infrastructure.clients.smtp_password_reset_mailer import (
-    SmtpPasswordResetMailer,
+from app.password_reset.infrastructure.clients.email_password_reset_mailer import (
+    EmailPasswordResetMailer,
 )
 from app.registration.domain.exceptions.mail_delivery_error import MailDeliveryError
 from app.registration.domain.value_objects.email_address import EmailAddress
@@ -39,12 +39,12 @@ def fake_smtp(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(smtplib, "SMTP", FakeSmtp)
 
 
-def make_mailer() -> SmtpPasswordResetMailer:
+def make_mailer() -> EmailPasswordResetMailer:
     transport = SmtpEmailSender("mailpit", 1025, "comptes@basecamp.local", "", "", False, 5.0)
-    return SmtpPasswordResetMailer(transport, "http://localhost:8080/")
+    return EmailPasswordResetMailer(transport, "http://localhost:8080/")
 
 
-class TestSmtpPasswordResetMailer:
+class TestEmailPasswordResetMailer:
     def test_the_link_carries_only_the_token_in_the_fragment(self) -> None:
         make_mailer().send_reset_link(TO, TOKEN)
 

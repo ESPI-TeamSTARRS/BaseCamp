@@ -138,5 +138,5 @@ class TestMailFailure:
             Outcome.ERROR,
             "mail_delivery_failed",
         )
-        assert dict(failure.attributes) == {"kind": "password_reset"}
+        assert dict(failure.attributes) == {"kind": "password_reset", "cause": "smtp_error"}
         assert pending.token not in repr(failure)

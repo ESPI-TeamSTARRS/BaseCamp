@@ -206,7 +206,7 @@ class TestRegisterAccount:
         failures = [e for e in harness.events.events if e.event == "auth.email_delivery_failed"]
         [failure] = failures
         assert (failure.outcome, failure.reason) == (Outcome.ERROR, "mail_delivery_failed")
-        assert failure.attributes == {"kind": kind}
+        assert failure.attributes == {"kind": kind, "cause": "smtp_error"}
 
     def test_no_event_contains_the_password_the_token_or_the_address(self) -> None:
         harness = Harness(mail_fails=True)

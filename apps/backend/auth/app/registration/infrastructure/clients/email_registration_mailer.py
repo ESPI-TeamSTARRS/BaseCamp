@@ -1,6 +1,6 @@
+from app.registration.domain.interfaces.email_sender import EmailSender
 from app.registration.domain.interfaces.registration_mailer import RegistrationMailer
 from app.registration.domain.value_objects.email_address import EmailAddress
-from app.registration.infrastructure.clients.smtp_email_sender import SmtpEmailSender
 
 VERIFICATION_SUBJECT = "Confirmez votre adresse email - Basecamp Outdoor"
 ACCOUNT_EXISTS_SUBJECT = "Un compte existe déjà avec cette adresse - Basecamp Outdoor"
@@ -22,34 +22,17 @@ Vous pouvez vous connecter avec vos identifiants habituels. Si vous n'êtes pas 
 """
 
 
-class SmtpRegistrationMailer(RegistrationMailer):
-    """Envoi SMTP (Mailpit en local). Aucun detail du transport ne remonte : ni adresse, ni jeton."""
+class EmailRegistrationMailer(RegistrationMailer):
+    """Emails d'inscription, quel que soit le transport. Aucun detail du transport ne remonte :
+    ni adresse, ni jeton."""
 
-    def __init__(
-        self,
-        host: str,
-        port: int,
-        sender: str,
-        public_base_url: str,
-        username: str,
-        password: str,
-        starttls: bool,
-        timeout_seconds: float,
-    ) -> None:
-        self._host = host
-        self._port = port
-        self._sender = sender
+    def __init__(self, transport: EmailSender, public_base_url: str) -> None:
+        self._transport = transport
         self._public_base_url = public_base_url.rstrip("/")
-        self._transport = SmtpEmailSender(
-            host, port, sender, username, password, starttls, timeout_seconds
-        )
 
     def send_verification(self, to: EmailAddress, token: str) -> None:
         link = f"{self._public_base_url}/compte/verification#token={token}"
-        self._send(to, VERIFICATION_SUBJECT, VERIFICATION_BODY.format(link=link))
+        self._transport.send(to, VERIFICATION_SUBJECT, VERIFICATION_BODY.format(link=link))
 
     def send_account_exists(self, to: EmailAddress) -> None:
-        self._send(to, ACCOUNT_EXISTS_SUBJECT, ACCOUNT_EXISTS_BODY)
-
-    def _send(self, to: EmailAddress, subject: str, body: str) -> None:
-        self._transport.send(to, subject, body)
+        self._transport.send(to, ACCOUNT_EXISTS_SUBJECT, ACCOUNT_EXISTS_BODY)
