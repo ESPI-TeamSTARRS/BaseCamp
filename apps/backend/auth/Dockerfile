@@ -1,6 +1,10 @@
 FROM python:3.13-slim AS builder
 COPY --from=ghcr.io/astral-sh/uv:0.9 /uv /usr/local/bin/uv
 ENV UV_LINK_MODE=copy UV_COMPILE_BYTECODE=1 UV_PYTHON_DOWNLOADS=never
+# git n'est necessaire qu'ici (etage de build) : la dependance `visage-id` (team IA) s'installe depuis
+# un commit epingle de son depot public; ni git ni apt ne sont dans l'image finale. Les modeles ONNX
+# sont dans le package : aucun telechargement a l'execution.
+RUN apt-get update     && apt-get install -y --no-install-recommends git     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-install-project --no-dev
