@@ -32,6 +32,7 @@ export default defineConfig({
         'src/lib/order-lookup.ts',
         'src/lib/order-payment.ts',
         'src/lib/order-recap.ts',
+        'src/components/LoginForm.tsx',
       ],
       thresholds: { lines: 80, functions: 80, branches: 80, statements: 80 },
     },

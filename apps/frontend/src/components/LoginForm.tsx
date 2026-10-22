@@ -84,6 +84,11 @@ export function LoginForm() {
         />
       </label>
       <FieldError id="password-error" message={errors.password} />
+      <p className="mt-2 text-right text-sm">
+        <Link href="/compte/mot-de-passe-oublie" className="text-forest underline">
+          Mot de passe oublié ?
+        </Link>
+      </p>
 
       {state?.status === 'error' && (
         <p role="alert" className="mt-6 rounded-lg bg-bivouac/10 p-3 text-sm text-bivouac-dark">
