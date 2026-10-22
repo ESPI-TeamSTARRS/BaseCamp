@@ -59,6 +59,46 @@ describe('page', () => {
   });
 });
 
+describe('lecture unique du jeton', () => {
+  it('lit le jeton UNE seule fois : le fragment est effacé à la première lecture, un rendu suivant ne doit pas le relire', async () => {
+    // Le composant est rendu avec une NOUVELLE fonction a chaque rendu (comme le defaut en production) :
+    // la lecture ne doit pas se rejouer, sinon la seconde lecture ne trouve plus rien (fragment efface).
+    const reads = vi
+      .fn<() => string | null>()
+      .mockReturnValueOnce('jeton-valide-0123456789')
+      .mockReturnValue(null);
+    const view = render(<InvitationForm readToken={() => reads()} />);
+    await screen.findByLabelText(/^Mot de passe/);
+
+    view.rerender(<InvitationForm readToken={() => reads()} />);
+    fireEvent.change(screen.getByLabelText(/^Mot de passe/), { target: { value: STRONG } });
+    await new Promise((resolve) => setTimeout(resolve, 20)); // laisse passer une relecture eventuelle
+
+    expect(reads).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByLabelText(/^Mot de passe/)).toBeTruthy();
+  });
+
+  it('avec le vrai lecteur : fragment lu, adresse nettoyée, formulaire affiché et jeton envoyé', async () => {
+    window.history.replaceState(null, '', '/invitation#token=abcdefghijklmnopqrstuvwxyz0123456789_-AB');
+    completeMock.mockResolvedValue('created');
+    render(<InvitationForm />);
+    await screen.findByLabelText(/^Mot de passe/);
+    expect(window.location.hash).toBe('');
+
+    fillPasswords();
+    await startCameraAndShoot(3);
+    fireEvent.click(submit());
+
+    await screen.findByText(/Votre compte est créé/);
+    expect(completeMock).toHaveBeenCalledWith(
+      'abcdefghijklmnopqrstuvwxyz0123456789_-AB',
+      STRONG,
+      expect.any(Array)
+    );
+  });
+});
+
 describe('lien', () => {
   it('sans jeton valide : un seul message, aucun formulaire', async () => {
     await open(null);
