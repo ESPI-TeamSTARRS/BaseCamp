@@ -15,6 +15,8 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
+# Seuil de l'adresse source (20 par defaut; abaisse en CI par AUTH_LOCKOUT_ADDRESS_MAX_FAILURES).
+ADDRESS_THRESHOLD = int(os.environ.get("AUTH_LOCKOUT_ADDRESS_MAX_FAILURES", "20"))
 pytestmark = pytest.mark.skipif(
     not (os.environ.get("E2E_CHECK_LOGS") and shutil.which("docker")),
     reason="définir E2E_CHECK_LOGS=1 (docker compose requis)",
@@ -95,7 +97,7 @@ def test_each_step_has_its_own_threshold_and_counter(subject: str) -> None:
 
 
 def test_a_source_address_has_its_own_counter(subject: str) -> None:
-    assert _fail(subject, "face", "address", 19)["locked"] is False
+    assert _fail(subject, "face", "address", ADDRESS_THRESHOLD - 1)["locked"] is False
 
     assert _fail(subject, "face", "address", 1)["locked"] is True
     checked = _auth("check", subject)

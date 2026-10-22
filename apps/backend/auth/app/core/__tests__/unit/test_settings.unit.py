@@ -228,3 +228,23 @@ class TestSettingsLockoutByStep:
 
         with pytest.raises(ValueError, match="greater than"):
             Settings()
+
+
+class TestSettingsTrustedProxies:
+    def test_nobody_is_trusted_by_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("APP_TRUSTED_PROXIES", raising=False)
+
+        assert Settings().trusted_proxies == ""
+
+    def test_the_ranges_are_read_from_the_environment(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("APP_TRUSTED_PROXIES", "172.16.0.0/12,173.245.48.0/20")
+
+        assert Settings().trusted_proxies == "172.16.0.0/12,173.245.48.0/20"
+
+    def test_a_bad_range_is_refused(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("APP_TRUSTED_PROXIES", "172.16.0.0/12,nope")
+
+        with pytest.raises(ValueError, match="APP_TRUSTED_PROXIES"):
+            Settings()

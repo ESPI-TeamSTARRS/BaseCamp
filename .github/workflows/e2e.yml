@@ -30,6 +30,9 @@ jobs:
       # Webhook payment -> shop : le worker vise le vrai recepteur de la boutique (http://shop:8000/webhooks/payment,
       # valeur par defaut de la pile) pour les scenarios shop; relances rapprochees.
       PAYMENT_WEBHOOK_BACKOFF_BASE_SECONDS: "2"
+      # Seuil du compteur par adresse source du back-office abaisse : au seuil par defaut (20), le debit de
+      # la passerelle (30 requetes/min) empecherait de le franchir dans le scenario des deux clients.
+      AUTH_LOCKOUT_ADDRESS_MAX_FAILURES: "5"
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Fichier .env de CI (valeurs factices) et cles de signature auth (non versionnees)

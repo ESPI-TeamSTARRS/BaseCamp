@@ -194,10 +194,10 @@ def test_transport_des_mails_de_shop_configurable_sans_secret_dans_le_depot(comp
     assert "N8N_MAIL_SECRET=" in exemple
     for ligne in exemple.splitlines():
         if ligne.lstrip("# ").startswith("N8N_MAIL_SECRET="):
-            assert ligne.split("=", 1)[1].strip() == "", "le secret n'a jamais de valeur dans le dépôt"
+            assert ligne.split("=", 1)[1].strip() == "", "le secret n'a jamais de valeur dans le depot"
 
 
-def test_connexion_backoffice_seulement_sur_l_origine_admin() -> None:
+def test_connexion_backoffice_seulement_sur_l_origine_admin(compose: dict) -> None:
     for chemin in (DYNAMIC_PROD, DYNAMIC_DEV):
         http = yaml.safe_load(chemin.read_text(encoding="utf-8"))["http"]
         routeur = http["routers"]["auth-backoffice"]
@@ -205,9 +205,18 @@ def test_connexion_backoffice_seulement_sur_l_origine_admin() -> None:
         assert "PathPrefix(`/api/auth/backoffice`)" in routeur["rule"]
         assert "!PathPrefix(`/api/auth/backoffice`)" in http["routers"]["auth"]["rule"]
         assert routeur["middlewares"][0] == "backoffice-login-rate-limit"
-        stricte = http["middlewares"]["backoffice-login-rate-limit"]["rateLimit"]
-        login = http["middlewares"]["auth-signup-rate-limit"]["rateLimit"]
-        assert stricte["average"] < login["average"] and stricte["burst"] < login["burst"]
+        limite = http["middlewares"]["backoffice-body-limit"]["buffering"]["maxRequestBodyBytes"]
+        assert 4 * 1024 * 1024 < limite <= 8 * 1024 * 1024  # 3 images de 1 Mo en base64
+    # La production garde le limiteur strict (le developpement est large pour les scenarios e2e).
+    prod = yaml.safe_load(DYNAMIC_PROD.read_text(encoding="utf-8"))["http"]["middlewares"]
+    stricte = prod["backoffice-login-rate-limit"]["rateLimit"]
+    login = prod["auth-signup-rate-limit"]["rateLimit"]
+    assert stricte["average"] < login["average"] and stricte["burst"] < login["burst"]
+    # En production, le back-office reste eteint tant qu'aucun verificateur reel n'est branche :
+    # jamais de faux adaptateur, jamais d'activation par defaut.
+    environment = compose["services"]["auth"]["environment"]
+    assert "APP_BACKOFFICE_ENABLED" not in environment
+    assert "APP_FACE_VERIFIER" not in environment
 
 
 def test_le_backoffice_n_est_servi_que_sur_l_origine_admin() -> None:

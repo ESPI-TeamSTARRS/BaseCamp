@@ -65,6 +65,9 @@ class JwtAccessTokenVerifier(AccessTokenVerifier):
         verified = payload.get("email_verified", False)
         if not isinstance(verified, bool) or not isinstance(payload["jti"], str):
             raise TypeError("claims")
+        amr = payload.get("amr", [])
+        if not isinstance(amr, list) or not all(isinstance(method, str) for method in amr):
+            raise TypeError("amr")
         return AccessTokenClaims(
             UUID(payload["sub"]),
             tuple(roles),
@@ -72,6 +75,7 @@ class JwtAccessTokenVerifier(AccessTokenVerifier):
             datetime.fromtimestamp(int(payload["iat"]), UTC),
             datetime.fromtimestamp(int(payload["exp"]), UTC),
             payload["jti"],
+            tuple(amr),
         )
 
     @staticmethod

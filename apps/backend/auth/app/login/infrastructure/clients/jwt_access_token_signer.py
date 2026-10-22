@@ -30,6 +30,8 @@ class JwtAccessTokenSigner(AccessTokenSigner):
             "exp": int(claims.expires_at.timestamp()),
             "jti": claims.token_id,
         }
+        if claims.amr:
+            payload["amr"] = list(claims.amr)
         return jwt.encode(
             payload,
             self._keys.signing_key,
