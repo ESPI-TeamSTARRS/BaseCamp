@@ -230,6 +230,7 @@ def test_le_backoffice_n_est_servi_que_sur_l_origine_admin() -> None:
 def test_connexion_du_backoffice_limitee_et_reseau_interne_vers_auth(compose: dict) -> None:
     environment = compose["services"]["backoffice"]["environment"]
     assert environment["AUTH_URL"] == "http://auth:8000"
+    assert environment["SHOP_URL"] == "http://shop:8000"
     assert environment["LOG_PSEUDONYM_KEY"].startswith("${LOG_PSEUDONYM_KEY:?")
     for chemin in (DYNAMIC_PROD, DYNAMIC_DEV):
         routeurs = yaml.safe_load(chemin.read_text(encoding="utf-8"))["http"]["routers"]

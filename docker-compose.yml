@@ -73,6 +73,7 @@ services:
     environment:
       # Appels internes du back-office (reseau app) : connexion en trois temps et cles de verification via auth.
       AUTH_URL: http://auth:8000
+      SHOP_URL: http://shop:8000
       LOG_PSEUDONYM_KEY: ${LOG_PSEUDONYM_KEY:-}
     networks: [app]
     healthcheck:
