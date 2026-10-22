@@ -46,9 +46,12 @@ class ChangeAccountStatusUseCase:
                 if target.active_operator and len(operators) <= 1:
                     raise CannotDisableLastOperatorError
                 revoked = 0
+                face_deleted = False
                 if not target.disabled:
                     work.accounts.set_disabled(target.id, now)
                     revoked = work.accounts.revoke_sessions(target.id)
+                    # donnee biometrique : perdue avec l'acces, a reenroler si le compte revient
+                    face_deleted = work.accounts.delete_face_template(target.id)
                 work.commit()
         except AdminError as error:
             self._refuse(operator_id, target_id, error, client_ip)
@@ -61,7 +64,11 @@ class ChangeAccountStatusUseCase:
                 actor_type=catalog.ACTOR_OPERATOR,
                 actor_id=str(operator_id),
                 client_ip=client_ip,
-                attributes={"sessions_revoked": revoked, "already_disabled": target.disabled},
+                attributes={
+                    "sessions_revoked": revoked,
+                    "already_disabled": target.disabled,
+                    "face_template_deleted": face_deleted,
+                },
             )
         )
         return AccountSummary.of(replace(target, disabled=True))

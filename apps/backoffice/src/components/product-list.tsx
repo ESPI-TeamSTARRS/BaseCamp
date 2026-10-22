@@ -27,7 +27,8 @@ export function ProductList() {
 
   useEffect(() => {
     let current = true;
-    catalogApi.list({ q: query, includeArchived: archived, offset, limit: PAGE_SIZE }).then((result) => {
+    void (async () => {
+      const result = await catalogApi.list({ q: query, includeArchived: archived, offset, limit: PAGE_SIZE });
       if (current)
         setSettled({
           key,
@@ -35,7 +36,7 @@ export function ProductList() {
             ? { status: 'ready', page: result.data }
             : { status: 'error', detail: result.detail },
         });
-    });
+    })();
     return () => {
       current = false;
     };

@@ -63,7 +63,7 @@ class VerifyFaceUseCase:
         if self._locked(challenge, now):
             self._events.log(self._lock_event(challenge, client_ip))
             raise self._refuse(catalog.REASON_STEP_LOCKED, challenge.email_hash, client_ip, None)
-        template = self._template_of(challenge)
+        template = self._template_or_refuse(challenge, client_ip)
         if template is None:
             cause = catalog.CAUSE_UNKNOWN_ACCOUNT if challenge.decoy else catalog.CAUSE_NO_TEMPLATE
             raise self._failed(challenge, client_ip, cause, now)
@@ -79,6 +79,22 @@ class VerifyFaceUseCase:
                 attributes={"email_hash": challenge.email_hash, "step": STEP_FACE},
             )
         )
+
+    def _template_or_refuse(self, challenge: LoginChallenge, client_ip: str | None) -> bytes | None:
+        """Gabarit de l'operateur; un gabarit qui ne se dechiffre pas est un gabarit invalide (409)."""
+        try:
+            return self._template_of(challenge)
+        except GabaritInvalide:
+            self._events.log(
+                BusinessEvent.denied(
+                    catalog.BACKOFFICE_FACE_RESULT,
+                    catalog.REASON_INVALID_TEMPLATE,
+                    resource_type=catalog.RESOURCE_CHALLENGE,
+                    client_ip=client_ip,
+                    attributes={"email_hash": challenge.email_hash, "step": STEP_FACE},
+                )
+            )
+            raise FaceTemplateInvalidError from None
 
     def _template_of(self, challenge: LoginChallenge) -> bytes | None:
         if challenge.account_id is None:

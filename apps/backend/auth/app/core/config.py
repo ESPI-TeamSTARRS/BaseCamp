@@ -66,7 +66,13 @@ class Settings(BaseSettings):
     # `backoffice_enabled`. Il faut alors un verificateur de visage : `fake` (developpement
     # uniquement, aucune reconnaissance reelle) ; aucun adaptateur reel n'est encore branche.
     backoffice_enabled: bool = False
-    face_verifier: Literal["none", "fake"] = "none"
+    face_verifier: Literal["none", "fake", "visage-id"] = "none"
+    # Seuil de decision du verificateur reel (similarite cosinus). Defaut 0,23 : valeur de la team IA
+    # (jeu public LFW, ~0,1 % de faux accepts); a recalibrer avec de vraies photos.
+    face_threshold: float = Field(default=0.23, gt=0, lt=1)
+    # Cle AES-256 (32 octets en base64) qui chiffre les gabarits faciaux au repos : secret monte,
+    # jamais versionne (scripts/init-auth-keys.sh la genere en developpement).
+    face_template_key_file: str = "/run/secrets/auth_face_template_key"
     backoffice_challenge_ttl_seconds: int = Field(default=120, gt=0)
 
     # Adresse reelle du client (WORK-59) : plages CIDR (separees par des virgules) des proxies dont on

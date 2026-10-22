@@ -1,5 +1,6 @@
 #!/bin/sh
-# Genere la paire de cles de signature (Ed25519) du service auth dans .secrets/auth/.
+# Genere dans .secrets/auth/ : la paire de cles de signature (Ed25519) du service auth et la cle
+# AES-256 qui chiffre les gabarits faciaux des operateurs au repos (face-template.key).
 # Idempotent : ne remplace jamais une cle existante (utiliser --force pour la regenerer).
 # Les cles ne sont jamais versionnees (.secrets/ est ignore par Git).
 set -eu
@@ -8,6 +9,18 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DIR="${AUTH_KEYS_DIR:-$ROOT/.secrets/auth}"
 PRIVATE_KEY="$DIR/jwt-private.pem"
 PUBLIC_KEY="$DIR/jwt-public.pem"
+
+FACE_KEY="$DIR/face-template.key"
+
+command -v openssl >/dev/null 2>&1 || { echo "openssl est requis." >&2; exit 1; }
+
+# Cle des gabarits : jamais regeneree sans --force (les gabarits deja stockes ne se dechiffreraient plus).
+if [ "${1:-}" = "--force" ] || [ ! -s "$FACE_KEY" ]; then
+  mkdir -p "$DIR"
+  ( umask 077; openssl rand -base64 32 > "$FACE_KEY" )
+  chmod 644 "$FACE_KEY"  # cle de developpement locale : lisible par l'utilisateur du conteneur
+  echo "Cle des gabarits faciaux generee dans $DIR"
+fi
 
 if [ "${1:-}" != "--force" ] && [ -s "$PRIVATE_KEY" ] && [ -s "$PUBLIC_KEY" ]; then
   echo "Cles de signature deja presentes dans $DIR (--force pour les regenerer)."

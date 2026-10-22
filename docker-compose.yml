@@ -324,7 +324,7 @@ services:
     image: ${COMPOSE_PROJECT_NAME:-basecamp}-auth
     environment: *auth-env
     # Cles de signature generees par scripts/init-auth-keys.sh (jamais versionnees).
-    secrets: [auth_jwt_private_key, auth_jwt_public_key]
+    secrets: [auth_jwt_private_key, auth_jwt_public_key, auth_face_template_key]
     # payment-net : payment y lit les cles publiques (JWKS), shop y passe par app pour /internal/token.
     networks: [app, payment-net, auth-data]
     read_only: true
@@ -437,3 +437,6 @@ secrets:
     file: ./.secrets/auth/jwt-private.pem
   auth_jwt_public_key:
     file: ./.secrets/auth/jwt-public.pem
+  # Chiffre les gabarits faciaux des operateurs au repos (donnee biometrique), jamais versionnee.
+  auth_face_template_key:
+    file: ./.secrets/auth/face-template.key
