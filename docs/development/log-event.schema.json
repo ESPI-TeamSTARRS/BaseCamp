@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basecamp.local/schemas/log-event.schema.json",
   "title": "Evenement metier Basecamp",
+  "version": "1.2.0",
   "description": "Une ligne JSON par evenement metier sur la sortie standard des services shop, payment et auth, et du back-office (basecamp-backoffice, evenements backoffice.*, dont backoffice.order_view : audit de chaque consultation d'une commande, acteur pseudonymise). Contrat commun : on ajoute des champs optionnels, on ne renomme ni ne supprime jamais un champ ou un event publie.",
   "type": "object",
   "additionalProperties": false,
