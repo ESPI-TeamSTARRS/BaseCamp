@@ -16,6 +16,7 @@ export default defineConfig({
         'src/lib/shop-api.ts',
         'src/lib/cart-lines.ts',
         'src/lib/categories.ts',
+        'src/lib/footer-links.ts',
         'src/lib/cart-quote.ts',
         'src/lib/order-form.ts',
         'src/lib/place-order.ts',
