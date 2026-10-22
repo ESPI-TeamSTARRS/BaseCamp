@@ -226,3 +226,18 @@ def test_le_backoffice_n_est_servi_que_sur_l_origine_admin() -> None:
         assert routeur["rule"].startswith("HostRegexp("), chemin.name
         assert "!PathPrefix(`/api`)" in routeur["rule"]
         assert routeur["priority"] > http["routers"]["front"]["priority"]
+
+def test_connexion_du_backoffice_limitee_et_reseau_interne_vers_auth(compose: dict) -> None:
+    environment = compose["services"]["backoffice"]["environment"]
+    assert environment["AUTH_URL"] == "http://auth:8000"
+    assert environment["SHOP_URL"] == "http://shop:8000"
+    assert environment["LOG_PSEUDONYM_KEY"].startswith("${LOG_PSEUDONYM_KEY:?")
+    for chemin in (DYNAMIC_PROD, DYNAMIC_DEV):
+        routeurs = yaml.safe_load(chemin.read_text(encoding="utf-8"))["http"]["routers"]
+        connexion = routeurs["backoffice-login"]
+        for etape in ("identify", "face", "password"):
+            assert f"Path(`/session/{etape}`)" in connexion["rule"], (chemin.name, etape)
+        assert connexion["rule"].startswith("HostRegexp(")
+        assert "backoffice-login-rate-limit" in connexion["middlewares"]
+        assert "backoffice-body-limit" in connexion["middlewares"]
+        assert connexion["priority"] > routeurs["backoffice"]["priority"]

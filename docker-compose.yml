@@ -70,6 +70,11 @@ services:
     image: ${COMPOSE_PROJECT_NAME:-basecamp}-backoffice
     build:
       context: ./apps/backoffice
+    environment:
+      # Appels internes du back-office (reseau app) : connexion en trois temps et cles de verification via auth.
+      AUTH_URL: http://auth:8000
+      SHOP_URL: http://shop:8000
+      LOG_PSEUDONYM_KEY: ${LOG_PSEUDONYM_KEY:-}
     networks: [app]
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/"]

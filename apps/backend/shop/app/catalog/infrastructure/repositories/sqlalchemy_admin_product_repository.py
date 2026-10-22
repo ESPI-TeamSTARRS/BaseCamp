@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
+from typing import Any
 
-from sqlalchemy import Engine, func, select, update
+from sqlalchemy import Engine, Select, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -18,22 +19,33 @@ class SqlAlchemyAdminProductRepository(AdminProductRepository):
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
 
-    def list_products(self, include_archived: bool, limit: int, offset: int) -> list[Product]:
-        statement = select(ProductModel)
-        if not include_archived:
-            statement = statement.where(ProductModel.archived_at.is_(None))
+    def list_products(
+        self, include_archived: bool, limit: int, offset: int, search: str | None = None
+    ) -> list[Product]:
+        statement = self._filtered(select(ProductModel), include_archived, search)
         statement = (
             statement.order_by(ProductModel.name, ProductModel.id).limit(limit).offset(offset)
         )
         with Session(self._engine) as session:
             return [ProductMapper.to_entity(row) for row in session.scalars(statement)]
 
-    def count(self, include_archived: bool) -> int:
-        statement = select(func.count()).select_from(ProductModel)
-        if not include_archived:
-            statement = statement.where(ProductModel.archived_at.is_(None))
+    def count(self, include_archived: bool, search: str | None = None) -> int:
+        statement = self._filtered(
+            select(func.count()).select_from(ProductModel), include_archived, search
+        )
         with Session(self._engine) as session:
             return session.scalar(statement) or 0
+
+    @staticmethod
+    def _filtered(
+        statement: Select[Any], include_archived: bool, search: str | None
+    ) -> Select[Any]:
+        if not include_archived:
+            statement = statement.where(ProductModel.archived_at.is_(None))
+        if search:
+            escaped = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            statement = statement.where(ProductModel.name.ilike(f"%{escaped}%", escape="\\"))
+        return statement
 
     def get(self, product_id: str) -> Product | None:
         with Session(self._engine) as session:

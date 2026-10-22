@@ -1,17 +1,16 @@
 name: E2E
 
-# Test de bout en bout de la pile complete (Traefik, front, shop, auth, payment...), joue toutes les heures
-# sur main et a la demande. Il ne bloque ni les PR ni les releases : un echec rend ce workflow rouge
-# (verifier le dernier run vert avant de fusionner une PR de manifeste, voir docs/deployment/runbook.md).
+# Test de bout en bout de la pile complete (Traefik, front, shop, auth, payment...) : toutes les heures sur
+# main, a la demande et, en parallele de la CI, dans release.yml avant la publication des images. Jamais sur
+# les PR. Il ne bloque la release que si la variable de depot E2E_BLOQUANT vaut "true" (voir
+# docs/development/ci.md); sinon un echec rend le run rouge sans empecher la publication.
+# Chaque execution a son propre runner et sa pile : aucune concurrence a serialiser.
 
 on:
   schedule:
     - cron: "0 * * * *"
   workflow_dispatch:
-
-concurrency:
-  group: e2e
-  cancel-in-progress: false
+  workflow_call:
 
 permissions: {}
 
@@ -89,7 +88,7 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: apps/backend/shop/uv.lock
-      - run: uv sync --frozen --no-build
+      - run: uv sync --frozen --no-build --python 3.13
         working-directory: apps/backend/shop
       - name: Scenarios e2e contre Traefik
         run: uv run --frozen --no-build poe test:e2e
@@ -107,7 +106,7 @@ jobs:
         run: docker compose up -d --no-deps --no-build --force-recreate --wait payment-worker
         env:
           PAYMENT_WEBHOOK_URL: http://shop:9100/webhooks/payment
-      - run: uv sync --frozen --no-build
+      - run: uv sync --frozen --no-build --python 3.13
         working-directory: apps/backend/payment
       - name: Scenarios e2e de payment (charge, attaque, 2 instances, arret, webhook signe, signaux) depuis l'exterieur
         run: uv run --frozen --no-build poe test:e2e

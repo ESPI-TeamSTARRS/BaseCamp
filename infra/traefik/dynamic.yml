@@ -86,6 +86,15 @@ http:
       middlewares: [security-headers]
       service: front
       priority: 1
+    backoffice-login:
+      # Connexion du back-office en trois temps (routes serveur du back-office) : meme limiteur strict que
+      # /api/auth/backoffice, car le serveur appelle auth en interne et ce limiteur ne verrait pas ces essais.
+      # Le corps peut porter jusqu'a 3 images en base64 (5 Mio), comme /api/auth/backoffice.
+      rule: "HostRegexp(`^admin\\..+$`) && (Path(`/session/identify`) || Path(`/session/face`) || Path(`/session/password`))"
+      entryPoints: [web]
+      middlewares: [backoffice-login-rate-limit, backoffice-body-limit, security-headers]
+      service: backoffice
+      priority: 30
     backoffice:
       # Back-office : repondu UNIQUEMENT sur l'origine admin (admin.<domaine>), jamais sur le domaine principal.
       # Les routes /api/* de l'hote admin restent celles de leurs services (shop-admin, auth...).

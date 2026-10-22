@@ -8,10 +8,13 @@ class AdminProductRepository(ABC):
     """Écritures et lectures complètes (archivés compris) réservées à l'administration."""
 
     @abstractmethod
-    def list_products(self, include_archived: bool, limit: int, offset: int) -> list[Product]: ...
+    def list_products(
+        self, include_archived: bool, limit: int, offset: int, search: str | None = None
+    ) -> list[Product]:
+        """`search` : sous-chaîne du nom, sans tenir compte de la casse (littérale, sans joker)."""
 
     @abstractmethod
-    def count(self, include_archived: bool) -> int: ...
+    def count(self, include_archived: bool, search: str | None = None) -> int: ...
 
     @abstractmethod
     def get(self, product_id: str) -> Product | None: ...

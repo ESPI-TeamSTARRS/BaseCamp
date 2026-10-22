@@ -98,6 +98,10 @@ services:
     image: ${BACKOFFICE_IMAGE:-}
     profiles: [backoffice]
     mem_limit: 192m
+    environment:
+      AUTH_URL: http://auth:8000
+      SHOP_URL: http://shop:8000
+      LOG_PSEUDONYM_KEY: ${LOG_PSEUDONYM_KEY:?voir deploy/prod.env.example}
     networks: [app]
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/"]

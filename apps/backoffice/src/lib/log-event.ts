@@ -16,6 +16,7 @@ export interface LogEvent {
   outcome: Outcome;
   reason?: string;
   duration_ms?: number;
+  attributes?: Record<string, string | number | boolean | null>;
 }
 
 const LEVELS: Record<Outcome, LogEvent['level']> = { success: 'info', denied: 'warning', error: 'error' };
@@ -31,6 +32,7 @@ export function buildLogEvent(input: {
   outcome: Outcome;
   reason?: string;
   durationMs?: number;
+  attributes?: LogEvent['attributes'];
   now?: Date;
 }): LogEvent {
   if (input.outcome !== 'success' && !input.reason) {
@@ -46,6 +48,7 @@ export function buildLogEvent(input: {
   };
   if (input.reason) event.reason = input.reason;
   if (input.durationMs !== undefined) event.duration_ms = input.durationMs;
+  if (input.attributes) event.attributes = input.attributes;
   return event;
 }
 

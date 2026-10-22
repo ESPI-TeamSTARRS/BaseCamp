@@ -18,10 +18,12 @@ class ListAdminProductsUseCase:
     def __init__(self, repository: AdminProductRepository) -> None:
         self._repository = repository
 
-    def execute(self, include_archived: bool, limit: int, offset: int) -> AdminProductPage:
+    def execute(
+        self, include_archived: bool, limit: int, offset: int, search: str | None = None
+    ) -> AdminProductPage:
         return AdminProductPage(
-            items=self._repository.list_products(include_archived, limit, offset),
-            total=self._repository.count(include_archived),
+            items=self._repository.list_products(include_archived, limit, offset, search),
+            total=self._repository.count(include_archived, search),
             limit=limit,
             offset=offset,
         )

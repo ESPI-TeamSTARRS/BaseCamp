@@ -72,6 +72,27 @@ class TestAddAndRead:
         assert repository.get("absent") is None
 
 
+class TestSearch:
+    def test_matches_a_fragment_of_the_name_ignoring_case(
+        self, repository: SqlAlchemyAdminProductRepository
+    ) -> None:
+        repository.add(replace(make_product("a"), name="Tente Tunnel"))
+        repository.add(replace(make_product("b"), name="Sac a dos"))
+
+        assert [p.id for p in repository.list_products(False, 10, 0, "tunnel")] == ["id-a"]
+        assert repository.count(False, "TUNNEL") == 1
+        assert repository.count(False, "zzz") == 0
+
+    def test_percent_and_underscore_are_literal_characters(
+        self, repository: SqlAlchemyAdminProductRepository
+    ) -> None:
+        repository.add(replace(make_product("a"), name="Gourde 100% inox"))
+        repository.add(replace(make_product("b"), name="Gourde 1000 inox"))
+
+        assert [p.id for p in repository.list_products(False, 10, 0, "100%")] == ["id-a"]
+        assert repository.count(False, "_") == 0
+
+
 class TestOptimisticUpdate:
     def test_saves_and_bumps_the_version_when_it_matches(
         self, repository: SqlAlchemyAdminProductRepository

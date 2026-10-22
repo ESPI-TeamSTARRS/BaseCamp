@@ -8,6 +8,7 @@
 Les jetons sont gardes un court moment (ils vivent 5 minutes) pour ne pas solliciter `auth` a chaque appel.
 """
 
+import base64
 import json
 import os
 import subprocess
@@ -80,8 +81,33 @@ def _login(email: str) -> str:
     return str(response.json()["access_token"])
 
 
+# Execute dans le conteneur auth : enrole le gabarit facial (FAUX verificateur de developpement).
+_ENROLL = """
+import base64, sys
+from datetime import UTC, datetime
+from sqlalchemy import create_engine, text
+from app.backoffice.infrastructure.clients.fake_reconnaissance_faciale import FakeReconnaissanceFaciale
+from app.backoffice.infrastructure.repositories.sqlalchemy_backoffice_unit_of_work import (
+    SqlAlchemyBackofficeUnitOfWork,
+)
+from app.core.config import Settings
+
+engine = create_engine(Settings().database_url)
+with engine.connect() as connection:
+    account = connection.execute(
+        text("SELECT id FROM users WHERE email = :email"), {"email": sys.argv[1]}
+    ).scalar_one()
+template = FakeReconnaissanceFaciale().enroler([base64.b64decode(sys.argv[2])])
+with SqlAlchemyBackofficeUnitOfWork(engine) as work:
+    work.templates.save(account, template, datetime.now(UTC))
+    work.commit()
+"""
+FACE = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"visage-de-l-operateur-e2e").decode()
+
+
 def operator_token() -> str:
-    """Jeton client d'un operateur cree par `create-operator`, puis connecte par la passerelle."""
+    """Jeton d'un operateur reel : `create-operator`, puis la connexion du back-office en trois temps
+    (identifiant, visage, mot de passe) sur l'origine admin : le login classique n'accorde plus `operator`."""
 
     def make() -> str:
         email = f"e2e-operator-{uuid.uuid4().hex[:10]}@example.test"
@@ -91,7 +117,30 @@ def operator_token() -> str:
             command, cwd=REPO_ROOT, capture_output=True, text=True, timeout=180, check=False
         )
         assert created.returncode == 0, created.stderr
-        return _login(email)
+        enrolled = subprocess.run(  # noqa: S603
+            ["docker", "compose", "exec", "-T", "auth", "python", "-c", _ENROLL, email, FACE],  # noqa: S607
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+        assert enrolled.returncode == 0, enrolled.stderr[-300:]
+        headers = {"Host": "admin.localhost"}
+        with httpx.Client(base_url=BASE_URL, timeout=30.0, headers=headers) as admin:
+            identified = admin.post("/api/auth/backoffice/identify", json={"email": email})
+            assert identified.status_code == 200, identified.status_code
+            challenge = identified.json()["challenge_id"]
+            shown = admin.post(
+                "/api/auth/backoffice/face", json={"challenge_id": challenge, "images": [FACE]}
+            )
+            assert shown.status_code == 200, shown.status_code
+            response = admin.post(
+                "/api/auth/backoffice/password",
+                json={"challenge_id": challenge, "password": PHRASE},
+            )
+        assert response.status_code == 200, response.status_code
+        return str(response.json()["access_token"])
 
     return _cached("operator", make)
 
