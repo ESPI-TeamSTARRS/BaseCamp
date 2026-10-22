@@ -77,7 +77,7 @@ jobs:
           node-version: 20
           cache: npm
           cache-dependency-path: apps/frontend/package-lock.json
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - name: Qualite (lint, format, types)
         run: npm run quality
       - name: Tests + couverture (seuil 80 %)
@@ -105,7 +105,7 @@ jobs:
           node-version: 20
           cache: npm
           cache-dependency-path: apps/backoffice/package-lock.json
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - name: Qualite (lint, format, types)
         run: npm run quality
       - name: Tests + couverture (seuil 80 %)
