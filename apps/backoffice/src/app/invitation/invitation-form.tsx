@@ -42,6 +42,9 @@ export function InvitationForm({
   const [busy, setBusy] = useState(false);
 
   const tokenRef = useRef<string | null>(null);
+  // Le jeton se lit UNE fois : la lecture efface le fragment de l'adresse, une seconde lecture ne trouverait plus rien.
+  const readerRef = useRef(readToken);
+  const readRef = useRef(false);
   const streamRef = useRef<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const mountedRef = useRef(true);
@@ -56,7 +59,10 @@ export function InvitationForm({
     mountedRef.current = true;
     // Le jeton est lu apres l'hydratation (le fragment n'existe que dans le navigateur) puis retire de l'adresse.
     const reader = setTimeout(() => {
-      tokenRef.current = readToken();
+      if (!readRef.current) {
+        readRef.current = true;
+        tokenRef.current = readerRef.current();
+      }
       setStatus(tokenRef.current ? 'ready' : 'invalid');
     }, 0);
     return () => {
@@ -64,7 +70,7 @@ export function InvitationForm({
       mountedRef.current = false;
       stopCamera(streamRef.current);
     };
-  }, [readToken]);
+  }, []);
 
   useEffect(() => {
     if (videoRef.current) videoRef.current.srcObject = stream;
