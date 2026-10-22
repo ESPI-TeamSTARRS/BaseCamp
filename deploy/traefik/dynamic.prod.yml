@@ -67,6 +67,14 @@ http:
       middlewares: [backoffice-login-rate-limit, backoffice-body-limit, security-headers, strip-api-auth]
       service: auth
       priority: 300
+    auth-backoffice-invitation:
+      # Creation du compte operateur par lien d'invitation (WORK-67) : admin uniquement, meme limiteur par
+      # adresse que la connexion. Corps jusqu'a 15 Mio : jusqu'a 10 images de 1 Mo en base64 (~13,4 Mo).
+      rule: "HostRegexp(`^admin\\..+$`) && Path(`/api/auth/backoffice/invitation/complete`)"
+      entryPoints: [web]
+      middlewares: [backoffice-login-rate-limit, backoffice-invitation-body-limit, security-headers, strip-api-auth]
+      service: auth
+      priority: 400
     auth-jwks:
       # Cles publiques de verification des jetons (JWKS), lecture seule, sans prefixe retire :
       # le service les sert a /.well-known/jwks.json.
@@ -314,6 +322,12 @@ http:
       buffering:
         maxRequestBodyBytes: 5242880 # 5 Mio
         memRequestBodyBytes: 5242880 # tout en memoire : le conteneur est en lecture seule
+
+    backoffice-invitation-body-limit:
+      # Dix images de 1 Mo en base64 (~13,4 Mo) plus l'enveloppe JSON -> 413 au-dela de 15 Mio.
+      buffering:
+        maxRequestBodyBytes: 15728640 # 15 Mio
+        memRequestBodyBytes: 15728640 # tout en memoire : le conteneur est en lecture seule
 
     body-limit:
       buffering:

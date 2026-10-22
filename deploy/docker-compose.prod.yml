@@ -307,6 +307,8 @@ services:
       APP_N8N_MAIL_URL: ${N8N_MAIL_URL:-}
       APP_N8N_MAIL_SECRET: ${N8N_MAIL_SECRET:-}
       APP_PUBLIC_BASE_URL: https://${BASECAMP_DOMAIN}
+      # Origine du lien d'invitation d'operateur affiche par create-operator-invite (WORK-67).
+      APP_ADMIN_BASE_URL: https://admin.${BASECAMP_DOMAIN}
       # Adresse reelle du client : X-Forwarded-For ("client, Cloudflare, proxy Docker") n'est cru que
       # des reseaux Docker; on lit de droite a gauche en sautant ces reseaux et les plages Cloudflare
       # (publiques, a tenir a jour : https://www.cloudflare.com/ips/, comme dynamic.prod.yml).

@@ -8,7 +8,10 @@ from app.admin.composition import wire_admin
 from app.admin.presentation.error_handlers import register_admin_error_handlers
 from app.admin.presentation.router import router as admin_router
 from app.backoffice.composition import wire_backoffice
-from app.backoffice.presentation.error_handlers import register_backoffice_error_handlers
+from app.backoffice.presentation.error_handlers import (
+    register_backoffice_error_handlers,
+    register_invitation_error_handlers,
+)
 from app.backoffice.presentation.router import router as backoffice_router
 from app.core.client_address_resolver import ClientAddressResolver
 from app.core.config import Settings
@@ -94,6 +97,7 @@ def create_app(
     register_password_reset_error_handlers(application)
     register_login_error_handlers(application)
     register_backoffice_error_handlers(application)
+    register_invitation_error_handlers(application)
     register_admin_error_handlers(application)
     return application
 

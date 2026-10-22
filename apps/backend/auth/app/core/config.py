@@ -74,6 +74,10 @@ class Settings(BaseSettings):
     # jamais versionne (scripts/init-auth-keys.sh la genere en developpement).
     face_template_key_file: str = "/run/secrets/auth_face_template_key"
     backoffice_challenge_ttl_seconds: int = Field(default=120, gt=0)
+    # Invitations d'operateur (WORK-67) : lien genere en CLI par un administrateur IT, affiche avec
+    # cette origine; il vaut 5 minutes AU PLUS (le plafond n'est pas reglable).
+    admin_base_url: str = "http://admin.localhost:8080"
+    operator_invite_ttl_seconds: int = Field(default=300, gt=0, le=300)
 
     # Adresse reelle du client (WORK-59) : plages CIDR (separees par des virgules) des proxies dont on
     # croit X-Forwarded-For. Vide (defaut) : seule l'adresse du pair TCP est utilisee.
@@ -97,6 +101,10 @@ class Settings(BaseSettings):
     lockout_face_max_failures: int = Field(default=5, ge=1)
     lockout_face_window_seconds: int = Field(default=600, gt=0)
     lockout_face_duration_seconds: int = Field(default=300, gt=0)
+    # Completion d'invitation : echecs d'une meme adresse (jeton invalide), blocage fixe.
+    lockout_invitation_max_failures: int = Field(default=5, ge=1)
+    lockout_invitation_window_seconds: int = Field(default=600, gt=0)
+    lockout_invitation_duration_seconds: int = Field(default=300, gt=0)
     lockout_address_max_failures: int = Field(default=20, ge=1)
     lockout_address_window_seconds: int = Field(default=900, gt=0)
     lockout_address_duration_seconds: int = Field(default=900, gt=0)

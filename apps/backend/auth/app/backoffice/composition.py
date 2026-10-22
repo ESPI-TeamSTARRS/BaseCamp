@@ -1,8 +1,17 @@
 from fastapi import FastAPI
 from sqlalchemy import Engine
 
+from app.backoffice.application.complete_operator_invitation import (
+    CompleteOperatorInvitationUseCase,
+)
+from app.backoffice.application.create_operator_invitation import (
+    CreateOperatorInvitationUseCase,
+)
 from app.backoffice.application.enroll_operator_face import EnrollOperatorFaceUseCase
 from app.backoffice.application.identify_operator import IdentifyOperatorUseCase
+from app.backoffice.application.revoke_operator_invitation import (
+    RevokeOperatorInvitationUseCase,
+)
 from app.backoffice.application.verify_face import VerifyFaceUseCase
 from app.backoffice.application.verify_operator_password import VerifyOperatorPasswordUseCase
 from app.backoffice.domain.interfaces.reconnaissance_faciale import ReconnaissanceFaciale
@@ -16,6 +25,9 @@ from app.backoffice.infrastructure.clients.secure_challenge_token_generator impo
 from app.backoffice.infrastructure.repositories.sqlalchemy_backoffice_unit_of_work import (
     SqlAlchemyBackofficeUnitOfWork,
 )
+from app.backoffice.infrastructure.repositories.sqlalchemy_invitation_unit_of_work import (
+    SqlAlchemyInvitationUnitOfWork,
+)
 from app.core.config import DEVELOPMENT_ENVIRONMENTS, Settings
 from app.core.events.business_event_logger import BusinessEventLogger
 from app.core.logging.email_pseudonymizer import build_pseudonymizer
@@ -26,6 +38,11 @@ from app.login.infrastructure.clients.hmac_email_fingerprinter import HmacEmailF
 from app.login.infrastructure.clients.jwt_access_token_signer import JwtAccessTokenSigner
 from app.login.infrastructure.clients.system_clock import SystemClock
 from app.login.infrastructure.repositories.sqlalchemy_unit_of_work import SqlAlchemyUnitOfWork
+from app.registration.domain.services.password_policy import PasswordPolicy
+from app.registration.infrastructure.clients.argon2_password_hasher import Argon2PasswordHasher
+from app.registration.infrastructure.clients.file_common_password_list import (
+    FileCommonPasswordList,
+)
 
 
 def build_face_recognizer(settings: Settings) -> ReconnaissanceFaciale:
@@ -57,6 +74,36 @@ def build_enrollment(
         lambda: SqlAlchemyUnitOfWork(engine),
         lambda: SqlAlchemyBackofficeUnitOfWork(engine, cipher),
         build_face_recognizer(settings),
+        HmacEmailFingerprinter(build_pseudonymizer(settings.log_pseudonym_key)),
+        SystemClock(),
+        events,
+    )
+
+
+def build_invitation_creation(
+    settings: Settings, engine: Engine, events: BusinessEventLogger
+) -> CreateOperatorInvitationUseCase:
+    """Cas d'usage de `create-operator-invite` (commande d'exploitation, aucune route)."""
+    cipher = load_template_cipher(settings.face_template_key_file)
+    return CreateOperatorInvitationUseCase(
+        lambda: SqlAlchemyUnitOfWork(engine),
+        lambda: SqlAlchemyInvitationUnitOfWork(engine, cipher),
+        SecureChallengeTokenGenerator(),
+        HmacEmailFingerprinter(build_pseudonymizer(settings.log_pseudonym_key)),
+        SystemClock(),
+        events,
+        settings.admin_base_url,
+        settings.operator_invite_ttl_seconds,
+    )
+
+
+def build_invitation_revocation(
+    settings: Settings, engine: Engine, events: BusinessEventLogger
+) -> RevokeOperatorInvitationUseCase:
+    """Cas d'usage de `revoke-operator-invite`."""
+    cipher = load_template_cipher(settings.face_template_key_file)
+    return RevokeOperatorInvitationUseCase(
+        lambda: SqlAlchemyInvitationUnitOfWork(engine, cipher),
         HmacEmailFingerprinter(build_pseudonymizer(settings.log_pseudonym_key)),
         SystemClock(),
         events,
@@ -102,4 +149,15 @@ def wire_backoffice(
         clock,
         events,
         settings.access_token_ttl_seconds,
+    )
+    application.state.complete_operator_invitation_use_case = CompleteOperatorInvitationUseCase(
+        lambda: SqlAlchemyInvitationUnitOfWork(engine, cipher),
+        tokens,
+        PasswordPolicy(FileCommonPasswordList()),
+        Argon2PasswordHasher(),
+        build_face_recognizer(settings),
+        lockout,
+        fingerprinter,
+        clock,
+        events,
     )

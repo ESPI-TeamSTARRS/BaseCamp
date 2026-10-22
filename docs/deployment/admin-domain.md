@@ -10,6 +10,7 @@ Le back-office est public sur `admin.<BASECAMP_DOMAIN>` (HTTPS obligatoire : la 
 |---|---|---|---|
 | `backoffice` | `admin.*` seulement | tout sauf `/api` | page, `noindex` |
 | `auth-backoffice` | `admin.*` seulement | `/api/auth/backoffice` | limiteur `backoffice-login-rate-limit` : 10 requêtes/min par adresse, rafale 5 (contre 60/30 pour `/login`) |
+| `auth-backoffice-invitation` | `admin.*` seulement | `/api/auth/backoffice/invitation/complete` | même limiteur par adresse que la connexion; corps jusqu'à 15 Mio (10 images) ; priorité supérieure à `auth-backoffice` |
 | `shop-admin` | `admin.*` seulement | `/api/shop/admin` | limiteur `admin-rate-limit` |
 
 - Sur le domaine principal, `/api/auth/backoffice` et `/api/shop/admin` ne sont pas routés vers un service (le front répond 404); le back-office n'y est pas servi.

@@ -42,3 +42,14 @@ class TestBuildLockoutPolicies:
 
         assert policies.for_step("face").max_failures == 9
         assert policies.for_step("face", SubjectType.SOURCE_ADDRESS).durations == (MINUTE,)
+
+    def test_the_invitation_step_is_bound_to_the_address_five_failures_then_five_minutes(
+        self,
+    ) -> None:
+        policy = build_lockout_policies(Settings()).for_step(
+            "invitation", SubjectType.SOURCE_ADDRESS
+        )
+
+        assert policy.max_failures == 5
+        assert policy.window == 10 * MINUTE
+        assert policy.durations == (5 * MINUTE,)
