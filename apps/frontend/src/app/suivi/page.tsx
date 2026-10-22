@@ -1,3 +1,4 @@
+import { ContentPage } from '../../components/ContentPage';
 import { OrderLookupForm } from '../../components/OrderLookupForm';
 
 export const metadata = {
@@ -10,13 +11,16 @@ export const metadata = {
 
 export default function SuiviPage() {
   return (
-    <section className="mx-auto max-w-xl px-4 py-16">
-      <h1 className="mb-4 text-3xl font-bold text-granite">Suivre ma commande</h1>
-      <p className="text-granite/70">
+    <ContentPage title="Suivre ma commande" narrow>
+      <p>
         Retrouvez l&apos;état de votre commande avec son numéro (BC-…) et l&apos;email utilisé au moment de la
-        commande. Besoin d&apos;aide ? Contactez notre service client.
+        commande. Besoin d&apos;aide ?{' '}
+        <a href="/contact" className="text-forest underline">
+          Contactez notre service client
+        </a>
+        .
       </p>
       <OrderLookupForm />
-    </section>
+    </ContentPage>
   );
 }
