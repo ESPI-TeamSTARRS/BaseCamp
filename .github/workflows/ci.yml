@@ -28,7 +28,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [shop, auth, payment]
+        include:
+          - service: shop
+            uv_extra: --no-build
+          # auth depend de `visage-id` (depot git de l'equipe IA, sans roue) : construit depuis les sources.
+          - service: auth
+            uv_extra: ""
+          - service: payment
+            uv_extra: --no-build
     defaults:
       run:
         working-directory: apps/backend/${{ matrix.service }}
@@ -54,13 +61,13 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: apps/backend/${{ matrix.service }}/uv.lock
-      - run: uv sync --frozen --no-build
+      - run: uv sync --frozen ${{ matrix.uv_extra }}
       - name: Qualite (lint, format, types)
-        run: uv run --frozen --no-build poe quality
+        run: uv run --frozen ${{ matrix.uv_extra }} poe quality
       - name: Tests + couverture (seuil 80 %)
-        run: uv run --frozen --no-build poe test
+        run: uv run --frozen ${{ matrix.uv_extra }} poe test
       - name: Securite (CVE des dependances)
-        run: uv run --frozen --no-build poe security
+        run: uv run --frozen ${{ matrix.uv_extra }} poe security
       - name: Build de l'image
         run: docker build -t basecamp-${{ matrix.service }}:ci .
 
