@@ -157,6 +157,9 @@ class TestEnrollment:
 
 
 class TestCommand:
+    def _names(self, tmp_path: Path, count: int = 3) -> list[str]:
+        return [Path(p).name for p in self._photos(tmp_path, count)]
+
     def _photos(self, tmp_path: Path, count: int = 3) -> list[str]:
         paths = []
         for index in range(count):
@@ -171,7 +174,7 @@ class TestCommand:
         flow = Flow()
         flow.store.templates.clear()
 
-        code = run(_use_case(flow), OPERATOR_EMAIL, self._photos(tmp_path))
+        code = run(_use_case(flow), OPERATOR_EMAIL, self._names(tmp_path), str(tmp_path))
 
         out = capsys.readouterr()
         assert code == 0
@@ -183,7 +186,7 @@ class TestCommand:
     ) -> None:
         flow = Flow()
 
-        code = run(_use_case(flow), "inconnu@example.com", self._photos(tmp_path))
+        code = run(_use_case(flow), "inconnu@example.com", self._names(tmp_path), str(tmp_path))
 
         err = capsys.readouterr().err
         assert code == 1
@@ -195,7 +198,7 @@ class TestCommand:
         flow = Flow()
         missing = str(tmp_path / "secret-name.png")
 
-        code = run(_use_case(flow), OPERATOR_EMAIL, [missing])
+        code = run(_use_case(flow), OPERATOR_EMAIL, [missing], str(tmp_path))
 
         assert code == 1
         assert "secret-name" not in capsys.readouterr().err
@@ -207,6 +210,52 @@ class TestCommand:
         huge.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * (10 * 1024 * 1024 + 1))
 
         with pytest.raises(ValueError, match="volumineuse"):
-            read_photos([str(huge)])
+            read_photos([huge.name], str(tmp_path))
         before = sorted(p.name for p in tmp_path.iterdir())
         assert sorted(p.name for p in tmp_path.iterdir()) == before  # aucune copie ecrite
+
+
+class TestPhotosStayInTheirFolder:
+    def test_a_relative_name_inside_the_folder_is_read(self, tmp_path: Path) -> None:
+        (tmp_path / "a.png").write_bytes(PNG)
+
+        assert read_photos(["a.png"], str(tmp_path)) == [PNG]
+
+    @pytest.mark.parametrize(
+        "name", ["../secret.png", "../../etc/passwd", "sub/../../secret.png", "."]
+    )
+    def test_a_name_that_leaves_the_folder_is_refused(self, tmp_path: Path, name: str) -> None:
+        folder = tmp_path / "photos"
+        folder.mkdir()
+        (tmp_path / "secret.png").write_bytes(PNG)
+
+        with pytest.raises(ValueError, match="dans le dossier"):
+            read_photos([name], str(folder))
+
+    def test_an_absolute_path_outside_the_folder_is_refused(self, tmp_path: Path) -> None:
+        folder = tmp_path / "photos"
+        folder.mkdir()
+        outside = tmp_path / "outside.png"
+        outside.write_bytes(PNG)
+
+        with pytest.raises(ValueError, match="dans le dossier"):
+            read_photos([str(outside)], str(folder))
+
+    def test_an_absolute_path_inside_the_folder_is_accepted(self, tmp_path: Path) -> None:
+        (tmp_path / "a.png").write_bytes(PNG)
+
+        assert read_photos([str(tmp_path / "a.png")], str(tmp_path)) == [PNG]
+
+    def test_a_symbolic_link_pointing_outside_is_refused(self, tmp_path: Path) -> None:
+        folder = tmp_path / "photos"
+        folder.mkdir()
+        outside = tmp_path / "outside.png"
+        outside.write_bytes(PNG)
+        link = folder / "lien.png"
+        try:
+            link.symlink_to(outside)
+        except (OSError, NotImplementedError):
+            pytest.skip("liens symboliques indisponibles sur ce systeme")
+
+        with pytest.raises(ValueError, match="dans le dossier"):
+            read_photos(["lien.png"], str(folder))

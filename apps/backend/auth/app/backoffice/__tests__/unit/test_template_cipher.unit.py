@@ -34,7 +34,10 @@ class TestAesGcmTemplateCipher:
     def test_each_encryption_uses_a_fresh_nonce(self) -> None:
         cipher, account = AesGcmTemplateCipher(TEST_KEY), uuid4()
 
-        assert cipher.encrypt(account, TEMPLATE) != cipher.encrypt(account, TEMPLATE)
+        first = cipher.encrypt(account, TEMPLATE)
+        second = cipher.encrypt(account, TEMPLATE)
+
+        assert first != second
 
     def test_a_template_copied_to_another_account_does_not_decrypt(self) -> None:
         cipher = AesGcmTemplateCipher(TEST_KEY)
