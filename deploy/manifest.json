@@ -2,8 +2,8 @@
   "schema": 1,
   "services": {
     "auth": {
-      "image": "ghcr.io/espi-teamstarrs/basecamp-auth@sha256:94556fb110969da1ec08767a7b7d7fbc07297d4b954460f1632fed155dea6c32",
-      "version": "0.14.0"
+      "image": "ghcr.io/espi-teamstarrs/basecamp-auth@sha256:74f240202c90030599692f34eae8283f19081302216656aae430e0d5d11fce5c",
+      "version": "0.15.0"
     },
     "backoffice": {
       "image": "ghcr.io/espi-teamstarrs/basecamp-backoffice@sha256:11e0d42d0cc18fe49332aa9895bb659d548283ec55fa4ff5f80b62592e97cd98",
