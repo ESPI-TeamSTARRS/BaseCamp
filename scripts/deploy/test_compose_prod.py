@@ -4,6 +4,7 @@ Ces tests ne lancent aucun conteneur : ils verifient les invariants du fichier, 
 modification ne puisse pas rouvrir un port, reintroduire un build ou une image par tag flottant.
 """
 
+import ipaddress
 import json
 import os
 import shutil
@@ -112,6 +113,22 @@ def test_seuls_auth_et_shop_ont_une_sortie_pour_les_mails(compose: dict) -> None
         if "mail-egress" in service.get("networks", [])
     }
     assert membres == {"auth", "shop"}
+
+
+def test_tout_reseau_non_interne_a_un_sous_reseau_fixe_hors_vpn_et_lan(compose: dict) -> None:
+    lan = ipaddress.ip_network("192.168.0.0/16")
+    docker = ipaddress.ip_network("172.16.0.0/12")
+    for nom, reseau in compose["networks"].items():
+        reseau = reseau or {}
+        if reseau.get("internal") or reseau.get("external"):
+            continue
+        configs = (reseau.get("ipam") or {}).get("config") or []
+        assert configs, f"{nom} : sous-reseau fixe obligatoire"
+        for config in configs:
+            sous_reseau = ipaddress.ip_network(config["subnet"])
+            assert not sous_reseau.overlaps(lan), f"{nom} recouvre le LAN/VPN 192.168.0.0/16"
+            assert not sous_reseau.overlaps(docker), f"{nom} recouvre la reserve Docker 172.16.0.0/12"
+    assert compose["networks"]["mail-egress"]["ipam"]["config"][0]["subnet"] == "10.250.0.0/24"
 
 
 def test_routage_identique_au_developpement() -> None:
