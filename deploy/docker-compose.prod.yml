@@ -435,7 +435,13 @@ networks:
     internal: true
   # Sortie vers Internet pour le seul envoi des mails (n8n) : `auth` et `shop` uniquement.
   # Tous les autres reseaux restent internes (aucune sortie).
-  mail-egress: {}
+  # Sous-reseau FIXE, hors 192.168.0.0/16 (VPN et LAN de l'hote) et hors 172.16.0.0/12 (reserve de Docker,
+  # de confiance pour X-Forwarded-For) : sans lui, Docker choisit un bloc libre qui peut recouvrir le VPN
+  # et couper l'acces a la VM.
+  mail-egress:
+    ipam:
+      config:
+        - subnet: 10.250.0.0/24
 
 volumes:
   postgres-data: {}
