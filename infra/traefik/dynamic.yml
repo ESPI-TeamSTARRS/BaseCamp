@@ -31,16 +31,6 @@ http:
       middlewares: [media-path, security-headers]
       service: media
       priority: 150
-    auth-backoffice:
-      # Connexion du back-office en trois temps (identifiant, visage, mot de passe) : repondue
-      # UNIQUEMENT sur l'origine admin (admin.<domaine>), comme l'API d'administration du catalogue.
-      # Sur le domaine principal, /api/auth/backoffice n'est pas route vers auth (le front repond 404).
-      # Corps jusqu'a 5 Mio : 3 images de 1 Mo en base64.
-      rule: "HostRegexp(`^admin\\..+$`) && PathPrefix(`/api/auth/backoffice`)"
-      entryPoints: [web]
-      middlewares: [admin-rate-limit, backoffice-body-limit, security-headers, strip-api-auth]
-      service: auth
-      priority: 300
     auth-signup:
       # Inscription et confirmation d'email : le hachage argon2id coute du CPU et de la memoire,
       # on borne donc le debit par IP (60/min, rafale de 30) en plus du plafond de corps.
@@ -65,6 +55,16 @@ http:
       middlewares: [auth-signup-rate-limit, body-limit, security-headers, strip-api-auth]
       service: auth
       priority: 200
+    auth-backoffice:
+      # Connexion du back-office (en trois temps) : repondue UNIQUEMENT sur l'origine admin (admin.<domaine>),
+      # avec un limiteur par adresse plus strict que /login. Sur le domaine principal, /api/auth/backoffice
+      # n'est pas route vers auth (le front repond 404).
+      # Corps jusqu'a 5 Mio : 3 images de 1 Mo en base64 (WORK-59).
+      rule: "HostRegexp(`^admin\\..+$`) && PathPrefix(`/api/auth/backoffice`)"
+      entryPoints: [web]
+      middlewares: [backoffice-login-rate-limit, backoffice-body-limit, security-headers, strip-api-auth]
+      service: auth
+      priority: 300
     auth-jwks:
       # Cles publiques de verification des jetons (JWKS), lecture seule, sans prefixe retire :
       # le service les sert a /.well-known/jwks.json.
@@ -86,6 +86,14 @@ http:
       middlewares: [security-headers]
       service: front
       priority: 1
+    backoffice:
+      # Back-office : repondu UNIQUEMENT sur l'origine admin (admin.<domaine>), jamais sur le domaine principal.
+      # Les routes /api/* de l'hote admin restent celles de leurs services (shop-admin, auth...).
+      rule: "HostRegexp(`^admin\\..+$`) && !PathPrefix(`/api`)"
+      entryPoints: [web]
+      middlewares: [security-headers]
+      service: backoffice
+      priority: 20
 
   middlewares:
     media-path:
@@ -115,6 +123,15 @@ http:
         average: 60
         period: 1m
         burst: 30
+
+    backoffice-login-rate-limit:
+      # DEVELOPPEMENT ET E2E SEULEMENT : large, car les scenarios e2e rejouent des dizaines de connexions
+      # depuis la meme adresse. La production garde 10/min, rafale 5 (deploy/traefik/dynamic.prod.yml).
+      # Meme cle que orders-rate-limit : adresse reelle de la connexion, X-Forwarded-For ignore.
+      rateLimit:
+        average: 600
+        period: 1m
+        burst: 100
 
     auth-password-rate-limit:
       # Meme cle que orders-rate-limit : adresse reelle de la connexion, X-Forwarded-For ignore.
@@ -182,3 +199,8 @@ http:
         serversTransport: default
         servers:
           - url: "http://front:3000"
+    backoffice:
+      loadBalancer:
+        serversTransport: default
+        servers:
+          - url: "http://backoffice:3000"

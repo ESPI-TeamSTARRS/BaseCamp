@@ -33,16 +33,6 @@ http:
       middlewares: [media-path, security-headers]
       service: media
       priority: 150
-    auth-backoffice:
-      # Connexion du back-office en trois temps (identifiant, visage, mot de passe) : repondue
-      # UNIQUEMENT sur l'origine admin (admin.<domaine>), comme l'API d'administration du catalogue.
-      # Sur le domaine principal, /api/auth/backoffice n'est pas route vers auth (le front repond 404).
-      # Corps jusqu'a 5 Mio : 3 images de 1 Mo en base64.
-      rule: "HostRegexp(`^admin\\..+$`) && PathPrefix(`/api/auth/backoffice`)"
-      entryPoints: [web]
-      middlewares: [admin-rate-limit, backoffice-body-limit, security-headers, strip-api-auth]
-      service: auth
-      priority: 300
     auth-signup:
       # Inscription et confirmation d'email : le hachage argon2id coute du CPU et de la memoire,
       # on borne donc le debit par IP (60/min, rafale de 30) en plus du plafond de corps.
@@ -67,6 +57,16 @@ http:
       middlewares: [auth-signup-rate-limit, body-limit, security-headers, strip-api-auth]
       service: auth
       priority: 200
+    auth-backoffice:
+      # Connexion du back-office (en trois temps) : repondue UNIQUEMENT sur l'origine admin (admin.<domaine>),
+      # avec un limiteur par adresse plus strict que /login. Sur le domaine principal, /api/auth/backoffice
+      # n'est pas route vers auth (le front repond 404).
+      # Corps jusqu'a 5 Mio : 3 images de 1 Mo en base64 (WORK-59).
+      rule: "HostRegexp(`^admin\\..+$`) && PathPrefix(`/api/auth/backoffice`)"
+      entryPoints: [web]
+      middlewares: [backoffice-login-rate-limit, backoffice-body-limit, security-headers, strip-api-auth]
+      service: auth
+      priority: 300
     auth-jwks:
       # Cles publiques de verification des jetons (JWKS), lecture seule, sans prefixe retire :
       # le service les sert a /.well-known/jwks.json.
@@ -88,6 +88,14 @@ http:
       middlewares: [security-headers]
       service: front
       priority: 1
+    backoffice:
+      # Back-office : repondu UNIQUEMENT sur l'origine admin (admin.<domaine>), jamais sur le domaine principal.
+      # Les routes /api/* de l'hote admin restent celles de leurs services (shop-admin, auth...).
+      rule: "HostRegexp(`^admin\\..+$`) && !PathPrefix(`/api`)"
+      entryPoints: [web]
+      middlewares: [security-headers]
+      service: backoffice
+      priority: 20
 
   middlewares:
     media-path:
@@ -148,6 +156,43 @@ http:
         average: 60
         period: 1m
         burst: 30
+        sourceCriterion:
+          ipStrategy:
+            excludedIPs:
+              - 172.16.0.0/12
+              - 173.245.48.0/20
+              - 103.21.244.0/22
+              - 103.22.200.0/22
+              - 103.31.4.0/22
+              - 141.101.64.0/18
+              - 108.162.192.0/18
+              - 190.93.240.0/20
+              - 188.114.96.0/20
+              - 197.234.240.0/22
+              - 198.41.128.0/17
+              - 162.158.0.0/15
+              - 104.16.0.0/13
+              - 104.24.0.0/14
+              - 172.64.0.0/13
+              - 131.0.72.0/22
+              - 2400:cb00::/32
+              - 2606:4700::/32
+              - 2803:f800::/32
+              - 2405:b500::/32
+              - 2405:8100::/32
+              - 2a06:98c0::/29
+              - 2c0f:f248::/32
+
+    backoffice-login-rate-limit:
+      # PRODUCTION : la requete arrive via Cloudflare puis le Traefik du serveur, donc X-Forwarded-For
+      # vaut "client, <Cloudflare>, <proxy Docker>". La cle du limiteur est la premiere adresse
+      # (en partant de la droite) qui n'est ni un reseau Docker ni une plage Cloudflare : le vrai
+      # client. Sans cela, tous les clients partageraient la limite du proxy.
+      # Les plages Cloudflare sont publiques (https://www.cloudflare.com/ips/) : a tenir a jour.
+      rateLimit:
+        average: 10
+        period: 1m
+        burst: 5
         sourceCriterion:
           ipStrategy:
             excludedIPs:
@@ -301,3 +346,8 @@ http:
         serversTransport: default
         servers:
           - url: "http://front:3000"
+    backoffice:
+      loadBalancer:
+        serversTransport: default
+        servers:
+          - url: "http://backoffice:3000"

@@ -50,6 +50,8 @@ jobs:
           cache-to: type=gha,scope=shop,mode=max
       - name: Image auth (build compose, sans action tierce)
         run: docker compose build auth
+      - name: Image backoffice (build compose)
+        run: docker compose build backoffice
       - name: Image payment (cache GHA)
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
@@ -70,6 +72,15 @@ jobs:
           cache-to: type=gha,scope=front,mode=max
       - name: Pile minimale (Traefik, front, shop, auth, payment et son worker, Mailpit, bucket d images et leurs bases) healthy
         run: docker compose up -d --no-build --wait --wait-timeout 120 --scale payment=2 traefik payment payment-worker seaweedfs mailpit
+      - name: Back-office sur l'hote admin (200, noindex) et absent du domaine principal
+        run: |
+          set -eu
+          code="$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: admin.localhost' "$E2E_BASE_URL/")"
+          [ "$code" = 200 ] || { echo "admin.localhost / -> $code"; exit 1; }
+          curl -s -D - -o /dev/null -H 'Host: admin.localhost' "$E2E_BASE_URL/" | grep -i '^x-robots-tag: noindex'
+          if curl -s -H 'Host: localhost' "$E2E_BASE_URL/" | grep -q 'Back-office Basecamp'; then
+            echo "back-office expose sur le domaine principal"; exit 1
+          fi
       - name: Amorcage des clients de service (jetons entre services) rejouable sans effet
         run: docker compose run --rm --no-deps auth-bootstrap
       - name: Amorcage du bucket (visuels du catalogue)

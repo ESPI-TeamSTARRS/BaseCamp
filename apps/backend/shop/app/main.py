@@ -87,8 +87,8 @@ from app.payment_confirmation.error_handlers import register_payment_confirmatio
 from app.payment_confirmation.infrastructure.repositories.sqlalchemy_confirmation_unit_of_work import (
     SqlAlchemyConfirmationUnitOfWork,
 )
-from app.payment_confirmation.infrastructure.senders.smtp_confirmation_sender import (
-    SmtpConfirmationSender,
+from app.payment_confirmation.infrastructure.senders.confirmation_sender_factory import (
+    ConfirmationSenderFactory,
 )
 from app.payment_confirmation.presentation.router import router as payment_confirmation_router
 from app.payment_request.application.confirm_order_payment import ConfirmOrderPaymentUseCase
@@ -243,12 +243,7 @@ def create_app() -> FastAPI:
         events,
     )
     application.state.send_order_confirmation_use_case = SendOrderConfirmationUseCase(
-        SmtpConfirmationSender(
-            settings.smtp_host,
-            settings.smtp_port,
-            settings.smtp_from,
-            settings.smtp_timeout_seconds,
-        ),
+        ConfirmationSenderFactory.build(settings),
         events,
         build_pseudonymizer(settings.log_pseudonym_key),
     )

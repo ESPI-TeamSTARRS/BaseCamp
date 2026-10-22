@@ -6,6 +6,7 @@ Workflow : `.github/workflows/ci.yml`, déclenché à chaque push (hors `main`) 
 |---|---|
 | `backend` (matrice par service) | `poe quality`, `poe test` (couverture ≥ 80 %), `poe security`, build de l'image Docker; un service Postgres jetable (valeurs factices) fournit `PAYMENT_TEST_DATABASE_URL` aux tests Postgres de `payment` |
 | `frontend` | lint, format, types, tests et couverture, audit des dépendances (bloquant dès une vulnérabilité élevée ou critique), build |
+| `backoffice` | mêmes contrôles que `frontend` sur `apps/backoffice` (lint, format, types, tests et couverture ≥ 80 %, audit des dépendances, build) |
 | `secrets-scan` | gitleaks sur les seuls commits de la PR (`base..head`) ou, sur main via `release.yml`, du push (`before..after`); l'historique de `main` est scanné par `secrets-history.yml` (manuel et hebdomadaire) |
 | `outils-racine` | tests des scripts des hooks |
 | `deploy-rollback` | `bash scripts/deploy/test-deploy.sh` (`poe deploy-test`) : joue `scripts/deploy.sh` contre un registre local avec une panne volontaire, et vérifie le retour automatique ([deploy-script.md](../deployment/deploy-script.md)) |
