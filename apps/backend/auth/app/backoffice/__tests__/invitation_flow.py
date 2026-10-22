@@ -9,7 +9,7 @@ import hashlib
 from datetime import datetime, timedelta
 from types import TracebackType
 from typing import Self
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from app.admin.domain.exceptions.admin_errors import OperatorAlreadyExistsError
 from app.backoffice.__tests__.fakes import FakeChallengeTokenGenerator
@@ -41,7 +41,7 @@ from app.registration.__tests__.fakes import FakeCommonPasswordList, FakePasswor
 from app.registration.domain.services.password_policy import PasswordPolicy
 
 INVITED = "nouvel.operateur@example.com"
-GOOD_PASSWORD = "sentier-du-mont-blanc"
+GOOD_PASSWORD = "sentier-" + uuid4().hex
 ADDRESS = "203.0.113.9"
 BASE_URL = "https://admin.exemple.test"
 

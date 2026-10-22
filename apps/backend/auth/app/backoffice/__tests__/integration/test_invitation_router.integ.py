@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator, Iterator
 from datetime import timedelta
+from uuid import uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -9,7 +10,7 @@ from app.backoffice.__tests__.stack import BackofficeStack, b64
 from app.core.__tests__.in_memory_business_event_logger import InMemoryBusinessEventLogger
 
 INVITED = "nouvel.operateur@example.com"
-PASSWORD = "sentier-du-mont-blanc"
+PASSWORD = "sentier-" + uuid4().hex
 ACCOUNTS_OF_INVITED = "SELECT COUNT(*) FROM users WHERE email = 'nouvel.operateur@example.com'"
 ROLE_OF_INVITED = "SELECT role, disabled_at FROM users WHERE email = 'nouvel.operateur@example.com'"
 REFUSED = {"detail": "Invitation invalide ou expirée."}
@@ -91,7 +92,7 @@ class TestCompletion:
         token = stack.invite(INVITED)
 
         first = await stack.complete(client, token, PASSWORD)
-        second = await stack.complete(client, token, "autre-mot-de-passe-long")
+        second = await stack.complete(client, token, "autre-" + uuid4().hex)
 
         assert sorted([first.status_code, second.status_code]) == [201, 401]
         assert stack.row(ACCOUNTS_OF_INVITED) == (1,)
