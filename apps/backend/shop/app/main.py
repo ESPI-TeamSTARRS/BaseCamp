@@ -18,6 +18,12 @@ from app.account_orders.infrastructure.repositories.sqlalchemy_guest_order_linke
     SqlAlchemyGuestOrderLinker,
 )
 from app.account_orders.presentation.router import router as account_orders_router
+from app.admin_orders.application.get_admin_order import GetAdminOrderUseCase
+from app.admin_orders.application.list_admin_orders import ListAdminOrdersUseCase
+from app.admin_orders.infrastructure.repositories.sqlalchemy_admin_order_reader import (
+    SqlAlchemyAdminOrderReader,
+)
+from app.admin_orders.presentation.router import router as admin_orders_router
 from app.cart.application.quote_cart import QuoteCartUseCase
 from app.cart.infrastructure.repositories.sqlalchemy_cart_product_reader import (
     SqlAlchemyCartProductReader,
@@ -186,6 +192,13 @@ def create_app() -> FastAPI:
         events,
         admin_pseudonymizer,
     )
+    admin_order_reader = SqlAlchemyAdminOrderReader(engine)
+    application.state.list_admin_orders_use_case = ListAdminOrdersUseCase(
+        admin_order_reader, events, admin_pseudonymizer
+    )
+    application.state.get_admin_order_use_case = GetAdminOrderUseCase(
+        admin_order_reader, events, admin_pseudonymizer
+    )
     account_reader = SqlAlchemyAccountOrderReader(engine)
     link_guest_orders = LinkGuestOrdersUseCase(
         HttpAccountProfileDirectory(auth_client, settings.auth_profile_url),
@@ -254,6 +267,7 @@ def create_app() -> FastAPI:
     application.include_router(health_router)
     application.include_router(catalog_router)
     application.include_router(catalog_admin_router)
+    application.include_router(admin_orders_router)
     application.include_router(cart_router)
     application.include_router(order_tracking_router)
     application.include_router(account_orders_router)
