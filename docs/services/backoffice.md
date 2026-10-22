@@ -66,3 +66,10 @@ Service `backoffice` du `docker-compose.yml` (réseau `app`, healthcheck sur `/`
 
 ## Reste à faire (hors de ce ticket)
 Entrée du back-office dans `deploy/manifest.json` et `deploy/docker-compose.prod.yml` après la première image publiée (le manifeste est par digest), puis exposition publique, limiteur et DNS (sous-domaine admin).
+
+## Connexion en trois temps (`/login`)
+Écran client (`src/app/login/login-form.tsx`) : identifiant, puis aperçu de la caméra et capture de 3 images (JPEG réduit à 640 px), puis mot de passe, seulement après un visage accepté. Le navigateur appelle les routes serveur du back-office `/session/identify`, `/session/face` et `/session/password` (`src/lib/login-api.ts`), qui relaient vers `auth` (`/backoffice/*`). Aucun score n'est affiché : reconnu ou non.
+- **Caméra** (`src/lib/camera.ts`) : arrêt de toutes les pistes (le voyant s'éteint) à chaque sortie d'étape, refus, expiration et démontage. Caméra refusée, absente ou non prise en charge : message clair, aucune étape suivante.
+- **Refus** (visage refusé ou mot de passe faux) : retour à l'étape 1, identifiant vide, message générique unique.
+- **Défi** : minuteur de `expires_in` (2 min) ; à l'échéance, retour à l'étape 1.
+- **Blocage** (`src/lib/lockout.ts`) : `auth` répond le même 401 pendant un blocage, le navigateur compte donc lui-même (3 mots de passe faux ou 5 visages refusés en 10 min, compteurs séparés) et bloque 5 minutes : compte à rebours, champs désactivés, aucun appel. L'état est gardé dans le `localStorage` de l'appareil, indépendamment de l'identifiant ; le blocage serveur reste la référence.

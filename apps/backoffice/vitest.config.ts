@@ -16,7 +16,7 @@ export default defineConfig({
         'src/proxy.ts',
         'src/app/robots.ts',
         'src/app/page.tsx',
-        'src/app/login/page.tsx',
+        'src/app/login/**/*.tsx',
         'src/app/session/**/route.ts',
         'src/app/bff/**/route.ts',
         'src/app/produits/**/page.tsx',
