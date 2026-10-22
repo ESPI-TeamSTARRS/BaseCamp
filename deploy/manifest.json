@@ -10,8 +10,8 @@
       "version": "0.8.1"
     },
     "frontend": {
-      "image": "ghcr.io/espi-teamstarrs/basecamp-frontend@sha256:7ed543265faa7b2259f40ffee3a94e41fffa147fa3d846172b0ec0dfb5bc1ffb",
-      "version": "0.10.0"
+      "image": "ghcr.io/espi-teamstarrs/basecamp-frontend@sha256:f6086c1f99e4e03eab352b80fd12723fee40dfab4793607ef9d1df6377dd6932",
+      "version": "0.11.1"
     },
     "payment": {
       "image": "ghcr.io/espi-teamstarrs/basecamp-payment@sha256:e3eb8cce3fd42feb563e63a02bfaf490fa1eacf2ae428cf531d06b8532e262f8",
