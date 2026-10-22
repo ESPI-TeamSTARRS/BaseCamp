@@ -204,14 +204,14 @@ def test_administration_du_catalogue_seulement_sur_l_origine_admin(compose: dict
     for chemin in (DYNAMIC_PROD, DYNAMIC_DEV):
         http = yaml.safe_load(chemin.read_text(encoding="utf-8"))["http"]
         admin = http["routers"]["shop-admin"]
-        assert admin["rule"].startswith("HostRegexp("), chemin.name
+        assert admin["rule"].startswith("Host("), chemin.name
         assert "PathPrefix(`/api/shop/admin`)" in admin["rule"]
         assert "admin-rate-limit" in admin["middlewares"]
         assert "!PathPrefix(`/api/shop/admin`)" in http["routers"]["shop"]["rule"]
         limite = http["middlewares"]["admin-body-limit"]["buffering"]["maxRequestBodyBytes"]
         assert 2 * 1024 * 1024 < limite <= 4 * 1024 * 1024
     labels = compose["services"]["traefik"]["labels"]
-    assert "Host(`${BACKOFFICE_HOST_PREFIX:-mercure}.${BASECAMP_DOMAIN}`)" in labels["traefik.http.routers.basecamp-gw.rule"]
+    assert "Host(`${BACKOFFICE_HOST:-mercure-basecamp.tempulse.fr}`)" in labels["traefik.http.routers.basecamp-gw.rule"]
 
 def test_transport_des_mails_de_shop_et_auth_configurable_sans_secret_dans_le_depot(
     compose: dict,
@@ -232,7 +232,7 @@ def test_connexion_backoffice_seulement_sur_l_origine_admin(compose: dict) -> No
     for chemin in (DYNAMIC_PROD, DYNAMIC_DEV):
         http = yaml.safe_load(chemin.read_text(encoding="utf-8"))["http"]
         routeur = http["routers"]["auth-backoffice"]
-        assert routeur["rule"].startswith("HostRegexp("), chemin.name
+        assert routeur["rule"].startswith("Host("), chemin.name
         assert "PathPrefix(`/api/auth/backoffice`)" in routeur["rule"]
         assert "!PathPrefix(`/api/auth/backoffice`)" in http["routers"]["auth"]["rule"]
         assert routeur["middlewares"][0] == "backoffice-login-rate-limit"
@@ -268,7 +268,7 @@ def test_invitation_operateur_seulement_sur_l_origine_admin_avec_corps_pour_dix_
     for chemin in (DYNAMIC_PROD, DYNAMIC_DEV):
         http = yaml.safe_load(chemin.read_text(encoding="utf-8"))["http"]
         routeur = http["routers"]["auth-backoffice-invitation"]
-        assert routeur["rule"].startswith("HostRegexp("), chemin.name
+        assert routeur["rule"].startswith("Host("), chemin.name
         assert "Path(`/api/auth/backoffice/invitation/complete`)" in routeur["rule"]
         assert routeur["priority"] > http["routers"]["auth-backoffice"]["priority"]
         assert routeur["middlewares"][0] == "backoffice-login-rate-limit"
@@ -281,7 +281,7 @@ def test_le_backoffice_n_est_servi_que_sur_l_origine_admin() -> None:
     for chemin in (DYNAMIC_PROD, DYNAMIC_DEV):
         http = yaml.safe_load(chemin.read_text(encoding="utf-8"))["http"]
         routeur = http["routers"]["backoffice"]
-        assert routeur["rule"].startswith("HostRegexp("), chemin.name
+        assert routeur["rule"].startswith("Host("), chemin.name
         assert "!PathPrefix(`/api`)" in routeur["rule"]
         assert routeur["priority"] > http["routers"]["front"]["priority"]
 
@@ -295,45 +295,52 @@ def test_connexion_du_backoffice_limitee_et_reseau_interne_vers_auth(compose: di
         connexion = routeurs["backoffice-login"]
         for etape in ("identify", "face", "password"):
             assert f"Path(`/session/{etape}`)" in connexion["rule"], (chemin.name, etape)
-        assert connexion["rule"].startswith("HostRegexp(")
+        assert connexion["rule"].startswith("Host(")
         assert "backoffice-login-rate-limit" in connexion["middlewares"]
         assert "backoffice-body-limit" in connexion["middlewares"]
         assert connexion["priority"] > routeurs["backoffice"]["priority"]
 
 
-HOTE_BACKOFFICE = "{{ env `BACKOFFICE_HOST_PREFIX` | default `mercure` }}"
+HOTE_BACKOFFICE = "Host(`{{ env `BACKOFFICE_HOST` }}`)"
+HOTE_PROD = "mercure-basecamp.tempulse.fr"
 
 
-def test_prefixe_du_backoffice_unique_et_sans_repli_sur_admin(compose: dict) -> None:
-    """Un seul nom pour l'hote du back-office : variable BACKOFFICE_HOST_PREFIX (defaut mercure)."""
+def test_hote_du_backoffice_complet_unique_et_lu_dans_la_variable(compose: dict) -> None:
+    """Un seul nom pour l'hote du back-office : variable BACKOFFICE_HOST (hote complet)."""
     for chemin in (DYNAMIC_PROD, DYNAMIC_DEV):
         texte = chemin.read_text(encoding="utf-8")
-        regles = [ligne for ligne in texte.splitlines() if "HostRegexp(" in ligne]
+        regles = [l for l in texte.splitlines() if l.lstrip().startswith("rule:") and "BACKOFFICE_HOST" in l]
         assert len(regles) == 5, chemin.name
         for ligne in regles:
-            assert f"HostRegexp(`^{HOTE_BACKOFFICE}\\\\..+$`)" in ligne, (chemin.name, ligne)
+            assert ligne.lstrip().startswith(f'rule: "{HOTE_BACKOFFICE} && '), (chemin.name, ligne)
+            assert "HostRegexp" not in ligne, (chemin.name, ligne)
+        assert "HostRegexp(" not in texte, chemin.name
     environment = compose["services"]["traefik"]["environment"]
-    assert environment["BACKOFFICE_HOST_PREFIX"] == "${BACKOFFICE_HOST_PREFIX:-mercure}"
+    assert environment["BACKOFFICE_HOST"] == f"${{BACKOFFICE_HOST:-{HOTE_PROD}}}"
     labels = compose["services"]["traefik"]["labels"]
     for routeur in ("basecamp-gw", "basecamp-gw-http"):
         regle = labels[f"traefik.http.routers.{routeur}.rule"]
-        assert "Host(`${BACKOFFICE_HOST_PREFIX:-mercure}.${BASECAMP_DOMAIN}`)" in regle, routeur
-        assert "admin." not in regle, routeur
+        assert f"Host(`${{BACKOFFICE_HOST:-{HOTE_PROD}}}`)" in regle, routeur
+        assert "admin." not in regle and "BASECAMP_DOMAIN}`) || Host(`${BACKOFFICE_HOST_PREFIX" not in regle
+    assert compose["services"]["auth"]["environment"]["APP_ADMIN_BASE_URL"] == (
+        f"https://${{BACKOFFICE_HOST:-{HOTE_PROD}}}"
+    )
     dev = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
-    assert dev["services"]["traefik"]["environment"]["BACKOFFICE_HOST_PREFIX"] == (
-        "${BACKOFFICE_HOST_PREFIX:-mercure}"
+    assert dev["services"]["traefik"]["environment"]["BACKOFFICE_HOST"] == (
+        "${BACKOFFICE_HOST:-mercure.localhost}"
     )
     exemple = (ROOT / "deploy" / "prod.env.example").read_text(encoding="utf-8")
-    assert "BACKOFFICE_HOST_PREFIX=mercure" in exemple
+    assert f"BACKOFFICE_HOST={HOTE_PROD}" in exemple
 
 
-def test_aucun_hote_admin_dans_le_depot() -> None:
-    """Plus de repli : l'ancien hote d'administration n'est ecrit nulle part (les routes /admin/... restent)."""
+def test_aucun_ancien_hote_ni_prefixe_dans_le_depot() -> None:
+    """Ni `admin.<domaine>`, ni `mercure.basecamp`, ni l'ancienne variable de prefixe (les routes /admin/... restent)."""
     git = shutil.which("git")
     if git is None:
         pytest.skip("git absent")
+    motif = r"admin\.(localhost|<domaine>|\$\{|basecamp)|mercure\.basecamp|BACKOFFICE_HOST_PREFIX|mercure\.<"
     sortie = subprocess.run(  # noqa: S603 - commande fixe
-        [git, "grep", "-n", "-I", "-E", r"admin\.(localhost|<domaine>|\$\{|basecamp)", "--", ".", ":!scripts/deploy/test_compose_prod.py", ":!apps/frontend/package-lock.json"],
+        [git, "grep", "-n", "-I", "-E", motif, "--", ".", ":!scripts/deploy/test_compose_prod.py", ":!apps/frontend/package-lock.json"],
         cwd=ROOT,
         capture_output=True,
         text=True,
