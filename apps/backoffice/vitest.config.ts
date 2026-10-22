@@ -10,7 +10,14 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
-      include: ['src/lib/**/*.ts', 'src/proxy.ts', 'src/app/robots.ts', 'src/app/page.tsx'],
+      include: [
+        'src/lib/**/*.ts',
+        'src/proxy.ts',
+        'src/app/robots.ts',
+        'src/app/page.tsx',
+        'src/app/login/page.tsx',
+        'src/app/session/**/route.ts',
+      ],
       exclude: ['src/**/__tests__/**'],
       thresholds: { lines: 80, functions: 80, branches: 80, statements: 80 },
     },

@@ -59,3 +59,21 @@ describe('emit', () => {
     spy.mockRestore();
   });
 });
+
+describe('buildLogEvent : attributs', () => {
+  it('porte des attributs scalaires non sensibles', () => {
+    const event = buildLogEvent({
+      ...base,
+      outcome: 'denied',
+      reason: 'invalid_credentials',
+      attributes: { email_hash: 'abcdef0123456789' },
+      now: NOW,
+    });
+
+    expect(event.attributes).toEqual({ email_hash: 'abcdef0123456789' });
+  });
+
+  it("n'ajoute rien quand il n'y a pas d'attributs", () => {
+    expect('attributes' in buildLogEvent({ ...base, outcome: 'success', now: NOW })).toBe(false);
+  });
+});
