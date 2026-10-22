@@ -28,9 +28,18 @@ jobs:
       contents: read
     uses: ./.github/workflows/ci.yml
 
+  # Test de bout en bout, en parallele de la CI. Non bloquant tant que la variable de depot E2E_BLOQUANT
+  # n'est pas "true" : un echec reste visible (job rouge) mais la publication continue (voir docs/development/ci.md).
+  e2e:
+    name: e2e
+    permissions:
+      contents: read
+    uses: ./.github/workflows/e2e.yml
+
   version:
     name: version-${{ matrix.service }}
-    needs: ci
+    needs: [ci, e2e]
+    if: ${{ !cancelled() && needs.ci.result == 'success' && (needs.e2e.result == 'success' || vars.E2E_BLOQUANT != 'true') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -50,6 +59,9 @@ jobs:
             config: pyproject.toml
           - service: frontend
             dir: apps/frontend
+            config: releaserc.toml
+          - service: backoffice
+            dir: apps/backoffice
             config: releaserc.toml
     defaults:
       run:
@@ -205,7 +217,9 @@ jobs:
       - name: Derniere version publiee de chaque composant (tag git + digest GHCR)
         run: |
           set -euo pipefail
-          services="$(jq -r '.services | keys[]' deploy/manifest.json)"
+          # Composants du manifeste, plus les facultatifs (ajoutes au manifeste des que leur image existe).
+          optional="$(python3 -c 'import sys; sys.path.insert(0, "scripts/deploy"); import manifest; print(*manifest.OPTIONAL_SERVICES, sep="\n")')"
+          services="$( { jq -r '.services | keys[]' deploy/manifest.json; echo "$optional"; } | sort -u)"
           # shellcheck disable=SC2086
           python3 scripts/deploy/latest_images.py "$GITHUB_REPOSITORY_OWNER" $services > "$RUNNER_TEMP/latest.jsonl"
           cat "$RUNNER_TEMP/latest.jsonl"
@@ -258,6 +272,15 @@ jobs:
           git checkout -B "$BRANCH" origin/main
           cp "$RUNNER_TEMP/new.json" deploy/manifest.json
           git add deploy/manifest.json
+          if git diff --cached --quiet; then
+            # Course : une PR de manifeste a ete fusionnee entre le calcul et ce point, main est deja a jour.
+            echo "Manifeste de main deja a jour."
+            if [[ -n "$open_pr" ]]; then
+              gh api --method POST "repos/$REPO/issues/$open_pr/comments" -f body="Le manifeste de main est déjà à jour : PR fermée." --jq .html_url
+              gh api --method PATCH "repos/$REPO/pulls/$open_pr" -f state=closed --jq .html_url
+            fi
+            exit 0
+          fi
           git commit --quiet -m "$title"
           # Branche du bot uniquement : on n'ecrase que ce qu'on vient de lire.
           git push --force-with-lease="$BRANCH" --quiet origin "$BRANCH"

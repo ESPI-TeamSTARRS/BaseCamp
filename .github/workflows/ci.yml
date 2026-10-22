@@ -1,6 +1,7 @@
 name: CI
 
 # Une matrice par service backend (un projet uv chacun) + le front, en parallele.
+# Le test de bout en bout de la pile (stack-e2e) est dans e2e.yml : toutes les heures sur main, jamais sur les PR.
 # Chaque job appelle les taches poe/npm du service : jamais d'outil en direct.
 # Ajouter un service = ajouter son nom dans la matrice `service`.
 # `ci-ok` est le seul check a rendre obligatoire dans la protection de branche.
@@ -27,7 +28,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [shop, auth, payment]
+        include:
+          - service: shop
+            uv_extra: --no-build
+          # auth depend de `visage-id` (depot git de l'equipe IA, sans roue) : construit depuis les sources.
+          - service: auth
+            uv_extra: ""
+          - service: payment
+            uv_extra: --no-build
     defaults:
       run:
         working-directory: apps/backend/${{ matrix.service }}
@@ -43,21 +51,23 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 3s --health-retries 10
     env:
+      # requires-python est >=3.13 : sans epinglage, uv prend le dernier Python disponible (3.15 aujourd'hui).
+      UV_PYTHON: "3.13"
       APP_TEST_POSTGRES_URL: postgresql+psycopg://postgres@127.0.0.1:5432/postgres
       PAYMENT_TEST_DATABASE_URL: postgresql+psycopg://postgres@127.0.0.1:5432/postgres
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
         with:
           enable-cache: true
           cache-dependency-glob: apps/backend/${{ matrix.service }}/uv.lock
-      - run: uv sync --frozen
+      - run: uv sync --frozen ${{ matrix.uv_extra }}
       - name: Qualite (lint, format, types)
-        run: uv run poe quality
+        run: uv run --frozen ${{ matrix.uv_extra }} poe quality
       - name: Tests + couverture (seuil 80 %)
-        run: uv run poe test
+        run: uv run --frozen ${{ matrix.uv_extra }} poe test
       - name: Securite (CVE des dependances)
-        run: uv run poe security
+        run: uv run --frozen ${{ matrix.uv_extra }} poe security
       - name: Build de l'image
         run: docker build -t basecamp-${{ matrix.service }}:ci .
 
@@ -70,13 +80,41 @@ jobs:
       run:
         working-directory: apps/frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
           cache-dependency-path: apps/frontend/package-lock.json
-      - run: npm ci
+      - run: npm ci --ignore-scripts
+      - name: Qualite (lint, format, types)
+        run: npm run quality
+      - name: Tests + couverture (seuil 80 %)
+        run: npm run test:coverage
+      - name: Securite des dependances
+        # Bloquant : aucune vulnerabilite critique ou elevee toleree dans les dependances de production.
+        run: npm run security
+      - name: Build
+        run: npm run build
+        env:
+          SKIP_ENV_VALIDATION: "1"
+
+  backoffice:
+    name: backoffice
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: apps/backoffice
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/backoffice/package-lock.json
+      - run: npm ci --ignore-scripts
       - name: Qualite (lint, format, types)
         run: npm run quality
       - name: Tests + couverture (seuil 80 %)
@@ -95,7 +133,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
       - name: gitleaks (commits apportés par la PR ou le push)
@@ -127,108 +165,10 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - run: uv sync --frozen
-      - run: uv run poe tools-test
-
-  stack-e2e:
-    name: stack-e2e
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    env:
-      E2E_BASE_URL: http://127.0.0.1:8080
-      # Surcharge de test : publie l'API de Mailpit sur 127.0.0.1 pour lire les emails d'inscription.
-      COMPOSE_FILE: docker-compose.yml:docker-compose.e2e.yml
-      E2E_MAILPIT_URL: http://127.0.0.1:8025
-      # Webhook payment -> shop : le worker vise le vrai recepteur de la boutique (http://shop:8000/webhooks/payment,
-      # valeur par defaut de la pile) pour les scenarios shop; relances rapprochees.
-      PAYMENT_WEBHOOK_BACKOFF_BASE_SECONDS: "2"
-    steps:
-      - uses: actions/checkout@v4
-      - name: Fichier .env de CI (valeurs factices) et cles de signature auth (non versionnees)
-        run: |
-          cp .env.example .env
-          sh scripts/init-auth-keys.sh
-      - uses: docker/setup-buildx-action@v3
-      - name: Image shop (cache GHA)
-        uses: docker/build-push-action@v6
-        with:
-          context: apps/backend/shop
-          load: true
-          tags: basecamp-shop
-          cache-from: type=gha,scope=shop
-          cache-to: type=gha,scope=shop,mode=max
-      - name: Image auth (build compose, sans action tierce)
-        run: docker compose build auth
-      - name: Image payment (cache GHA)
-        uses: docker/build-push-action@v6
-        with:
-          context: apps/backend/payment
-          load: true
-          tags: basecamp-payment
-          cache-from: type=gha,scope=payment
-          cache-to: type=gha,scope=payment,mode=max
-      - name: Image front (cache GHA)
-        uses: docker/build-push-action@v6
-        with:
-          context: apps/frontend
-          load: true
-          tags: basecamp-front
-          build-args: |
-            NEXT_PUBLIC_SITE_URL=http://localhost:8080
-          cache-from: type=gha,scope=front
-          cache-to: type=gha,scope=front,mode=max
-      - name: Pile minimale (Traefik, front, shop, auth, payment et son worker, Mailpit, bucket d images et leurs bases) healthy
-        run: docker compose up -d --no-build --wait --wait-timeout 120 --scale payment=2 traefik payment payment-worker seaweedfs mailpit
-      - name: Amorcage des clients de service (jetons entre services) rejouable sans effet
-        run: docker compose run --rm --no-deps auth-bootstrap
-      - name: Amorcage du bucket (visuels du catalogue)
-        run: docker compose run --rm --no-deps seaweedfs-seed
-      - uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-          cache-dependency-glob: apps/backend/shop/uv.lock
-      - run: uv sync --frozen
-        working-directory: apps/backend/shop
-      - name: Scenarios e2e contre Traefik
-        run: uv run poe test:e2e
-        working-directory: apps/backend/shop
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
       - run: uv sync --frozen --no-build --python 3.13
-        working-directory: apps/backend/auth
-      - name: Scenarios e2e auth (passerelle, jetons de service, inscription avec Mailpit, journaux)
-        run: uv run --frozen --no-build poe test:e2e
-        working-directory: apps/backend/auth
-        env:
-          E2E_CHECK_LOGS: "1"
-      - name: Isolation de payment (reseau, bases, migrations, readiness)
-        run: sh scripts/check-payment-isolation.sh
-      - name: Worker de webhook vers le recepteur factice des scenarios payment (conteneur shop, port 9100)
-        run: docker compose up -d --no-deps --no-build --force-recreate --wait payment-worker
-        env:
-          PAYMENT_WEBHOOK_URL: http://shop:9100/webhooks/payment
-      - run: uv sync --frozen
-        working-directory: apps/backend/payment
-      - name: Scenarios e2e de payment (charge, attaque, 2 instances, arret, webhook signe, signaux) depuis l'exterieur
-        run: uv run poe test:e2e
-        working-directory: apps/backend/payment
-        env:
-          # Les scenarios relancent des conteneurs : la cible du worker doit rester le recepteur factice.
-          PAYMENT_WEBHOOK_URL: http://shop:9100/webhooks/payment
-      - name: Logs des conteneurs
-        if: failure()
-        run: docker compose logs --no-color > compose-logs.txt
-      - name: Publier les logs
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: stack-e2e-logs
-          path: compose-logs.txt
-      - name: Nettoyage de la pile
-        if: always()
-        run: docker compose down -v
+      - run: uv run --frozen --no-build poe tools-test
 
   deploy-rollback:
     name: deploy-rollback
@@ -237,7 +177,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       # Aucune dependance Python a installer : le script n'utilise que la bibliotheque standard.
       - name: Bascule et retour arriere de scripts/deploy.sh (panne volontaire)
         run: bash scripts/deploy/test-deploy.sh
@@ -245,7 +185,7 @@ jobs:
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [backend, frontend, secrets-scan, tools, stack-e2e, deploy-rollback]
+    needs: [backend, frontend, backoffice, secrets-scan, tools, deploy-rollback]
     runs-on: ubuntu-latest
     permissions: {}
     steps:

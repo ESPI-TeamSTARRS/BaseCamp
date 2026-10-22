@@ -102,3 +102,18 @@ def test_resume_des_differences() -> None:
     new = json.loads(json.dumps(current()))
     new["services"]["auth"] = {"version": "0.3.0", "image": f"ghcr.io/o/basecamp-auth@{E}"}
     assert update.describe(current(), new) == ["auth 0.1.0 -> 0.3.0"]
+
+
+def test_ajoute_un_composant_facultatif_absent() -> None:
+    new = {"service": "backoffice", "version": "0.1.0", "image": f"ghcr.io/o/basecamp-backoffice@{E}"}
+    merged, changes = update.merge(current(), [new])
+    assert merged["services"]["backoffice"]["version"] == "0.1.0"
+    assert changes == ["backoffice absent -> 0.1.0"]
+    manifest.validate(merged)
+
+
+def test_describe_un_composant_ajoute() -> None:
+    ancien = current()
+    nouveau = json.loads(json.dumps(ancien))
+    nouveau["services"]["backoffice"] = {"version": "0.1.0", "image": f"ghcr.io/o/basecamp-backoffice@{E}"}
+    assert update.describe(ancien, nouveau) == ["backoffice absent -> 0.1.0"]

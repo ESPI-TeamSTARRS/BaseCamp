@@ -1,7 +1,7 @@
 # Pile complete locale : `cp .env.example .env && docker compose up --build`
 # Les images applicatives sont taguees ${COMPOSE_PROJECT_NAME:-basecamp}-<service> : deux piles (projets) ne se partagent pas leurs tags.
 # Seul Traefik est publie (127.0.0.1:${GATEWAY_PORT}). Reseaux :
-#   edge : traefik <-> hote        app  : traefik, front, shop, auth, mailpit (interne)
+#   edge : traefik <-> hote        app  : traefik, front, backoffice, shop, auth, mailpit (interne)
 #   data : shop, postgres, seaweedfs   (interne, jamais publie)
 #   auth-data : auth, postgres-auth    (interne, isole : ni shop ni payment n'y accedent)
 #   payment-net  : shop <-> payment (interne) ; payment n'est ni sur app ni publie
@@ -41,6 +41,7 @@ services:
       retries: 5
     depends_on:
       front: { condition: service_healthy }
+      backoffice: { condition: service_healthy }
       shop: { condition: service_healthy }
       auth: { condition: service_healthy }
 
@@ -56,6 +57,24 @@ services:
       NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:8080}
       RESEND_API_KEY: ${RESEND_API_KEY:?voir .env.example}
       RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:?voir .env.example}
+    networks: [app]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+  backoffice:
+    <<: *hardening
+    image: ${COMPOSE_PROJECT_NAME:-basecamp}-backoffice
+    build:
+      context: ./apps/backoffice
+    environment:
+      # Appels internes du back-office (reseau app) : connexion en trois temps et cles de verification via auth.
+      AUTH_URL: http://auth:8000
+      SHOP_URL: http://shop:8000
+      LOG_PSEUDONYM_KEY: ${LOG_PSEUDONYM_KEY:-}
     networks: [app]
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/"]
@@ -98,6 +117,15 @@ services:
       APP_SMTP_HOST: mailpit
       APP_SMTP_PORT: "1025"
       APP_SMTP_FROM: ${SHOP_SMTP_FROM:-commandes@basecamp.local}
+      # Transport des emails : smtp (Mailpit, defaut) ou n8n (webhook ; URL et secret alors obligatoires).
+      APP_MAIL_TRANSPORT: ${MAIL_TRANSPORT:-smtp}
+      APP_N8N_MAIL_URL: ${N8N_MAIL_URL:-}
+      APP_N8N_MAIL_SECRET: ${N8N_MAIL_SECRET:-}
+      # Televersement des images produit (API d'administration) : API S3 de SeaweedFS, cles de la pile.
+      APP_S3_ENDPOINT: http://seaweedfs:8333
+      APP_S3_BUCKET: ${S3_BUCKET:-product-images}
+      APP_S3_ACCESS_KEY: ${S3_ACCESS_KEY:?voir .env.example}
+      APP_S3_SECRET_KEY: ${S3_SECRET_KEY:?voir .env.example}
     networks: [app, data, payment-net]
     read_only: true
     depends_on:
@@ -258,7 +286,18 @@ services:
       APP_SMTP_HOST: mailpit
       APP_SMTP_PORT: "1025"
       APP_SMTP_FROM: ${AUTH_SMTP_FROM:-comptes@basecamp.local}
+      # Transport des emails : smtp (Mailpit, defaut) ou n8n (webhook ; URL et secret alors obligatoires).
+      APP_MAIL_TRANSPORT: ${MAIL_TRANSPORT:-smtp}
+      APP_N8N_MAIL_URL: ${N8N_MAIL_URL:-}
+      APP_N8N_MAIL_SECRET: ${N8N_MAIL_SECRET:-}
       APP_PUBLIC_BASE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:8080}
+      # Adresse reelle du client : X-Forwarded-For n'est cru que de Traefik (reseaux Docker locaux).
+      APP_TRUSTED_PROXIES: ${AUTH_TRUSTED_PROXIES:-172.16.0.0/12,192.168.0.0/16,10.0.0.0/8}
+      # Connexion du back-office en trois temps : active en developpement avec le FAUX verificateur de
+      # visage (aucune reconnaissance reelle). Jamais en production (deploy/docker-compose.prod.yml).
+      APP_BACKOFFICE_ENABLED: ${AUTH_BACKOFFICE_ENABLED:-true}
+      APP_FACE_VERIFIER: ${AUTH_FACE_VERIFIER:-fake}
+      APP_LOCKOUT_ADDRESS_MAX_FAILURES: ${AUTH_LOCKOUT_ADDRESS_MAX_FAILURES:-20}
     networks: [auth-data]
     depends_on:
       postgres-auth: { condition: service_healthy }
@@ -285,7 +324,7 @@ services:
     image: ${COMPOSE_PROJECT_NAME:-basecamp}-auth
     environment: *auth-env
     # Cles de signature generees par scripts/init-auth-keys.sh (jamais versionnees).
-    secrets: [auth_jwt_private_key, auth_jwt_public_key]
+    secrets: [auth_jwt_private_key, auth_jwt_public_key, auth_face_template_key]
     # payment-net : payment y lit les cles publiques (JWKS), shop y passe par app pour /internal/token.
     networks: [app, payment-net, auth-data]
     read_only: true
@@ -398,3 +437,6 @@ secrets:
     file: ./.secrets/auth/jwt-private.pem
   auth_jwt_public_key:
     file: ./.secrets/auth/jwt-public.pem
+  # Chiffre les gabarits faciaux des operateurs au repos (donnee biometrique), jamais versionnee.
+  auth_face_template_key:
+    file: ./.secrets/auth/face-template.key

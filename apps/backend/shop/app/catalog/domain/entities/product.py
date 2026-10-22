@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 
 from app.catalog.domain.enums.availability import Availability
 from app.catalog.domain.enums.product_category import ProductCategory
@@ -25,12 +26,14 @@ class Product:
     stock: int
     rating_value: float
     rating_count: int
+    version: int = 1  # concurrence optimiste de l'administration
+    archived_at: datetime | None = None  # soft delete : jamais de ligne effacée
 
     def __post_init__(self) -> None:
         if not self.name.strip():
             raise ValueError("Le nom du produit est obligatoire.")
-        if self.price_cents <= 0:
-            raise ValueError("Le prix doit etre strictement positif.")
+        if self.price_cents < 0:
+            raise ValueError("Le prix ne peut pas etre negatif.")
         if self.stock < 0:
             raise ValueError("Le stock ne peut pas etre negatif.")
         if not 0 <= self.rating_value <= MAX_RATING:

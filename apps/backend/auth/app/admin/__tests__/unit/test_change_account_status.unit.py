@@ -84,9 +84,38 @@ class TestRules:
         setup.use_case.disable(operator.id, client.id, "203.0.113.7")
 
         [event] = setup.events.events
-        assert dict(event.attributes) == {"sessions_revoked": 3, "already_disabled": False}
+        assert dict(event.attributes) == {
+            "sessions_revoked": 3,
+            "already_disabled": False,
+            "face_template_deleted": False,
+        }
         assert event.client_ip == "203.0.113.7"
         assert setup.store.sessions == {}
+
+    def test_disabling_an_operator_deletes_their_face_template(self) -> None:
+        operator = account("ops@example.com", "operator")
+        other = account("ops2@example.com", "operator")
+        setup = Setup(operator, other)
+        setup.store.face_templates.update({other.id, operator.id})
+
+        setup.use_case.disable(operator.id, other.id)
+
+        assert setup.store.face_templates == {
+            operator.id
+        }  # seul le compte desactive perd son gabarit
+        [event] = setup.events.events
+        assert event.attributes["face_template_deleted"] is True
+
+    def test_enabling_never_brings_the_template_back(self) -> None:
+        operator = account("ops@example.com", "operator")
+        other = account("ops2@example.com", "operator")
+        setup = Setup(operator, other)
+        setup.store.face_templates.add(other.id)
+        setup.use_case.disable(operator.id, other.id)
+
+        setup.use_case.enable(operator.id, other.id)
+
+        assert other.id not in setup.store.face_templates  # a reenroler
 
     def test_disabling_twice_is_idempotent_and_revokes_nothing_the_second_time(self) -> None:
         operator = account("ops@example.com", "operator")

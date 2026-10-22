@@ -58,7 +58,10 @@ class SqlAlchemyExpirableOrders(ExpirableOrders):
             self._session.execute(
                 update(OrderProductModel)
                 .where(OrderProductModel.id == reservation.product_id)
-                .values(stock=OrderProductModel.stock + reservation.quantity)
+                .values(
+                    stock=OrderProductModel.stock + reservation.quantity,
+                    version=OrderProductModel.version + 1,
+                )
             )
             reservation.status = RELEASED
         return [ReleasedLine(r.product_id, r.quantity) for r in reservations]

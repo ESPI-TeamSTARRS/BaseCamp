@@ -85,12 +85,12 @@ class ResetPasswordUseCase:
     def notify(self, notice: PendingChangeNotice) -> None:
         try:
             self._mailer.send_password_changed(notice.to)
-        except MailDeliveryError:
+        except MailDeliveryError as error:
             self._events.log(
                 BusinessEvent.error(
                     catalog.EMAIL_DELIVERY_FAILED,
                     catalog.REASON_MAIL_DELIVERY_FAILED,
                     resource_type=catalog.RESOURCE_ACCOUNT,
-                    attributes={"kind": catalog.KIND_PASSWORD_CHANGED},
+                    attributes={"kind": catalog.KIND_PASSWORD_CHANGED, "cause": error.cause},
                 )
             )

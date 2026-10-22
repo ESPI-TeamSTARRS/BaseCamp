@@ -71,13 +71,13 @@ class RequestPasswordResetUseCase:
     def deliver(self, pending: PendingResetEmail) -> None:
         try:
             self._mailer.send_reset_link(pending.to, pending.token)
-        except MailDeliveryError:
+        except MailDeliveryError as error:
             self._events.log(
                 BusinessEvent.error(
                     catalog.EMAIL_DELIVERY_FAILED,
                     catalog.REASON_MAIL_DELIVERY_FAILED,
                     resource_type=catalog.RESOURCE_PASSWORD_RESET,
-                    attributes={"kind": catalog.KIND_RESET_LINK},
+                    attributes={"kind": catalog.KIND_RESET_LINK, "cause": error.cause},
                 )
             )
 

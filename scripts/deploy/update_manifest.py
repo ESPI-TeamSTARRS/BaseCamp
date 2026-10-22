@@ -35,11 +35,11 @@ def merge(current: dict, updates: list[dict]) -> tuple[dict, list[str]]:
     changes: list[str] = []
     for update in updates:
         service = update.get("service")
-        if service not in result["services"]:
+        if service not in result["services"] and service not in manifest.OPTIONAL_SERVICES:
             raise manifest.ManifestError(f"composant inconnu : {service!r}")
         entry = {"version": update.get("version"), "image": update.get("image")}
-        if result["services"][service] != entry:
-            old = result["services"][service]["version"]
+        if result["services"].get(service) != entry:
+            old = result["services"].get(service, {}).get("version", "absent")
             result["services"][service] = entry
             changes.append(f"{service} {old} -> {entry['version']}")
     manifest.validate(result)
@@ -48,9 +48,9 @@ def merge(current: dict, updates: list[dict]) -> tuple[dict, list[str]]:
 
 def describe(old: dict, new: dict) -> list[str]:
     return [
-        f"{name} {old['services'][name]['version']} -> {entry['version']}"
+        f"{name} {old['services'].get(name, {}).get('version', 'absent')} -> {entry['version']}"
         for name, entry in sorted(new["services"].items())
-        if old["services"][name] != entry
+        if old["services"].get(name) != entry
     ]
 
 

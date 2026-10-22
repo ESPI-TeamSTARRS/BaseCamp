@@ -2,7 +2,7 @@
 
 Pile de production : `deploy/docker-compose.prod.yml`. Elle est distincte de `docker-compose.yml` (développement) et ne partage rien avec lui, pour qu'une commodité de développement ne puisse pas fuiter en production.
 
-Exploitation (installation, bascule, incidents) : [runbook.md](runbook.md). Script de déploiement et retour arrière : [deploy-script.md](deploy-script.md).
+Sous-domaine admin du back-office (routes, limiteur, DNS) : [admin-domain.md](admin-domain.md). Exploitation (installation, bascule, incidents) : [runbook.md](runbook.md). Script de déploiement et retour arrière : [deploy-script.md](deploy-script.md).
 
 ## Principes
 

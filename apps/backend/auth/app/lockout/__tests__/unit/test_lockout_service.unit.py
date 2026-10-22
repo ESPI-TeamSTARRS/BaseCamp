@@ -143,6 +143,7 @@ class TestEvents:
         )
         assert dict(event.attributes) == {
             "step": "face",
+            "subject_type": "account",
             "subject_hash": SUBJECT,
             "level": 1,
             "locked_seconds": 900,

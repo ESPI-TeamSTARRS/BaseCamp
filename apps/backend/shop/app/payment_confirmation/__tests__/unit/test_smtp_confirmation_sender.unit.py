@@ -68,7 +68,11 @@ class TestSmtpConfirmationSender:
         assert message["To"] == "camille.martin@example.org"
         assert message["From"] == "commandes@basecamp.local"
         assert "BC-ABCDEFGHJK" in message["Subject"]
-        body = message.get_content()
+        plain = message.get_body(preferencelist=("plain",))
+        body = plain.get_content() if plain else ""
+        html = message.get_body(preferencelist=("html",))
+        assert html is not None and "<p>" in html.get_content()
+        assert "BC-ABCDEFGHJK" in html.get_content()
         assert "BC-ABCDEFGHJK" in body
         assert "1 x Popote en titane : 39,00 EUR" in body
         assert "2 x Gourde : 5,90 EUR" in body

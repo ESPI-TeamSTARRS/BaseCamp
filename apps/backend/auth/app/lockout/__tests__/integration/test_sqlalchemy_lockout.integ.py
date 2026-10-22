@@ -191,3 +191,52 @@ class TestMigration:
                 load_migration().downgrade()
             assert "login_lockouts" not in inspect(connection).get_table_names()
         engine.dispose()
+
+
+class TestByStepAndAddress:
+    def test_an_address_lock_has_its_own_row_and_survives_a_restart(self, tmp_path: Path) -> None:
+        from app.lockout.domain.enums.subject_type import SubjectType
+
+        url = f"sqlite+pysqlite:///{tmp_path / 'auth.db'}"
+        first = migrated(create_engine(url))
+        for index in range(5):
+            service(first).record_failure(
+                "face",
+                "fp-address",
+                START + timedelta(seconds=index),
+                subject_type=SubjectType.SOURCE_ADDRESS,
+            )
+        service(first).record_failure("face", "fp-address", START)
+        first.dispose()
+
+        second = create_engine(url)
+        address = service(second).check(
+            "face", "fp-address", START + timedelta(minutes=1), SubjectType.SOURCE_ADDRESS
+        )
+        account = service(second).check("face", "fp-address", START + timedelta(minutes=1))
+        stored = rows(second)
+        second.dispose()
+
+        assert address.locked
+        assert not account.locked
+        assert [row[0] for row in stored] == ["face", "face@address"]
+
+    def test_clearing_several_counters_removes_only_those(self, engine: Engine) -> None:
+        from app.lockout.domain.entities.lockout_subject import LockoutSubject
+        from app.lockout.domain.enums.subject_type import SubjectType
+
+        lockouts = service(engine)
+        lockouts.record_failure("operator_password", "a", START)
+        lockouts.record_failure("face", "a", START)
+        lockouts.record_failure("face", "ip", START, SubjectType.SOURCE_ADDRESS)
+        lockouts.record_failure("face", "b", START)
+
+        lockouts.clear(
+            [
+                LockoutSubject("operator_password", "a"),
+                LockoutSubject("face", "a"),
+                LockoutSubject("face", "ip", SubjectType.SOURCE_ADDRESS),
+            ]
+        )
+
+        assert rows(engine) == [("face", "b", 1, 0)]

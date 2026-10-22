@@ -8,6 +8,9 @@ from app.payment_confirmation.application.send_order_confirmation import (
 )
 from app.payment_confirmation.domain.entities.confirmation_mail import ConfirmationMail
 from app.payment_confirmation.domain.entities.mail_line import MailLine
+from app.payment_confirmation.domain.errors.confirmation_delivery_error import (
+    ConfirmationDeliveryError,
+)
 
 MAIL = ConfirmationMail(EMAIL, ORDER_NUMBER, 4490, (MailLine("Popote en titane", 1, 3900),))
 
@@ -40,3 +43,16 @@ class TestSendOrderConfirmation:
         assert event.reason == "delivery_failed"
         assert event.attributes["email_hash"] == "hash-" + str(len(EMAIL))
         assert EMAIL not in repr(event)
+
+    def test_the_failure_reason_comes_from_the_adapter_without_any_secret_or_address(self) -> None:
+        class _Refusing(RecordingSender):
+            def send(self, mail: ConfirmationMail) -> None:
+                raise ConfirmationDeliveryError("http_403")
+
+        events = InMemoryBusinessEventLogger()
+
+        SendOrderConfirmationUseCase(_Refusing(), events, _Pseudonymizer()).execute(MAIL)
+
+        failed = events.events[0]
+        assert (failed.event, failed.reason) == ("order.confirmation_email_failed", "http_403")
+        assert EMAIL not in repr(failed)

@@ -142,8 +142,13 @@ class TestNoSensitiveLabel:
 
         text = env.metrics()
 
-        for forbidden in (TOKEN, IDEMPOTENCY_KEY, ORDER, intent_id, "4242", "does/not/exist"):
+        for forbidden in (TOKEN, IDEMPOTENCY_KEY, ORDER, intent_id, "does/not/exist"):
             assert forbidden not in text
+        # Le numéro de carte de la requête ne doit atteindre aucune étiquette. Les valeurs des échantillons
+        # (durées, avec leurs 16 chiffres) peuvent contenir « 4242 » par hasard : seules les étiquettes comptent.
+        labels = " ".join(re.findall(r"\{([^}]*)\}", text))
+        assert "4242" not in labels
+        assert "card=" not in text
         assert 'route="/payments/intents/{intent_id}"' in text
         assert 'route="unmatched",method="GET",status="404"' in text
 

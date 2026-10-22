@@ -49,14 +49,14 @@ services:
       traefik.enable: ${GATEWAY_EXPOSE:-true}
       traefik.docker.network: ${WEB_NETWORK:-web}
       # Routeur HTTPS du Traefik du serveur vers la passerelle de la pile.
-      traefik.http.routers.basecamp-gw.rule: Host(`${BASECAMP_DOMAIN:?voir deploy/prod.env.example}`)
+      traefik.http.routers.basecamp-gw.rule: Host(`${BASECAMP_DOMAIN:?voir deploy/prod.env.example}`) || Host(`admin.${BASECAMP_DOMAIN}`)
       traefik.http.routers.basecamp-gw.entrypoints: ${TRAEFIK_ENTRYPOINT_HTTPS:-websecure}
       traefik.http.routers.basecamp-gw.tls: "true"
       traefik.http.routers.basecamp-gw.tls.certresolver: ${TRAEFIK_CERTRESOLVER:-letsencrypt}
       traefik.http.routers.basecamp-gw.service: basecamp-gw
       traefik.http.services.basecamp-gw.loadbalancer.server.port: "9080"
       # Redirection HTTP -> HTTPS.
-      traefik.http.routers.basecamp-gw-http.rule: Host(`${BASECAMP_DOMAIN}`)
+      traefik.http.routers.basecamp-gw-http.rule: Host(`${BASECAMP_DOMAIN}`) || Host(`admin.${BASECAMP_DOMAIN}`)
       traefik.http.routers.basecamp-gw-http.entrypoints: ${TRAEFIK_ENTRYPOINT_HTTP:-web}
       traefik.http.routers.basecamp-gw-http.middlewares: basecamp-gw-https-redirect
       traefik.http.middlewares.basecamp-gw-https-redirect.redirectscheme.scheme: https
@@ -83,6 +83,25 @@ services:
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-}
+    networks: [app]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+  # Optionnel : actif seulement si le manifeste le contient (le profil `backoffice` est alors pose par
+  # manifest.py via COMPOSE_PROFILES). Aucun routeur public sans DNS admin (voir docs/deployment/admin-domain.md).
+  backoffice:
+    <<: *hardening
+    image: ${BACKOFFICE_IMAGE:-}
+    profiles: [backoffice]
+    mem_limit: 192m
+    environment:
+      AUTH_URL: http://auth:8000
+      SHOP_URL: http://shop:8000
+      LOG_PSEUDONYM_KEY: ${LOG_PSEUDONYM_KEY:?voir deploy/prod.env.example}
     networks: [app]
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/"]
@@ -126,6 +145,15 @@ services:
       APP_SMTP_HOST: ${SHOP_SMTP_HOST:-localhost}
       APP_SMTP_PORT: ${SHOP_SMTP_PORT:-25}
       APP_SMTP_FROM: ${SHOP_SMTP_FROM:-commandes@basecamp.local}
+      # Transport des emails : n8n en production (pas de relais SMTP) ; URL et secret fournis sur la VM.
+      APP_MAIL_TRANSPORT: ${MAIL_TRANSPORT:-smtp}
+      APP_N8N_MAIL_URL: ${N8N_MAIL_URL:-}
+      APP_N8N_MAIL_SECRET: ${N8N_MAIL_SECRET:-}
+      # Televersement des images produit (API d'administration) : API S3 de SeaweedFS.
+      APP_S3_ENDPOINT: http://seaweedfs:8333
+      APP_S3_BUCKET: ${S3_BUCKET:-product-images}
+      APP_S3_ACCESS_KEY: ${S3_ACCESS_KEY:?voir deploy/prod.env.example}
+      APP_S3_SECRET_KEY: ${S3_SECRET_KEY:?voir deploy/prod.env.example}
     networks: [app, data, payment-net]
     read_only: true
     depends_on:
@@ -274,7 +302,15 @@ services:
       APP_SMTP_PASSWORD: ${AUTH_SMTP_PASSWORD:-}
       APP_SMTP_FROM: ${AUTH_SMTP_FROM:-comptes@basecamp.local}
       APP_SMTP_STARTTLS: ${AUTH_SMTP_STARTTLS:-true}
+      # Transport des emails : n8n en production (pas de relais SMTP) ; URL et secret fournis sur la VM.
+      APP_MAIL_TRANSPORT: ${MAIL_TRANSPORT:-smtp}
+      APP_N8N_MAIL_URL: ${N8N_MAIL_URL:-}
+      APP_N8N_MAIL_SECRET: ${N8N_MAIL_SECRET:-}
       APP_PUBLIC_BASE_URL: https://${BASECAMP_DOMAIN}
+      # Adresse reelle du client : X-Forwarded-For ("client, Cloudflare, proxy Docker") n'est cru que
+      # des reseaux Docker; on lit de droite a gauche en sautant ces reseaux et les plages Cloudflare
+      # (publiques, a tenir a jour : https://www.cloudflare.com/ips/, comme dynamic.prod.yml).
+      APP_TRUSTED_PROXIES: ${AUTH_TRUSTED_PROXIES:-172.16.0.0/12,173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,131.0.72.0/22,2400:cb00::/32,2606:4700::/32,2803:f800::/32,2405:b500::/32,2405:8100::/32,2a06:98c0::/29,2c0f:f248::/32}
     networks: [auth-data]
     depends_on:
       postgres-auth: { condition: service_healthy }

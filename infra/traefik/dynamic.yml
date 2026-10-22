@@ -10,8 +10,16 @@ http:
       middlewares: [orders-rate-limit, body-limit, security-headers, strip-api-shop]
       service: shop
       priority: 200
+    shop-admin:
+      # API d'administration du catalogue : repondue UNIQUEMENT sur l'origine admin (admin.<domaine>).
+      # Sur le domaine principal, /api/shop/admin n'est pas route vers shop (le front repond 404).
+      rule: "HostRegexp(`^admin\\..+$`) && PathPrefix(`/api/shop/admin`)"
+      entryPoints: [web]
+      middlewares: [admin-rate-limit, admin-body-limit, security-headers, strip-api-shop]
+      service: shop
+      priority: 300
     shop:
-      rule: "PathPrefix(`/api/shop`) && !PathPrefix(`/api/shop/webhooks`)"
+      rule: "PathPrefix(`/api/shop`) && !PathPrefix(`/api/shop/webhooks`) && !PathPrefix(`/api/shop/admin`)"
       entryPoints: [web]
       middlewares: [body-limit, security-headers, strip-api-shop]
       service: shop
@@ -47,6 +55,16 @@ http:
       middlewares: [auth-signup-rate-limit, body-limit, security-headers, strip-api-auth]
       service: auth
       priority: 200
+    auth-backoffice:
+      # Connexion du back-office (en trois temps) : repondue UNIQUEMENT sur l'origine admin (admin.<domaine>),
+      # avec un limiteur par adresse plus strict que /login. Sur le domaine principal, /api/auth/backoffice
+      # n'est pas route vers auth (le front repond 404).
+      # Corps jusqu'a 5 Mio : 3 images de 1 Mo en base64 (WORK-59).
+      rule: "HostRegexp(`^admin\\..+$`) && PathPrefix(`/api/auth/backoffice`)"
+      entryPoints: [web]
+      middlewares: [backoffice-login-rate-limit, backoffice-body-limit, security-headers, strip-api-auth]
+      service: auth
+      priority: 300
     auth-jwks:
       # Cles publiques de verification des jetons (JWKS), lecture seule, sans prefixe retire :
       # le service les sert a /.well-known/jwks.json.
@@ -57,7 +75,7 @@ http:
       priority: 200
     auth:
       # Les routes /internal/* et /metrics ne sont jamais exposees : elles sortent du routeur.
-      rule: "PathPrefix(`/api/auth`) && !PathPrefix(`/api/auth/internal`) && !PathPrefix(`/api/auth/metrics`)"
+      rule: "PathPrefix(`/api/auth`) && !PathPrefix(`/api/auth/internal`) && !PathPrefix(`/api/auth/metrics`) && !PathPrefix(`/api/auth/backoffice`)"
       entryPoints: [web]
       middlewares: [body-limit, security-headers, strip-api-auth]
       service: auth
@@ -68,6 +86,23 @@ http:
       middlewares: [security-headers]
       service: front
       priority: 1
+    backoffice-login:
+      # Connexion du back-office en trois temps (routes serveur du back-office) : meme limiteur strict que
+      # /api/auth/backoffice, car le serveur appelle auth en interne et ce limiteur ne verrait pas ces essais.
+      # Le corps peut porter jusqu'a 3 images en base64 (5 Mio), comme /api/auth/backoffice.
+      rule: "HostRegexp(`^admin\\..+$`) && (Path(`/session/identify`) || Path(`/session/face`) || Path(`/session/password`))"
+      entryPoints: [web]
+      middlewares: [backoffice-login-rate-limit, backoffice-body-limit, security-headers]
+      service: backoffice
+      priority: 30
+    backoffice:
+      # Back-office : repondu UNIQUEMENT sur l'origine admin (admin.<domaine>), jamais sur le domaine principal.
+      # Les routes /api/* de l'hote admin restent celles de leurs services (shop-admin, auth...).
+      rule: "HostRegexp(`^admin\\..+$`) && !PathPrefix(`/api`)"
+      entryPoints: [web]
+      middlewares: [security-headers]
+      service: backoffice
+      priority: 20
 
   middlewares:
     media-path:
@@ -98,12 +133,40 @@ http:
         period: 1m
         burst: 30
 
+    backoffice-login-rate-limit:
+      # DEVELOPPEMENT ET E2E SEULEMENT : large, car les scenarios e2e rejouent des dizaines de connexions
+      # depuis la meme adresse. La production garde 10/min, rafale 5 (deploy/traefik/dynamic.prod.yml).
+      # Meme cle que orders-rate-limit : adresse reelle de la connexion, X-Forwarded-For ignore.
+      rateLimit:
+        average: 600
+        period: 1m
+        burst: 100
+
     auth-password-rate-limit:
       # Meme cle que orders-rate-limit : adresse reelle de la connexion, X-Forwarded-For ignore.
       rateLimit:
         average: 20
         period: 1m
         burst: 10
+
+    admin-rate-limit:
+      # Cle = adresse reelle de la connexion (comme orders-rate-limit) : 30 requetes/min, rafale de 10.
+      rateLimit:
+        average: 30
+        period: 1m
+        burst: 10
+
+    admin-body-limit:
+      # Televersement d'image : 2 Mio de fichier au plus, plus la marge des en-tetes -> 413 au-dela.
+      buffering:
+        maxRequestBodyBytes: 3145728 # 3 Mio
+        memRequestBodyBytes: 3145728 # tout en memoire : le conteneur est en lecture seule (pas de fichier temporaire)
+
+    backoffice-body-limit:
+      # Trois images de 1 Mo en base64 (4 Mo) plus l'enveloppe JSON -> 413 au-dela de 5 Mio.
+      buffering:
+        maxRequestBodyBytes: 5242880 # 5 Mio
+        memRequestBodyBytes: 5242880 # tout en memoire : le conteneur est en lecture seule
 
     body-limit:
       buffering:
@@ -145,3 +208,8 @@ http:
         serversTransport: default
         servers:
           - url: "http://front:3000"
+    backoffice:
+      loadBalancer:
+        serversTransport: default
+        servers:
+          - url: "http://backoffice:3000"

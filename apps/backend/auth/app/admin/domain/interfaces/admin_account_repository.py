@@ -30,6 +30,10 @@ class AdminAccountRepository(ABC):
         """Supprime tous les jetons de rafraichissement du compte; renvoie leur nombre."""
 
     @abstractmethod
+    def delete_face_template(self, account_id: UUID) -> bool:
+        """Supprime le gabarit facial du compte (donnee biometrique); vrai s'il existait."""
+
+    @abstractmethod
     def add_operator(self, account_id: UUID, email: str, password_hash: str, now: datetime) -> None:
         """Cree un compte `operator` (adresse consideree verifiee); `OperatorAlreadyExistsError`
         si l'adresse est deja prise."""

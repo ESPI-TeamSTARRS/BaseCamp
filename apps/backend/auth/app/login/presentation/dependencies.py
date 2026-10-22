@@ -1,8 +1,8 @@
-import ipaddress
 from typing import cast
 
 from fastapi import HTTPException, Request, status
 
+from app.core.client_address_resolver import ClientAddressResolver
 from app.login.application.get_current_account import GetCurrentAccountUseCase
 from app.login.application.get_public_keys import GetPublicKeysUseCase
 from app.login.application.login_account import LoginAccountUseCase
@@ -48,9 +48,10 @@ def bearer_token(request: Request) -> str:
 
 
 def client_ip(request: Request) -> str | None:
-    """Adresse reelle posee par la passerelle (X-Forwarded-For), validee avant d'etre journalisee."""
-    forwarded = request.headers.get(FORWARDED_HEADER, "").split(",")[0].strip()
-    try:
-        return str(ipaddress.ip_address(forwarded))
-    except ValueError:
-        return request.client.host if request.client else None
+    """Adresse reelle du client : le pair TCP, ou l'adresse relayee par un proxy de confiance.
+
+    `X-Forwarded-For` n'est lu que si le pair est dans `APP_TRUSTED_PROXIES` (voir
+    `ClientAddressResolver`); sinon un client pourrait choisir son adresse."""
+    resolver = cast(ClientAddressResolver, request.app.state.client_address_resolver)
+    peer = request.client.host if request.client else None
+    return resolver.resolve(peer, request.headers.get(FORWARDED_HEADER))

@@ -23,11 +23,22 @@ from app.cart.infrastructure.repositories.sqlalchemy_cart_product_reader import 
     SqlAlchemyCartProductReader,
 )
 from app.cart.presentation.router import router as cart_router
+from app.catalog.application.archive_product import ArchiveProductUseCase
+from app.catalog.application.create_product import CreateProductUseCase
+from app.catalog.application.get_admin_product import GetAdminProductUseCase
 from app.catalog.application.get_product import GetProductUseCase
+from app.catalog.application.list_admin_products import ListAdminProductsUseCase
 from app.catalog.application.list_products import ListProductsUseCase
+from app.catalog.application.update_product import UpdateProductUseCase
+from app.catalog.application.upload_product_image import UploadProductImageUseCase
+from app.catalog.infrastructure.repositories.sqlalchemy_admin_product_repository import (
+    SqlAlchemyAdminProductRepository,
+)
 from app.catalog.infrastructure.repositories.sqlalchemy_product_repository import (
     SqlAlchemyProductRepository,
 )
+from app.catalog.infrastructure.storage.s3_product_image_storage import S3ProductImageStorage
+from app.catalog.presentation.admin_router import router as catalog_admin_router
 from app.catalog.presentation.router import router as catalog_router
 from app.core.config import Settings
 from app.core.errors import register_error_handlers
@@ -35,6 +46,7 @@ from app.core.logging.correlation_id_middleware import CorrelationIdMiddleware
 from app.core.logging.email_pseudonymizer import build_pseudonymizer
 from app.core.logging.structlog_business_event_logger import StructlogBusinessEventLogger
 from app.customer_identity.application.authenticate_customer import AuthenticateCustomerUseCase
+from app.customer_identity.application.authorize_operator import AuthorizeOperatorUseCase
 from app.customer_identity.infrastructure.clients.http_jwks_source import HttpJwksSource
 from app.customer_identity.infrastructure.clients.jwks_client_token_verifier import (
     JwksClientTokenVerifier,
@@ -75,8 +87,8 @@ from app.payment_confirmation.error_handlers import register_payment_confirmatio
 from app.payment_confirmation.infrastructure.repositories.sqlalchemy_confirmation_unit_of_work import (
     SqlAlchemyConfirmationUnitOfWork,
 )
-from app.payment_confirmation.infrastructure.senders.smtp_confirmation_sender import (
-    SmtpConfirmationSender,
+from app.payment_confirmation.infrastructure.senders.confirmation_sender_factory import (
+    ConfirmationSenderFactory,
 )
 from app.payment_confirmation.presentation.router import router as payment_confirmation_router
 from app.payment_request.application.confirm_order_payment import ConfirmOrderPaymentUseCase
@@ -132,19 +144,47 @@ def create_app() -> FastAPI:
         pool=settings.auth_connect_timeout_seconds,
     )
     auth_client = httpx.Client(timeout=auth_timeout, limits=httpx.Limits(max_connections=10))
-    application.state.authenticate_customer_use_case = AuthenticateCustomerUseCase(
-        JwksClientTokenVerifier(
-            JwksKeyCache(
-                HttpJwksSource(auth_client, settings.auth_jwks_url),
-                time.monotonic,
-                settings.auth_jwks_ttl_seconds,
-                settings.auth_jwks_min_refetch_seconds,
-            ),
-            settings.auth_issuer,
-            settings.auth_audience,
+    token_verifier = JwksClientTokenVerifier(
+        JwksKeyCache(
+            HttpJwksSource(auth_client, settings.auth_jwks_url),
+            time.monotonic,
+            settings.auth_jwks_ttl_seconds,
+            settings.auth_jwks_min_refetch_seconds,
         ),
-        SystemClock(),
+        settings.auth_issuer,
+        settings.auth_audience,
+    )
+    application.state.authenticate_customer_use_case = AuthenticateCustomerUseCase(
+        token_verifier, SystemClock(), events
+    )
+    application.state.authorize_operator_use_case = AuthorizeOperatorUseCase(
+        token_verifier, SystemClock(), events, settings.admin_required_amr
+    )
+    admin_products = SqlAlchemyAdminProductRepository(engine)
+    admin_pseudonymizer = build_pseudonymizer(settings.log_pseudonym_key)
+    application.state.list_admin_products_use_case = ListAdminProductsUseCase(admin_products)
+    application.state.get_admin_product_use_case = GetAdminProductUseCase(admin_products)
+    application.state.create_product_use_case = CreateProductUseCase(
+        admin_products, events, admin_pseudonymizer
+    )
+    application.state.update_product_use_case = UpdateProductUseCase(
+        admin_products, events, admin_pseudonymizer
+    )
+    application.state.archive_product_use_case = ArchiveProductUseCase(
+        admin_products, events, admin_pseudonymizer
+    )
+    application.state.upload_product_image_use_case = UploadProductImageUseCase(
+        admin_products,
+        S3ProductImageStorage(
+            httpx.Client(timeout=httpx.Timeout(connect=2.0, read=10.0, write=10.0, pool=2.0)),
+            endpoint=settings.s3_endpoint,
+            bucket=settings.s3_bucket,
+            access_key=settings.s3_access_key,
+            secret_key=settings.s3_secret_key,
+            region=settings.s3_region,
+        ),
         events,
+        admin_pseudonymizer,
     )
     account_reader = SqlAlchemyAccountOrderReader(engine)
     link_guest_orders = LinkGuestOrdersUseCase(
@@ -203,12 +243,7 @@ def create_app() -> FastAPI:
         events,
     )
     application.state.send_order_confirmation_use_case = SendOrderConfirmationUseCase(
-        SmtpConfirmationSender(
-            settings.smtp_host,
-            settings.smtp_port,
-            settings.smtp_from,
-            settings.smtp_timeout_seconds,
-        ),
+        ConfirmationSenderFactory.build(settings),
         events,
         build_pseudonymizer(settings.log_pseudonym_key),
     )
@@ -218,6 +253,7 @@ def create_app() -> FastAPI:
     application.include_router(pay_router)
     application.include_router(health_router)
     application.include_router(catalog_router)
+    application.include_router(catalog_admin_router)
     application.include_router(cart_router)
     application.include_router(order_tracking_router)
     application.include_router(account_orders_router)

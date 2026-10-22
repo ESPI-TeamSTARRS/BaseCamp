@@ -60,7 +60,7 @@ class TestSuccessfulLogin:
         assert result.refresh_token == "raw-refresh-token"
         assert result.refresh_expires_in == REFRESH_TTL
 
-    def test_access_token_claims_describe_the_account_for_15_minutes(self) -> None:
+    def test_access_token_claims_describe_the_account_for_15_minutes_without_operator(self) -> None:
         account = make_account(role="operator", verified=False)
         setup = Setup(account)
 
@@ -68,7 +68,8 @@ class TestSuccessfulLogin:
 
         claims = setup.signer.signed[0]
         assert claims.subject == account.id
-        assert claims.roles == ("operator",)
+        assert claims.roles == ()  # le login classique ne delivre jamais `operator`
+        assert claims.amr == ()
         assert claims.email_verified is False
         assert (claims.expires_at - claims.issued_at).total_seconds() == ACCESS_TTL
         assert claims.token_id

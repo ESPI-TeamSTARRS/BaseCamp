@@ -23,6 +23,8 @@ class ProductMapper:
             stock=model.stock,
             rating_value=float(model.rating_value),
             rating_count=model.rating_count,
+            version=model.version,
+            archived_at=model.archived_at,
         )
 
     @staticmethod
@@ -41,4 +43,6 @@ class ProductMapper:
             stock=product.stock,
             rating_value=product.rating_value,
             rating_count=product.rating_count,
+            version=product.version,
+            archived_at=product.archived_at,
         )

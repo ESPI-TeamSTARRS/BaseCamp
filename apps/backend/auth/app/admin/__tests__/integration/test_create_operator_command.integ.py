@@ -38,7 +38,7 @@ def run(
 
 
 class TestCreateOperatorCommand:
-    async def test_it_creates_an_operator_who_can_log_in_and_administer(
+    async def test_it_creates_an_operator_who_cannot_administer_with_the_classic_login(
         self, stack: AdminStack, events: InMemoryBusinessEventLogger
     ) -> None:
         code, out, err = run(stack, events, "nouveau@example.com", {"OPERATOR_PASSWORD": STRONG})
@@ -61,7 +61,9 @@ class TestCreateOperatorCommand:
                 "/login", json={"email": "nouveau@example.com", "password": STRONG}
             )
             headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
-            assert (await client.get("/admin/users", headers=headers)).status_code == 200
+            # Le login classique ne delivre plus `operator` : l'administration exige la connexion
+            # en trois temps (WORK-59).
+            assert (await client.get("/admin/users", headers=headers)).status_code == 403
 
     def test_the_password_is_hashed_in_argon2id_and_never_printed_or_logged(
         self, stack: AdminStack, events: InMemoryBusinessEventLogger

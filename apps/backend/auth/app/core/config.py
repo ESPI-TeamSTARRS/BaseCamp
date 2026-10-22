@@ -1,6 +1,10 @@
+from typing import Literal
+
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
+
+from app.core.client_address_resolver import ClientAddressResolver
 
 DEVELOPMENT_ENVIRONMENTS = frozenset({"dev", "local"})
 
@@ -40,6 +44,14 @@ class Settings(BaseSettings):
     smtp_password: SecretStr = SecretStr("")  # APP_SMTP_PASSWORD, jamais versionne
     smtp_starttls: bool = False
     smtp_timeout_seconds: float = 5.0
+
+    # Transport des emails : "smtp" (Mailpit en dev et en CI) ou "n8n" (webhook, production sans relais
+    # SMTP). Avec n8n, l'URL et le secret sont obligatoires (demarrage refuse sinon); le secret est
+    # fourni par l'environnement et n'est jamais versionne ni journalise.
+    mail_transport: Literal["smtp", "n8n"] = "smtp"
+    n8n_mail_url: str = ""
+    n8n_mail_secret: SecretStr = SecretStr("")  # APP_N8N_MAIL_SECRET
+    n8n_mail_timeout_seconds: float = Field(default=5.0, gt=0)
     # Origine publique du site : base des liens envoyes par email.
     public_base_url: str = "http://localhost:8080"
 
@@ -50,6 +62,23 @@ class Settings(BaseSettings):
     access_token_ttl_seconds: int = Field(default=900, gt=0)
     refresh_token_ttl_seconds: int = Field(default=604800, gt=0)
 
+    # Connexion du back-office en trois temps (WORK-59) : routes /backoffice/* montees seulement si
+    # `backoffice_enabled`. Il faut alors un verificateur de visage : `fake` (developpement
+    # uniquement, aucune reconnaissance reelle) ; aucun adaptateur reel n'est encore branche.
+    backoffice_enabled: bool = False
+    face_verifier: Literal["none", "fake", "visage-id"] = "none"
+    # Seuil de decision du verificateur reel (similarite cosinus). Defaut 0,23 : valeur de la team IA
+    # (jeu public LFW, ~0,1 % de faux accepts); a recalibrer avec de vraies photos.
+    face_threshold: float = Field(default=0.23, gt=0, lt=1)
+    # Cle AES-256 (32 octets en base64) qui chiffre les gabarits faciaux au repos : secret monte,
+    # jamais versionne (scripts/init-auth-keys.sh la genere en developpement).
+    face_template_key_file: str = "/run/secrets/auth_face_template_key"
+    backoffice_challenge_ttl_seconds: int = Field(default=120, gt=0)
+
+    # Adresse reelle du client (WORK-59) : plages CIDR (separees par des virgules) des proxies dont on
+    # croit X-Forwarded-For. Vide (defaut) : seule l'adresse du pair TCP est utilisee.
+    trusted_proxies: str = ""
+
     # Verrouillage progressif (WORK-37) : `lockout_max_failures` echecs en `lockout_window_seconds`
     # verrouillent le sujet; les durees (secondes, separees par des virgules) forment l'echelle des
     # recidives et la derniere est le plafond. Oublie apres `lockout_memory_seconds` sans verrou.
@@ -57,6 +86,20 @@ class Settings(BaseSettings):
     lockout_window_seconds: int = Field(default=900, gt=0)
     lockout_durations_seconds: str = "900,1800,3600"
     lockout_memory_seconds: int = Field(default=86400, gt=0)
+
+    # Verrouillage PAR ETAPE (WORK-56), sans escalade : `max_failures` echecs en `window_seconds`
+    # verrouillent pour `duration_seconds` fixes. Etapes du back-office (mot de passe operateur,
+    # visage) et compteur par adresse source (toutes etapes). Les etapes non listees gardent la
+    # regle progressive ci-dessus.
+    lockout_operator_password_max_failures: int = Field(default=3, ge=1)
+    lockout_operator_password_window_seconds: int = Field(default=600, gt=0)
+    lockout_operator_password_duration_seconds: int = Field(default=300, gt=0)
+    lockout_face_max_failures: int = Field(default=5, ge=1)
+    lockout_face_window_seconds: int = Field(default=600, gt=0)
+    lockout_face_duration_seconds: int = Field(default=300, gt=0)
+    lockout_address_max_failures: int = Field(default=20, ge=1)
+    lockout_address_window_seconds: int = Field(default=900, gt=0)
+    lockout_address_duration_seconds: int = Field(default=900, gt=0)
 
     @property
     def lockout_durations(self) -> tuple[int, ...]:
@@ -74,6 +117,32 @@ class Settings(BaseSettings):
             ) from None
         if not durations or any(value <= 0 for value in durations):
             raise ValueError("APP_LOCKOUT_DURATIONS_SECONDS needs at least one positive duration")
+        return self
+
+    @model_validator(mode="after")
+    def _require_n8n_settings(self) -> "Settings":
+        if self.mail_transport == "n8n" and not (
+            self.n8n_mail_url and self.n8n_mail_secret.get_secret_value()
+        ):
+            raise ValueError(
+                "APP_N8N_MAIL_URL and APP_N8N_MAIL_SECRET are required with APP_MAIL_TRANSPORT=n8n"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _check_face_verifier(self) -> "Settings":
+        if self.face_verifier == "fake" and self.environment not in DEVELOPMENT_ENVIRONMENTS:
+            raise ValueError("APP_FACE_VERIFIER=fake is only allowed in dev and local")
+        if self.backoffice_enabled and self.face_verifier == "none":
+            raise ValueError("APP_BACKOFFICE_ENABLED needs a real face verifier adapter")
+        return self
+
+    @model_validator(mode="after")
+    def _check_trusted_proxies(self) -> "Settings":
+        try:
+            ClientAddressResolver.from_text(self.trusted_proxies)
+        except ValueError:
+            raise ValueError("APP_TRUSTED_PROXIES must be comma-separated CIDR ranges") from None
         return self
 
     @model_validator(mode="after")

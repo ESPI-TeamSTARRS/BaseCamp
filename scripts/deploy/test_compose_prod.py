@@ -25,6 +25,8 @@ RATE_LIMITERS = {
     "orders-rate-limit",
     "auth-signup-rate-limit",
     "auth-password-rate-limit",
+    "admin-rate-limit",
+    "backoffice-login-rate-limit",
 }  # cle IP differente en prod
 
 SAMPLE_ENV = {
@@ -68,7 +70,7 @@ def test_images_applicatives_par_variable_digest(compose: dict) -> None:
         image = service["image"]
         if image.startswith("${"):
             used.add(image[2:].split(":")[0].rstrip("}"))
-    assert used == FIRST_PARTY_IMAGE_VARS
+    assert used == FIRST_PARTY_IMAGE_VARS | {"BACKOFFICE_IMAGE"}
 
 
 def test_images_tierces_epinglees_par_digest(compose: dict) -> None:
@@ -166,3 +168,79 @@ def test_webhook_de_paiement_recu_par_shop_seulement_et_jamais_route_par_la_pass
     for chemin in (DYNAMIC_PROD, DYNAMIC_DEV):
         routeurs = yaml.safe_load(chemin.read_text(encoding="utf-8"))["http"]["routers"]
         assert "!PathPrefix(`/api/shop/webhooks`)" in routeurs["shop"]["rule"], chemin.name
+
+def test_administration_du_catalogue_seulement_sur_l_origine_admin(compose: dict) -> None:
+    environment = compose["services"]["shop"]["environment"]
+    assert environment["APP_S3_ACCESS_KEY"].startswith("${S3_ACCESS_KEY:?")
+    assert environment["APP_S3_SECRET_KEY"].startswith("${S3_SECRET_KEY:?")
+    for chemin in (DYNAMIC_PROD, DYNAMIC_DEV):
+        http = yaml.safe_load(chemin.read_text(encoding="utf-8"))["http"]
+        admin = http["routers"]["shop-admin"]
+        assert admin["rule"].startswith("HostRegexp("), chemin.name
+        assert "PathPrefix(`/api/shop/admin`)" in admin["rule"]
+        assert "admin-rate-limit" in admin["middlewares"]
+        assert "!PathPrefix(`/api/shop/admin`)" in http["routers"]["shop"]["rule"]
+        limite = http["middlewares"]["admin-body-limit"]["buffering"]["maxRequestBodyBytes"]
+        assert 2 * 1024 * 1024 < limite <= 4 * 1024 * 1024
+    labels = compose["services"]["traefik"]["labels"]
+    assert "Host(`admin.${BASECAMP_DOMAIN}`)" in labels["traefik.http.routers.basecamp-gw.rule"]
+
+def test_transport_des_mails_de_shop_et_auth_configurable_sans_secret_dans_le_depot(
+    compose: dict,
+) -> None:
+    for service in ("shop", "auth"):
+        environment = compose["services"][service]["environment"]
+        assert environment["APP_MAIL_TRANSPORT"] == "${MAIL_TRANSPORT:-smtp}", service
+        assert environment["APP_N8N_MAIL_URL"] == "${N8N_MAIL_URL:-}", service
+        assert environment["APP_N8N_MAIL_SECRET"] == "${N8N_MAIL_SECRET:-}", service
+    exemple = (ROOT / "deploy" / "prod.env.example").read_text(encoding="utf-8")
+    assert "N8N_MAIL_SECRET=" in exemple
+    for ligne in exemple.splitlines():
+        if ligne.lstrip("# ").startswith("N8N_MAIL_SECRET="):
+            assert ligne.split("=", 1)[1].strip() == "", "le secret n'a jamais de valeur dans le depot"
+
+
+def test_connexion_backoffice_seulement_sur_l_origine_admin(compose: dict) -> None:
+    for chemin in (DYNAMIC_PROD, DYNAMIC_DEV):
+        http = yaml.safe_load(chemin.read_text(encoding="utf-8"))["http"]
+        routeur = http["routers"]["auth-backoffice"]
+        assert routeur["rule"].startswith("HostRegexp("), chemin.name
+        assert "PathPrefix(`/api/auth/backoffice`)" in routeur["rule"]
+        assert "!PathPrefix(`/api/auth/backoffice`)" in http["routers"]["auth"]["rule"]
+        assert routeur["middlewares"][0] == "backoffice-login-rate-limit"
+        limite = http["middlewares"]["backoffice-body-limit"]["buffering"]["maxRequestBodyBytes"]
+        assert 4 * 1024 * 1024 < limite <= 8 * 1024 * 1024  # 3 images de 1 Mo en base64
+    # La production garde le limiteur strict (le developpement est large pour les scenarios e2e).
+    prod = yaml.safe_load(DYNAMIC_PROD.read_text(encoding="utf-8"))["http"]["middlewares"]
+    stricte = prod["backoffice-login-rate-limit"]["rateLimit"]
+    login = prod["auth-signup-rate-limit"]["rateLimit"]
+    assert stricte["average"] < login["average"] and stricte["burst"] < login["burst"]
+    # En production, le back-office reste eteint tant qu'aucun verificateur reel n'est branche :
+    # jamais de faux adaptateur, jamais d'activation par defaut.
+    environment = compose["services"]["auth"]["environment"]
+    assert "APP_BACKOFFICE_ENABLED" not in environment
+    assert "APP_FACE_VERIFIER" not in environment
+
+
+def test_le_backoffice_n_est_servi_que_sur_l_origine_admin() -> None:
+    for chemin in (DYNAMIC_PROD, DYNAMIC_DEV):
+        http = yaml.safe_load(chemin.read_text(encoding="utf-8"))["http"]
+        routeur = http["routers"]["backoffice"]
+        assert routeur["rule"].startswith("HostRegexp("), chemin.name
+        assert "!PathPrefix(`/api`)" in routeur["rule"]
+        assert routeur["priority"] > http["routers"]["front"]["priority"]
+
+def test_connexion_du_backoffice_limitee_et_reseau_interne_vers_auth(compose: dict) -> None:
+    environment = compose["services"]["backoffice"]["environment"]
+    assert environment["AUTH_URL"] == "http://auth:8000"
+    assert environment["SHOP_URL"] == "http://shop:8000"
+    assert environment["LOG_PSEUDONYM_KEY"].startswith("${LOG_PSEUDONYM_KEY:?")
+    for chemin in (DYNAMIC_PROD, DYNAMIC_DEV):
+        routeurs = yaml.safe_load(chemin.read_text(encoding="utf-8"))["http"]["routers"]
+        connexion = routeurs["backoffice-login"]
+        for etape in ("identify", "face", "password"):
+            assert f"Path(`/session/{etape}`)" in connexion["rule"], (chemin.name, etape)
+        assert connexion["rule"].startswith("HostRegexp(")
+        assert "backoffice-login-rate-limit" in connexion["middlewares"]
+        assert "backoffice-body-limit" in connexion["middlewares"]
+        assert connexion["priority"] > routeurs["backoffice"]["priority"]

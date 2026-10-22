@@ -166,6 +166,21 @@ class TestLogin:
         assert events.events[0].client_ip == "203.0.113.9"
         assert events.events[0].event == "auth.login_failed"
 
+    async def test_a_forwarded_address_is_ignored_when_the_peer_is_not_a_trusted_proxy(
+        self, client: AsyncClient, stack: LoginStack, events: InMemoryBusinessEventLogger
+    ) -> None:
+        from app.core.client_address_resolver import ClientAddressResolver
+
+        stack.application.state.client_address_resolver = ClientAddressResolver.from_text("")
+
+        await client.post(
+            "/login",
+            json={"email": EMAIL, "password": "mauvais-mot-de-passe"},
+            headers={"X-Forwarded-For": "203.0.113.9"},
+        )
+
+        assert events.events[0].client_ip == "127.0.0.1"
+
     @pytest.mark.parametrize("forwarded", ["pas-une-ip\nforge", "", "999.1.1.1"])
     async def test_an_invalid_forwarded_address_is_never_logged(
         self,
