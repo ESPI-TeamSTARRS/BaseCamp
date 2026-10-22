@@ -90,6 +90,7 @@ from app.backoffice.infrastructure.clients.fake_reconnaissance_faciale import Fa
 from app.backoffice.infrastructure.repositories.sqlalchemy_backoffice_unit_of_work import (
     SqlAlchemyBackofficeUnitOfWork,
 )
+from app.backoffice.infrastructure.clients.face_template_key_file import load_template_cipher
 from app.core.config import Settings
 
 engine = create_engine(Settings().database_url)
@@ -98,7 +99,8 @@ with engine.connect() as connection:
         text("SELECT id FROM users WHERE email = :email"), {"email": sys.argv[1]}
     ).scalar_one()
 template = FakeReconnaissanceFaciale().enroler([base64.b64decode(sys.argv[2])])
-with SqlAlchemyBackofficeUnitOfWork(engine) as work:
+cipher = load_template_cipher(Settings().face_template_key_file)
+with SqlAlchemyBackofficeUnitOfWork(engine, cipher) as work:
     work.templates.save(account, template, datetime.now(UTC))
     work.commit()
 """
