@@ -302,6 +302,10 @@ services:
       APP_SMTP_PASSWORD: ${AUTH_SMTP_PASSWORD:-}
       APP_SMTP_FROM: ${AUTH_SMTP_FROM:-comptes@basecamp.local}
       APP_SMTP_STARTTLS: ${AUTH_SMTP_STARTTLS:-true}
+      # Transport des emails : n8n en production (pas de relais SMTP) ; URL et secret fournis sur la VM.
+      APP_MAIL_TRANSPORT: ${MAIL_TRANSPORT:-smtp}
+      APP_N8N_MAIL_URL: ${N8N_MAIL_URL:-}
+      APP_N8N_MAIL_SECRET: ${N8N_MAIL_SECRET:-}
       APP_PUBLIC_BASE_URL: https://${BASECAMP_DOMAIN}
       # Adresse reelle du client : X-Forwarded-For ("client, Cloudflare, proxy Docker") n'est cru que
       # des reseaux Docker; on lit de droite a gauche en sautant ces reseaux et les plages Cloudflare

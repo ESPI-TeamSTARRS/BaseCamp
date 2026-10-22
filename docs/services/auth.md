@@ -308,6 +308,7 @@ Les émissions, refus et limitations sont journalisés via le port `BusinessEven
 | `APP_SMTP_USERNAME`, `APP_SMTP_PASSWORD` | authentification SMTP facultative (le mot de passe est un `SecretStr`, jamais journalisé ni versionné) |
 | `APP_SMTP_STARTTLS` | active STARTTLS (défaut `false`, à activer avec un relais réel) |
 | `APP_SMTP_TIMEOUT_SECONDS` | délai de connexion SMTP (défaut 5) |
+| `APP_MAIL_TRANSPORT`, `APP_N8N_MAIL_URL`, `APP_N8N_MAIL_SECRET`, `APP_N8N_MAIL_TIMEOUT_SECONDS` | transport des emails `smtp` (défaut) ou `n8n` (webhook : URL et secret obligatoires, délai 5 s par défaut); voir [Transport des emails](#transport-des-emails-smtp-ou-n8n-work-65) |
 | `APP_PUBLIC_BASE_URL` | origine publique du site, base des liens des emails (défaut `http://localhost:8080`) |
 
 Côté compose : `AUTH_DB_NAME`, `AUTH_DB_USER`, `AUTH_DB_PASSWORD`, `AUTH_SMTP_FROM`, `NEXT_PUBLIC_SITE_URL` (voir `.env.example`).
@@ -318,6 +319,13 @@ En local et en CI, le service `mailpit` (réseau interne `app`, SMTP 1025, inter
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build --wait traefik mailpit
 ```
+
+### Transport des emails : SMTP ou n8n (WORK-65)
+Les mailers (`EmailRegistrationMailer`, `EmailPasswordResetMailer`) écrivent un texte brut et le passent au port `EmailSender`; `APP_MAIL_TRANSPORT` choisit l'adaptateur (`EmailSenderFactory`) :
+- `smtp` (défaut, Mailpit en développement et en CI) : `SmtpEmailSender`, texte brut.
+- `n8n` (production, pas de relais SMTP) : `N8nEmailSender` envoie `POST {to, subject, body}` à `APP_N8N_MAIL_URL` (`body` en **HTML** : texte échappé, liens `http(s)` cliquables, paragraphes) avec l'en-tête `X-Mail-Secret` (`APP_N8N_MAIL_SECRET`, jamais versionné ni journalisé, `SecretStr`). Réponse attendue `{"ok": true}`; `403` sans le bon secret. Délai `APP_N8N_MAIL_TIMEOUT_SECONDS` (5 par défaut). Les redirections ne sont pas suivies (le secret ne part jamais ailleurs). URL et secret sont **obligatoires** avec `n8n` (démarrage refusé sinon). L'expéditeur est fixé côté n8n. n8n voit les liens à usage unique en clair (accepté).
+- **Un échec n'annule jamais l'action** : l'envoi se fait après la réponse; refus (`http_401`, `http_403`), délai (`timeout`), connexion (`connection_error`), réponse invalide ou transport non configuré donnent le même événement `auth.email_delivery_failed` avec un motif fermé `cause` (`smtp_error`, `timeout`, `connection_error`, `http_<code>`, `invalid_response`, `not_configured`), **jamais** d'adresse, de lien ni de secret. Pas de file d'attente ni de réessai durable (hors périmètre).
+- Variables de compose et de `.env` communes avec `shop` : `MAIL_TRANSPORT`, `N8N_MAIL_URL`, `N8N_MAIL_SECRET` (voir le [runbook](../deployment/runbook.md)).
 
 ## Événements métier
 Le module de journalisation (port `BusinessEventLogger`, adaptateur JSON, middleware `X-Correlation-ID`) est en place; format et règles : [journalisation métier](../development/logging.md). Chaque ticket d'auth émet ses événements et les ajoute à ce catalogue.

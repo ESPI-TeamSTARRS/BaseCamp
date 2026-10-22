@@ -123,12 +123,12 @@ class RegisterAccountUseCase:
     def _deliver(self, kind: str, send: Callable[[], None]) -> None:
         try:
             send()
-        except MailDeliveryError:
+        except MailDeliveryError as error:
             self._events.log(
                 BusinessEvent.error(
                     catalog.EMAIL_DELIVERY_FAILED,
                     catalog.REASON_MAIL_DELIVERY_FAILED,
                     resource_type=catalog.RESOURCE_VERIFICATION,
-                    attributes={"kind": kind},
+                    attributes={"kind": kind, "cause": error.cause},
                 )
             )

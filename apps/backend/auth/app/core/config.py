@@ -44,6 +44,14 @@ class Settings(BaseSettings):
     smtp_password: SecretStr = SecretStr("")  # APP_SMTP_PASSWORD, jamais versionne
     smtp_starttls: bool = False
     smtp_timeout_seconds: float = 5.0
+
+    # Transport des emails : "smtp" (Mailpit en dev et en CI) ou "n8n" (webhook, production sans relais
+    # SMTP). Avec n8n, l'URL et le secret sont obligatoires (demarrage refuse sinon); le secret est
+    # fourni par l'environnement et n'est jamais versionne ni journalise.
+    mail_transport: Literal["smtp", "n8n"] = "smtp"
+    n8n_mail_url: str = ""
+    n8n_mail_secret: SecretStr = SecretStr("")  # APP_N8N_MAIL_SECRET
+    n8n_mail_timeout_seconds: float = Field(default=5.0, gt=0)
     # Origine publique du site : base des liens envoyes par email.
     public_base_url: str = "http://localhost:8080"
 
@@ -109,6 +117,16 @@ class Settings(BaseSettings):
             ) from None
         if not durations or any(value <= 0 for value in durations):
             raise ValueError("APP_LOCKOUT_DURATIONS_SECONDS needs at least one positive duration")
+        return self
+
+    @model_validator(mode="after")
+    def _require_n8n_settings(self) -> "Settings":
+        if self.mail_transport == "n8n" and not (
+            self.n8n_mail_url and self.n8n_mail_secret.get_secret_value()
+        ):
+            raise ValueError(
+                "APP_N8N_MAIL_URL and APP_N8N_MAIL_SECRET are required with APP_MAIL_TRANSPORT=n8n"
+            )
         return self
 
     @model_validator(mode="after")

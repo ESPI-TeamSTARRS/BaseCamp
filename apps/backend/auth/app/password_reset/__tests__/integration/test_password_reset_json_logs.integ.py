@@ -135,6 +135,6 @@ class TestPasswordResetJsonLines:
                 ("auth.password_reset_requested", None),
                 ("auth.email_delivery_failed", "mail_delivery_failed"),
             ]
-            assert lines[-1]["attributes"] == {"kind": "password_reset"}
+            assert lines[-1]["attributes"] == {"kind": "password_reset", "cause": "smtp_error"}
         finally:
             stack.engine.dispose()

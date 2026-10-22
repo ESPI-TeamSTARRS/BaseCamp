@@ -6,9 +6,10 @@ import pytest
 
 from app.registration.domain.exceptions.mail_delivery_error import MailDeliveryError
 from app.registration.domain.value_objects.email_address import EmailAddress
-from app.registration.infrastructure.clients.smtp_registration_mailer import (
-    SmtpRegistrationMailer,
+from app.registration.infrastructure.clients.email_registration_mailer import (
+    EmailRegistrationMailer,
 )
+from app.registration.infrastructure.clients.smtp_email_sender import SmtpEmailSender
 
 TOKEN = "jeton-factice"
 
@@ -46,7 +47,7 @@ def fake_smtp(monkeypatch: pytest.MonkeyPatch) -> type[FakeSmtp]:
     return FakeSmtp
 
 
-def make_mailer(**overrides: Any) -> SmtpRegistrationMailer:
+def make_mailer(**overrides: Any) -> EmailRegistrationMailer:
     options: dict[str, Any] = {
         "host": "mailpit",
         "port": 1025,
@@ -58,10 +59,11 @@ def make_mailer(**overrides: Any) -> SmtpRegistrationMailer:
         "timeout_seconds": 5.0,
     }
     options.update(overrides)
-    return SmtpRegistrationMailer(**options)
+    public_base_url = options.pop("public_base_url")
+    return EmailRegistrationMailer(SmtpEmailSender(**options), public_base_url)
 
 
-class TestSmtpRegistrationMailer:
+class TestEmailRegistrationMailerOverSmtp:
     def test_verification_email_links_to_the_front_with_the_token_in_the_fragment(self) -> None:
         make_mailer().send_verification(EmailAddress.of("camille@example.com"), TOKEN)
 

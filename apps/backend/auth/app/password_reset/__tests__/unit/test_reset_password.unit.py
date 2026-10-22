@@ -100,7 +100,7 @@ class TestSuccess:
             "auth.email_delivery_failed",
             "mail_delivery_failed",
         )
-        assert dict(failure.attributes) == {"kind": "password_changed"}
+        assert dict(failure.attributes) == {"kind": "password_changed", "cause": "smtp_error"}
 
 
 class TestRefusals:
