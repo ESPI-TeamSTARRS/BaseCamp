@@ -14,6 +14,7 @@ dependencies = [
     "uvicorn[standard]>=0.30.0",
     "argon2-cffi>=25.1.0",
     "pyjwt[crypto]>=2.15.1",
+    "visage-id",
 ]
 
 [dependency-groups]
@@ -32,6 +33,9 @@ dev = [
 
 [tool.uv]
 package = false
+
+[tool.uv.sources]
+visage-id = { git = "https://github.com/ESPI-TeamSTARRS/ML-Reco.git", rev = "419aad9dcdb11dfc4a14b379c340abead2066438" }
 
 [tool.pytest.ini_options]
 minversion = "8.0"
