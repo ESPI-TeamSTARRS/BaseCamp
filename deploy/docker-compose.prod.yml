@@ -91,6 +91,21 @@ services:
       retries: 6
       start_period: 15s
 
+  # Optionnel : actif seulement si le manifeste le contient (le profil `backoffice` est alors pose par
+  # manifest.py via COMPOSE_PROFILES). Aucun routeur public sans DNS admin (voir docs/deployment/admin-domain.md).
+  backoffice:
+    <<: *hardening
+    image: ${BACKOFFICE_IMAGE:-}
+    profiles: [backoffice]
+    mem_limit: 192m
+    networks: [app]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
   shop-migrate:
     image: ${SHOP_IMAGE:?reference par digest, voir deploy/prod.env.example}
     restart: "no"
