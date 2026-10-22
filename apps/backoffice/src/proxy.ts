@@ -11,9 +11,10 @@ export interface ProxyDeps {
   log?: (event: LogEvent) => void;
 }
 
-// Pages et actions accessibles sans session : la connexion elle-meme (trois temps) et robots.txt.
+// Pages et actions accessibles sans session : la connexion elle-meme (trois temps), l'inscription par invitation (le jeton du lien en est la preuve) et robots.txt.
 const PUBLIC_PATHS = new Set([
   '/login',
+  '/invitation',
   '/session/identify',
   '/session/face',
   '/session/password',

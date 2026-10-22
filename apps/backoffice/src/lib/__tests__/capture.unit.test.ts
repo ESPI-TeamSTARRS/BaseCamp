@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MAX_FRAME_WIDTH, captureFrames } from '../capture';
+import { MAX_FRAME_WIDTH, MAX_IMAGE_BYTES, captureFrame, captureFrames } from '../capture';
 
 function stubCanvas(dataUrl: string, context: object | null = { drawImage: vi.fn() }) {
   const canvas = { width: 0, height: 0, getContext: vi.fn(() => context), toDataURL: vi.fn(() => dataUrl) };
@@ -37,5 +37,33 @@ describe('captureFrames', () => {
   it('échoue si la vidéo n’a pas encore d’image', async () => {
     stubCanvas('data:image/jpeg;base64,QUJD');
     await expect(captureFrames(video(0, 0), 1, 0)).rejects.toThrow();
+  });
+});
+
+describe('captureFrame : limite de 1 Mo', () => {
+  const big = 'A'.repeat(Math.ceil((MAX_IMAGE_BYTES * 4) / 3) + 8);
+
+  it('réduit la taille et la qualité tant que l’image dépasse 1 Mo', () => {
+    const canvas = stubCanvas('data:image/jpeg;base64,QUJD');
+    canvas.toDataURL
+      .mockReturnValueOnce(`data:image/jpeg;base64,${big}`)
+      .mockReturnValueOnce('data:image/jpeg;base64,QUJD');
+
+    expect(captureFrame(video(640, 480))).toBe('QUJD');
+    expect(canvas.toDataURL).toHaveBeenCalledTimes(2);
+    expect(canvas.width).toBe(Math.round(640 * 0.75));
+  });
+
+  it('abandonne si l’image reste trop grande après les réductions', () => {
+    const canvas = stubCanvas(`data:image/jpeg;base64,${big}`);
+
+    expect(() => captureFrame(video(640, 480))).toThrow('image_too_large');
+    expect(canvas.toDataURL.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it('tient compte du bourrage base64 dans la taille', () => {
+    stubCanvas('data:image/jpeg;base64,QUI=');
+
+    expect(captureFrame(video(640, 480))).toBe('QUI=');
   });
 });
