@@ -89,7 +89,7 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: apps/backend/shop/uv.lock
-      - run: uv sync --frozen --no-build
+      - run: uv sync --frozen --no-build --python 3.13
         working-directory: apps/backend/shop
       - name: Scenarios e2e contre Traefik
         run: uv run --frozen --no-build poe test:e2e
@@ -107,7 +107,7 @@ jobs:
         run: docker compose up -d --no-deps --no-build --force-recreate --wait payment-worker
         env:
           PAYMENT_WEBHOOK_URL: http://shop:9100/webhooks/payment
-      - run: uv sync --frozen --no-build
+      - run: uv sync --frozen --no-build --python 3.13
         working-directory: apps/backend/payment
       - name: Scenarios e2e de payment (charge, attaque, 2 instances, arret, webhook signe, signaux) depuis l'exterieur
         run: uv run --frozen --no-build poe test:e2e
