@@ -40,6 +40,7 @@ describe('proxy : journal et corrélation', () => {
 describe('proxy : garde de route', () => {
   it.each([
     '/login',
+    '/invitation',
     '/session/identify',
     '/session/face',
     '/session/password',
