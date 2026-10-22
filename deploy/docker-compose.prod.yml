@@ -154,7 +154,8 @@ services:
       APP_S3_BUCKET: ${S3_BUCKET:-product-images}
       APP_S3_ACCESS_KEY: ${S3_ACCESS_KEY:?voir deploy/prod.env.example}
       APP_S3_SECRET_KEY: ${S3_SECRET_KEY:?voir deploy/prod.env.example}
-    networks: [app, data, payment-net]
+    # mail-egress : seule sortie vers Internet (webhook n8n d'envoi des mails).
+    networks: [app, data, payment-net, mail-egress]
     read_only: true
     depends_on:
       shop-migrate: { condition: service_completed_successfully }
@@ -339,7 +340,8 @@ services:
     # Cles de signature generees sur la VM par scripts/init-auth-keys.sh (jamais versionnees).
     secrets: [auth_jwt_private_key, auth_jwt_public_key]
     # payment-net : payment y lit les cles publiques (JWKS).
-    networks: [app, payment-net, auth-data]
+    # mail-egress : seule sortie vers Internet (webhook n8n d'envoi des mails).
+    networks: [app, payment-net, auth-data, mail-egress]
     read_only: true
     depends_on:
       auth-migrate: { condition: service_completed_successfully }
@@ -429,6 +431,9 @@ networks:
     internal: true
   auth-data:
     internal: true
+  # Sortie vers Internet pour le seul envoi des mails (n8n) : `auth` et `shop` uniquement.
+  # Tous les autres reseaux restent internes (aucune sortie).
+  mail-egress: {}
 
 volumes:
   postgres-data: {}

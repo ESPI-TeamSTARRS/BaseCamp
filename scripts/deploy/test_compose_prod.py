@@ -103,6 +103,17 @@ def test_reseaux_de_donnees_restent_internes(compose: dict) -> None:
         assert compose["networks"][name]["internal"] is True
 
 
+def test_seuls_auth_et_shop_ont_une_sortie_pour_les_mails(compose: dict) -> None:
+    sortie = compose["networks"]["mail-egress"] or {}
+    assert not sortie.get("internal")
+    membres = {
+        nom
+        for nom, service in compose["services"].items()
+        if "mail-egress" in service.get("networks", [])
+    }
+    assert membres == {"auth", "shop"}
+
+
 def test_routage_identique_au_developpement() -> None:
     prod = yaml.safe_load(DYNAMIC_PROD.read_text(encoding="utf-8"))["http"]
     dev = yaml.safe_load(DYNAMIC_DEV.read_text(encoding="utf-8"))["http"]
