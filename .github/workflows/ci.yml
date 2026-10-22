@@ -54,13 +54,13 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: apps/backend/${{ matrix.service }}/uv.lock
-      - run: uv sync --frozen
+      - run: uv sync --frozen --no-build
       - name: Qualite (lint, format, types)
-        run: uv run poe quality
+        run: uv run --frozen --no-build poe quality
       - name: Tests + couverture (seuil 80 %)
-        run: uv run poe test
+        run: uv run --frozen --no-build poe test
       - name: Securite (CVE des dependances)
-        run: uv run poe security
+        run: uv run --frozen --no-build poe security
       - name: Build de l'image
         run: docker build -t basecamp-${{ matrix.service }}:ci .
 
@@ -160,8 +160,8 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
-      - run: uv sync --frozen --python 3.13
-      - run: uv run poe tools-test
+      - run: uv sync --frozen --no-build --python 3.13
+      - run: uv run --frozen --no-build poe tools-test
 
   deploy-rollback:
     name: deploy-rollback
