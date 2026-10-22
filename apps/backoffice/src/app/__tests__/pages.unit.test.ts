@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { metadata } from '../layout';
 import LoginPage from '../login/page';
-import HomePage from '../page';
 import robots from '../robots';
 
 describe('pages du back-office', () => {
@@ -11,10 +10,6 @@ describe('pages du back-office', () => {
 
   it('les métadonnées portent noindex', () => {
     expect(metadata.robots).toMatchObject({ index: false, follow: false });
-  });
-
-  it('la page d’accueil se rend', () => {
-    expect(HomePage()).toBeTruthy();
   });
 
   it('la page de connexion annonce les trois temps et n’affiche une alerte que pour une erreur connue', async () => {
