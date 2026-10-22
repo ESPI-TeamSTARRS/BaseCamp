@@ -38,6 +38,13 @@ class TestFakeRecognizer:
     def test_the_template_has_the_serialised_size(self) -> None:
         assert len(FakeReconnaissanceFaciale().enroler([PNG])) == TEMPLATE_SIZE == 2069
 
+    def test_it_enrols_up_to_ten_photos_and_refuses_more(self) -> None:
+        recognizer = FakeReconnaissanceFaciale()
+
+        assert len(recognizer.enroler([PNG] * 10)) == TEMPLATE_SIZE
+        with pytest.raises(ImageInvalide):
+            recognizer.enroler([PNG] * 11)
+
     def test_the_same_image_is_recognised_and_another_is_not(self) -> None:
         recognizer = FakeReconnaissanceFaciale()
         template = recognizer.enroler([PNG])

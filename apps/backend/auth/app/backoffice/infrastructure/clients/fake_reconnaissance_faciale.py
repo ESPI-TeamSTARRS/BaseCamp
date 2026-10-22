@@ -4,7 +4,11 @@ import hmac
 from app.backoffice.domain.exceptions.gabarit_invalide import GabaritInvalide
 from app.backoffice.domain.exceptions.image_invalide import ImageInvalide
 from app.backoffice.domain.interfaces.reconnaissance_faciale import ReconnaissanceFaciale
-from app.backoffice.domain.value_objects.face_images import validate_face_images
+from app.backoffice.domain.value_objects.face_images import (
+    MAX_ENROLLMENT_PHOTOS,
+    validate_face_images,
+    validate_images,
+)
 
 TEMPLATE_SIZE = 2069  # taille du gabarit serialise de la team IA
 DIGEST_SIZE = 32
@@ -19,7 +23,7 @@ class FakeReconnaissanceFaciale(ReconnaissanceFaciale):
     """
 
     def enroler(self, photos: list[bytes]) -> bytes:
-        images = validate_face_images(photos)
+        images = validate_images(photos, 1, MAX_ENROLLMENT_PHOTOS)
         return hashlib.sha256(images[0]).digest().ljust(TEMPLATE_SIZE, b"\x00")
 
     def verifier(self, capture: bytes, gabarit: bytes) -> bool:

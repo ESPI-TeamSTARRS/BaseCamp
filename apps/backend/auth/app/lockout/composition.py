@@ -5,7 +5,11 @@ from sqlalchemy import Engine
 from app.core.config import Settings
 from app.core.events.business_event_logger import BusinessEventLogger
 from app.lockout.application.lockout_service import LockoutService
-from app.lockout.application.lockout_steps import STEP_FACE, STEP_OPERATOR_PASSWORD
+from app.lockout.application.lockout_steps import (
+    STEP_FACE,
+    STEP_INVITATION,
+    STEP_OPERATOR_PASSWORD,
+)
 from app.lockout.domain.entities.lockout_policies import LockoutPolicies
 from app.lockout.domain.entities.lockout_policy import LockoutPolicy
 from app.lockout.domain.enums.subject_type import SubjectType
@@ -49,6 +53,11 @@ def build_lockout_policies(settings: Settings) -> LockoutPolicies:
                 settings.lockout_operator_password_max_failures,
                 settings.lockout_operator_password_window_seconds,
                 settings.lockout_operator_password_duration_seconds,
+            ),
+            (STEP_INVITATION, SubjectType.SOURCE_ADDRESS): _fixed(
+                settings.lockout_invitation_max_failures,
+                settings.lockout_invitation_window_seconds,
+                settings.lockout_invitation_duration_seconds,
             ),
             (STEP_FACE, SubjectType.ACCOUNT): _fixed(
                 settings.lockout_face_max_failures,

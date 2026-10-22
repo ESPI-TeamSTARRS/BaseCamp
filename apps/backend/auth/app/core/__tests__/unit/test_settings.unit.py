@@ -1,4 +1,5 @@
 import pytest
+from pydantic import ValidationError
 
 from app.core.config import Settings
 
@@ -288,3 +289,31 @@ class TestSettingsFaceVerifier:
         monkeypatch.delenv("APP_FACE_TEMPLATE_KEY_FILE", raising=False)
 
         assert Settings().face_template_key_file == "/run/secrets/auth_face_template_key"
+
+
+class TestOperatorInvitation:
+    def test_the_defaults_are_a_five_minute_link_on_the_local_admin_origin(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("APP_ADMIN_BASE_URL", raising=False)
+        monkeypatch.delenv("APP_OPERATOR_INVITE_TTL_SECONDS", raising=False)
+
+        settings = Settings()
+
+        assert settings.operator_invite_ttl_seconds == 300
+        assert settings.admin_base_url == "http://admin.localhost:8080"
+        assert settings.lockout_invitation_max_failures == 5
+
+    @pytest.mark.parametrize("value", ["0", "-1", "301", "3600"])
+    def test_the_lifetime_can_never_exceed_five_minutes(
+        self, monkeypatch: pytest.MonkeyPatch, value: str
+    ) -> None:
+        monkeypatch.setenv("APP_OPERATOR_INVITE_TTL_SECONDS", value)
+
+        with pytest.raises(ValidationError):
+            Settings()
+
+    def test_a_shorter_lifetime_is_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("APP_OPERATOR_INVITE_TTL_SECONDS", "120")
+
+        assert Settings().operator_invite_ttl_seconds == 120

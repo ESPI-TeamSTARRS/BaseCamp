@@ -7,3 +7,4 @@ compteur, sans toucher au login client.
 
 STEP_OPERATOR_PASSWORD = "operator_password"  # noqa: S105 - nom d'etape, pas un secret
 STEP_FACE = "face"
+STEP_INVITATION = "invitation"  # completion d'une invitation d'operateur (par adresse)

@@ -5,10 +5,14 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request, Response
 
 from app.backoffice.application.backoffice_errors import FaceImageInvalidError
+from app.backoffice.application.complete_operator_invitation import (
+    CompleteOperatorInvitationUseCase,
+)
 from app.backoffice.application.identify_operator import IdentifyOperatorUseCase
 from app.backoffice.application.verify_face import VerifyFaceUseCase
 from app.backoffice.application.verify_operator_password import VerifyOperatorPasswordUseCase
 from app.backoffice.presentation.dependencies import (
+    get_complete_operator_invitation_use_case,
     get_identify_operator_use_case,
     get_verify_face_use_case,
     get_verify_operator_password_use_case,
@@ -17,6 +21,12 @@ from app.backoffice.presentation.schemas.face_request import FaceRequest
 from app.backoffice.presentation.schemas.face_response import FaceResponse
 from app.backoffice.presentation.schemas.identify_request import IdentifyRequest
 from app.backoffice.presentation.schemas.identify_response import IdentifyResponse
+from app.backoffice.presentation.schemas.invitation_complete_request import (
+    InvitationCompleteRequest,
+)
+from app.backoffice.presentation.schemas.invitation_complete_response import (
+    InvitationCompleteResponse,
+)
 from app.backoffice.presentation.schemas.password_request import PasswordRequest
 from app.login.presentation.dependencies import client_ip
 from app.login.presentation.schemas.login_response import LoginResponse
@@ -67,6 +77,30 @@ def password(
     )
     response.headers["Cache-Control"] = NO_STORE
     return LoginResponse(access_token=session.access_token, expires_in=session.expires_in)
+
+
+@router.post("/invitation/complete", response_model=InvitationCompleteResponse, status_code=201)
+def complete_invitation(
+    body: InvitationCompleteRequest,
+    request: Request,
+    response: Response,
+    use_case: Annotated[
+        CompleteOperatorInvitationUseCase, Depends(get_complete_operator_invitation_use_case)
+    ],
+) -> InvitationCompleteResponse:
+    """Cree le compte operateur de la personne invitee (mot de passe et visage) : 201.
+
+    Jeton inconnu, expire, revoque, utilise ou adresse bloquee : meme 401 generique. Mot de passe
+    faible ou photos refusees : 422, rien n'est consomme.
+    """
+    use_case.execute(
+        body.token.get_secret_value(),
+        body.password.get_secret_value(),
+        _decode(body.images),
+        client_ip(request),
+    )
+    response.headers["Cache-Control"] = NO_STORE
+    return InvitationCompleteResponse()
 
 
 def _decode(images: list[str]) -> list[bytes]:

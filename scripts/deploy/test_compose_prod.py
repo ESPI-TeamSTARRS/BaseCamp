@@ -233,6 +233,19 @@ def test_connexion_backoffice_seulement_sur_l_origine_admin(compose: dict) -> No
     assert "APP_FACE_VERIFIER" not in environment
 
 
+def test_invitation_operateur_seulement_sur_l_origine_admin_avec_corps_pour_dix_images() -> None:
+    for chemin in (DYNAMIC_PROD, DYNAMIC_DEV):
+        http = yaml.safe_load(chemin.read_text(encoding="utf-8"))["http"]
+        routeur = http["routers"]["auth-backoffice-invitation"]
+        assert routeur["rule"].startswith("HostRegexp("), chemin.name
+        assert "Path(`/api/auth/backoffice/invitation/complete`)" in routeur["rule"]
+        assert routeur["priority"] > http["routers"]["auth-backoffice"]["priority"]
+        assert routeur["middlewares"][0] == "backoffice-login-rate-limit"
+        limite = http["middlewares"]["backoffice-invitation-body-limit"]["buffering"]
+        assert 14 * 1024 * 1024 < limite["maxRequestBodyBytes"] <= 16 * 1024 * 1024  # 10 x 1 Mo en base64
+        assert limite["memRequestBodyBytes"] == limite["maxRequestBodyBytes"]
+
+
 def test_le_backoffice_n_est_servi_que_sur_l_origine_admin() -> None:
     for chemin in (DYNAMIC_PROD, DYNAMIC_DEV):
         http = yaml.safe_load(chemin.read_text(encoding="utf-8"))["http"]

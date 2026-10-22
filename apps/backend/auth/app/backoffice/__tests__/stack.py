@@ -7,7 +7,13 @@ from httpx import AsyncClient, Response
 from sqlalchemy import text
 
 from app.backoffice.__tests__.cipher import TEST_CIPHER
-from app.backoffice.__tests__.fakes import PNG
+from app.backoffice.__tests__.fakes import JPEG, OTHER_PNG, PNG
+from app.backoffice.application.complete_operator_invitation import (
+    CompleteOperatorInvitationUseCase,
+)
+from app.backoffice.application.create_operator_invitation import (
+    CreateOperatorInvitationUseCase,
+)
 from app.backoffice.application.identify_operator import IdentifyOperatorUseCase
 from app.backoffice.application.verify_face import VerifyFaceUseCase
 from app.backoffice.application.verify_operator_password import VerifyOperatorPasswordUseCase
@@ -19,6 +25,9 @@ from app.backoffice.infrastructure.clients.secure_challenge_token_generator impo
 )
 from app.backoffice.infrastructure.repositories.sqlalchemy_backoffice_unit_of_work import (
     SqlAlchemyBackofficeUnitOfWork,
+)
+from app.backoffice.infrastructure.repositories.sqlalchemy_invitation_unit_of_work import (
+    SqlAlchemyInvitationUnitOfWork,
 )
 from app.backoffice.presentation.router import router
 from app.core.config import Settings
@@ -32,6 +41,9 @@ from app.login.__tests__.fakes import FakeEmailFingerprinter
 from app.login.__tests__.stack import ACCOUNT_SECRET, AUDIENCE, ISSUER, LoginStack
 from app.login.infrastructure.clients.jwt_access_token_signer import JwtAccessTokenSigner
 from app.login.infrastructure.repositories.sqlalchemy_unit_of_work import SqlAlchemyUnitOfWork
+from app.registration.__tests__.fakes import FakeCommonPasswordList
+from app.registration.domain.services.password_policy import PasswordPolicy
+from app.registration.infrastructure.clients.argon2_password_hasher import Argon2PasswordHasher
 
 OPERATOR_EMAIL = "operateur@example.com"
 WRONG = "mauvais-mot-de-passe"
@@ -82,6 +94,30 @@ class BackofficeStack(LoginStack):
             events,
             900,
         )
+        invitations = lambda: SqlAlchemyInvitationUnitOfWork(self.engine, TEST_CIPHER)  # noqa: E731
+        self.invitation_creation = CreateOperatorInvitationUseCase(
+            accounts,
+            invitations,
+            tokens,
+            fingerprinter,
+            self.clock,
+            events,
+            "https://admin.exemple.test",
+            300,
+        )
+        self.application.state.complete_operator_invitation_use_case = (
+            CompleteOperatorInvitationUseCase(
+                invitations,
+                tokens,
+                PasswordPolicy(FakeCommonPasswordList()),
+                Argon2PasswordHasher(),
+                self.recognizer,
+                lockout,
+                fingerprinter,
+                self.clock,
+                events,
+            )
+        )
         self.application.include_router(router)
 
     def enroll(self, account_id: UUID, photo: bytes) -> None:
@@ -100,6 +136,20 @@ class BackofficeStack(LoginStack):
     def exec(self, sql: str) -> None:
         with self.engine.begin() as connection:
             connection.execute(text(sql))
+
+    def invite(self, email: str) -> str:
+        return self.invitation_creation.execute(email).link.split("#token=", 1)[1]
+
+    @staticmethod
+    async def complete(client: AsyncClient, token: str, password: str, *images: bytes) -> Response:
+        return await client.post(
+            "/backoffice/invitation/complete",
+            json={
+                "token": token,
+                "password": password,
+                "images": [b64(image) for image in (images or (PNG, JPEG, OTHER_PNG))],
+            },
+        )
 
     # --- appels HTTP des trois temps ---
     @staticmethod

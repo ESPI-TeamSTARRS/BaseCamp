@@ -2,6 +2,9 @@ from typing import cast
 
 from fastapi import Request
 
+from app.backoffice.application.complete_operator_invitation import (
+    CompleteOperatorInvitationUseCase,
+)
 from app.backoffice.application.identify_operator import IdentifyOperatorUseCase
 from app.backoffice.application.verify_face import VerifyFaceUseCase
 from app.backoffice.application.verify_operator_password import VerifyOperatorPasswordUseCase
@@ -18,3 +21,11 @@ def get_verify_face_use_case(request: Request) -> VerifyFaceUseCase:
 
 def get_verify_operator_password_use_case(request: Request) -> VerifyOperatorPasswordUseCase:
     return cast(VerifyOperatorPasswordUseCase, request.app.state.verify_operator_password_use_case)
+
+
+def get_complete_operator_invitation_use_case(
+    request: Request,
+) -> CompleteOperatorInvitationUseCase:
+    return cast(
+        CompleteOperatorInvitationUseCase, request.app.state.complete_operator_invitation_use_case
+    )
