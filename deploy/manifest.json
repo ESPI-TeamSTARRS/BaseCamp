@@ -6,8 +6,8 @@
       "version": "0.14.0"
     },
     "backoffice": {
-      "image": "ghcr.io/espi-teamstarrs/basecamp-backoffice@sha256:9390d9edab48976f48c0789fcc0741cee950b4b6be0894c6d8119acdf3f633ff",
-      "version": "0.3.0"
+      "image": "ghcr.io/espi-teamstarrs/basecamp-backoffice@sha256:f863f9ca9aa47d676846052fc29c5651ceea1d3a16d0eaa9c30178f673ffb3ad",
+      "version": "0.3.1"
     },
     "frontend": {
       "image": "ghcr.io/espi-teamstarrs/basecamp-frontend@sha256:7ed543265faa7b2259f40ffee3a94e41fffa147fa3d846172b0ec0dfb5bc1ffb",
